@@ -9,3 +9,4 @@ tiktoken==0.4.0
 scipy==1.10.1
 numpy==1.24.3
 requests==2.29.0
+pyyaml==6.0
