@@ -1,0 +1,6 @@
+v1.0:
+  stop_tokens: ["##", "#"]
+  template: |-
+    {{ input }}
+
+    {{ prompt }} Let's think step by step.

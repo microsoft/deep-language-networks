@@ -1,0 +1,11 @@
+v1.0:
+  stop_tokens: ["##", "#"]
+  template: |-
+    {{ prompt }}
+
+    {{ input }}
+
+    Given that the answer is:
+    {{ y }}
+
+    Thoughts:

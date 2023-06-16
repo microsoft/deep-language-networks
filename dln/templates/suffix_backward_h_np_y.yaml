@@ -1,0 +1,20 @@
+v1.0:
+  template: |-
+    This is useful context to solve the problem:
+    {{ next_prompt }}
+
+    This is the input:
+    {{ input }}
+
+    These were your thoughts about the input:
+    {{ h }}
+
+    Given that this is the correct answer:
+    {{ y }}
+
+    {{ message }}
+    Thoughts:
+  message_alternatives:
+    - "Reflect and refine your thoughts for this problem by adding detailed explanations."
+    - "Fix the errors in your reasoning. Add examples to illustrate your thoughts. Be concise."
+    - "Improve your thoughts to make them clearer and more concise."
