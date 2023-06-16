@@ -1,14 +1,30 @@
-# Project
+# Deep Language Networks
 
-> This repo has been populated by an initial template to help get you started. Please
-> make sure to update the content to build a great experience for community-building.
 
-As the maintainer of this project, please make a few updates:
+## Setup
 
-- Improving this README.MD file to provide a great experience
-- Updating SUPPORT.MD with content about this project's support experience
-- Understanding the security reporting process in SECURITY.MD
-- Remove this section from the README
+### Clone repo
+    git clone https://github.com/xingdi-eric-yuan/deep_language_networks.git
+    cd deep_language_networks
+
+### Installl dependencies
+    conda create -n nll python=3.10
+    conda activate nll
+    pip install -e .
+
+### Setup data
+    bash scripts/setup_data.sh
+
+### Set your OpenAI API key
+
+Export your key or put it in your *shrc, e.g.,
+
+    export OPENAI_API_KEY='...your...key...'
+
+In order to use Microsoft Azure endpoints, in addition to the OPENAI_API_KEY,
+you need to set the OPENAI_API_TYPE, OPENAI_API_BASE and OPENAI_API_VERSION.
+The OPENAI_API_TYPE must be set to 'azure' and the others correspond to the properties of your endpoint.
+
 
 ## Contributing
 
