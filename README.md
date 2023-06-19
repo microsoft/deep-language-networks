@@ -4,12 +4,12 @@
 ## Setup
 
 ### Clone repo
-    git clone https://github.com/xingdi-eric-yuan/deep_language_networks.git
-    cd deep_language_networks
+    git clone https://github.com/microsoft/deep-language-networks.git
+    cd deep-language-networks
 
 ### Installl dependencies
-    conda create -n nll python=3.10
-    conda activate nll
+    conda create -n dln python=3.10
+    conda activate dln
     pip install -e .
 
 ### Setup data
