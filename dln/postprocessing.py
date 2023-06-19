@@ -22,8 +22,8 @@ def remove_extra_spaces(input, remove_new_line=False):
 def postprocess_prediction(input):
     assert isinstance(input, str)
     output = input
-    output = re.sub("\W+", " ", output)  # remove non word
-    output = re.sub("\d+", " ", output)  # remove digits
+    output = re.sub(r"\W+", " ", output)  # remove non word
+    output = re.sub(r"\d+", " ", output)  # remove digits
     output = remove_extra_spaces(output)
     output = output.lower()
 
