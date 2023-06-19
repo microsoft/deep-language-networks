@@ -1,0 +1,128 @@
+{
+    "hyperbaton": {
+        "dataset": "hyperbaton",
+        "avg_scores": {
+            "dev": 0.9133333333333334,
+            "test": 0.9186666666666667
+        },
+        "hyperparam": {
+            "q_prompt_tpl": "q_action_prompt:v3.0",
+            "tolerance": "-1",
+            "use_memory": "0",
+            "held_out_prompt_ranking": "True"
+        },
+        "best_weights": "When constructing a sentence with multiple adjectives, the order should be opinion, size, age, shape, color, origin, material, and purpose. Adjectives of the same type should be listed in descending order from largest to smallest. When adjectives of different types are used, the order should be opinion, size, age, shape, color, origin, material, and purpose. For example, in the phrase \"massive ancient chair,\" size (massive) should come before age (ancient). Examples: little old-fashioned Russian silver rectangular ship; silly large old leather hiking chair; brand-new spherical Mexican sweater; enormous old spherical green Nigerian exercise car; medium-size triangular wool eating ship; good square brown Egyptian ship; lovely massive drinking monkey; archaic circular white plastic shoe. In each of the following examples, the adjective order is wrong. Identify the correct adjective order:\n"
+    },
+    "navigate": {
+        "dataset": "navigate",
+        "avg_scores": {
+            "dev": 0.7217777777777777,
+            "test": 0.6706666666666666
+        },
+        "hyperparam": {
+            "q_prompt_tpl": "q_action_prompt:v3.0",
+            "tolerance": "-1",
+            "use_memory": "2",
+            "held_out_prompt_ranking": "True"
+        },
+        "best_weights": "If you follow these instructions, do you return to the starting point? Begin by facing the same direction you started in. Take the number of steps specified in the instructions, turning right or left as indicated. When instructed to turn around, make a 180 degree turn, so that you are facing the opposite direction in which you started. For example, if you start facing east and turn around, you will be facing west. When turning right or left, make sure to turn in the same direction each time. When you have taken all the steps specified, answer the question given with either \"yes\" or \"no\".\n"
+    },
+    "date_understanding": {
+        "dataset": "date_understanding",
+        "avg_scores": {
+            "dev": 0.3499999999999999,
+            "test": 0.5253333333333333
+        },
+        "hyperparam": {
+            "q_prompt_tpl": "q_action_prompt:v3.0",
+            "tolerance": "0",
+            "use_memory": "2",
+            "held_out_prompt_ranking": "True"
+        },
+        "best_weights": "Infer the date from the given context and choose the correct answer. Pay close attention to the order of the day and month in the given context. Additionally, consider the fact that in some contexts the day may come before the month (e.g. in the UK). For example, if the given context is \"It is 4/19/1969 today. What is the date a month ago in MM/DD/YYYY?\", you can infer that a month ago is 3/19/1969 and the correct answer would be (A) 03/19/1969. If the given context is \"The day before yesterday was 11/23/1933. What is the date one week ago from today in MM/DD/YYYY?\", you can infer that one week ago is 11/16/1933 and the correct answer would be (A) 11/16/1933. Similarly, if the given context includes a timeframe (e.g. yesterday, one year ago, etc.), you will need to subtract or add the specified amount of time to the given date to find the correct answer. For example, if the given context is \"Jane and John married on Jan 2, 1958. Today is their golden wedding anniversary. What is the date tomorrow in MM/DD/YYYY?\" then the student should subtract Jan 2, 1958 from Jan 2, 2018 to get the number of days between them and then add that number of days to Jan 2, 2018 to get the correct answer, which is (A) 01/03/2008. If the given context includes two dates and the student needs to calculate the number of days between them, then the student should subtract the earlier date from the later date to get the number of days and then add or subtract that number of days to the later date to get the answer. For example, if the given context is \"Today is 8/3/1997 and one year ago was 7/31/1996. What is the date yesterday in MM/DD/YYYY?\", then the student should subtract 7/31/1996 from 8/3/1997 to get the number of days between them and then subtract the number of days from 8/3/1997 to get the correct answer, which is (A) 08/02/1997. If the given context includes a sequence of dates, such as a pattern of dates that occur consecutively (e.g. every second Thursday), the student should use the given date as a reference point and add or subtract the specified amount\n"
+    },
+    "logical_deduction_seven_objects": {
+        "dataset": "logical_deduction_seven_objects",
+        "avg_scores": {
+            "dev": 0.43555555555555553,
+            "test": 0.4746666666666666
+        },
+        "hyperparam": {
+            "q_prompt_tpl": "q_action_prompt:v3.0",
+            "tolerance": "0",
+            "use_memory": "2",
+            "held_out_prompt_ranking": "True"
+        },
+        "best_weights": "The following paragraphs each describe a set of seven objects arranged in a fixed order. The statements are logically consistent within each paragraph. Your task is to read each paragraph and identify which of the given seven options matches the description. Each option will describe the relative ordering of the objects in the given statement, such as \"The oranges are the most expensive\" or \"The truck is the fourth-newest\". When determining the ordering, take into account the terms \"cheapest\" or \"most expensive\" (or any other similar terms) to determine the relative value of the objects. Additionally, when determining the ordering of the objects, take into account the terms \"rightmost\" or \"leftmost\" (or any other similar terms) to determine the relative position of the objects. Note that the terms “rightmost” or “leftmost” refer to the farthest right or left position of the objects in the given statement, not necessarily the objects that appear at the beginning or end of the sentence.\n"
+    },
+    "mpqa": {
+        "dataset": "mpqa",
+        "avg_scores": {
+            "dev": 0.8802083333333334,
+            "test": 0.8853333333333334
+        },
+        "hyperparam": {
+            "q_prompt_tpl": "q_action_prompt:v3.0",
+            "tolerance": "0",
+            "use_memory": "0",
+            "held_out_prompt_ranking": "True"
+        },
+        "best_weights": "Read each sentence, then decide if the sentence is expressing a positive or negative sentiment. For example, if the sentence is \"supported\", choose \"positive\", and if the sentence is \"derail\", choose \"negative\". Similarly, if the sentence is \"victorious\", choose \"positive\", and if the sentence is \"would not be a bad idea\", choose \"positive\". Additionally, if the sentence contains multiple words, consider the overall sentiment of the sentence and choose the appropriate option. For example, if the sentence is \"counting on\", choose \"negative\", and if the sentence is \"peace and stability and prosperity\", choose \"positive\". Note that words like \"artificial\" tend to have a negative sentiment.\n"
+    },
+    "trec": {
+        "dataset": "trec",
+        "avg_scores": {
+            "dev": 0.890625,
+            "test": 0.8733333333333334
+        },
+        "hyperparam": {
+            "q_prompt_tpl": "q_action_prompt:v3.0",
+            "tolerance": "2",
+            "use_memory": "2",
+            "held_out_prompt_ranking": "False"
+        },
+        "best_weights": "Read the question, then select the option that best describes the type of answer required: \n"
+    },
+    "subj": {
+        "dataset": "subj",
+        "avg_scores": {
+            "dev": 0.8359375,
+            "test": 0.832
+        },
+        "hyperparam": {
+            "q_prompt_tpl": "q_action_prompt:v3.0",
+            "tolerance": "2",
+            "use_memory": "0",
+            "held_out_prompt_ranking": "True"
+        },
+        "best_weights": "Look for words that express an opinion or emotion such as \"refreshing\", \"great looking\", \"madcap\", \"wistful\", \"embraces\", \"flaccid satire\", \"throws tantrums\", \"centers on\", \"trades\", \"throws food\", \"moving cross country\", \"feel\", \"falls prey to\", \"stirring\", \"emotional\", \"strange way\", \"worked too hard\", \"resulted\", \"reflection\", \"experience\", \"done too much\". When the sentence expresses an opinion, it is likely to be a subjective statement. Examples of subjective statements include: \"ultimately feels empty and unsatisfying\", \"the production is suitably elegant\", \"muy loco\", and \"ultimately falls prey to the contradiction\". If the sentence describes an event or action rather than expressing an opinion, it is likely to be an objective statement. Examples of objective statements include: \"had a chance to make his dream come true\", \"contains colour home movie footage of the film's production\", \"the gang entered their final year of high school\", and \"sam jones documents the making of wilco's fourth studio album\". Pay close attention to the context of the sentence - if someone or something is *falling for* or *falling back*, it is likely to be an objective statement. Pay attention to any words that express an opinion or emotion, such as \"uncomfortable\", \"suffocating\", \"grim\", \"play it straight\", \"ordinary\" and \"all-star reunions\". If the sentence expresses an opinion, it is likely to be a subjective statement. Examples of subjective statements include: \"the grey zone does have a center, though a morbid one\", \"may well be the most grim dragon movie ever made\", and \"the storytelling may be ordinary, but the cast is one of those all-star reunions\". If the sentence describes an event or action rather than expressing an opinion, it is likely to be an objective statement. Examples of objective statements include: \"together they travel to England and meet up with Chon Lin to kill Rathbone and get the imperial seal back\", \"forced to think fast, the producer decides to digitally create an actress \"\"Simone\"\" to sub for the star--the first totally believable synthetic actress\", and \"and for her honor, it will be named 'Paradise-Casino'\".\n"
+    },
+    "disaster": {
+        "dataset": "disaster",
+        "avg_scores": {
+            "dev": 0.8346666666666667,
+            "test": 0.8146666666666667
+        },
+        "hyperparam": {
+            "q_prompt_tpl": "q_action_prompt:v3.0",
+            "tolerance": "0",
+            "use_memory": "0",
+            "held_out_prompt_ranking": "False"
+        },
+        "best_weights": "Read the following sentence, then choose whether it is relevant to a disaster. To help you determine if the sentence is related to a disaster, ask yourself if the content of the sentence contains information about an emergency event or situation that could cause harm, injury, or death to people or property. For example, if the sentence mentions a car accident, a hurricane, a fire, a flood, a bombing, a riot, or any other dangerous event, then it is relevant to a disaster. Examples of sentences not relevant to a disaster include those about getting a car, watching anime, talking about one's feelings, or economic wisdom.\n"
+    },
+    "airline": {
+        "dataset": "airline",
+        "avg_scores": {
+            "dev": 0.836,
+            "test": 0.832
+        },
+        "hyperparam": {
+            "q_prompt_tpl": "q_action_prompt:v3.0",
+            "tolerance": "-1",
+            "use_memory": "0",
+            "held_out_prompt_ranking": "True"
+        },
+        "best_weights": "Determine if the sentence expresses a positive sentiment, negative sentiment, or neither by considering the context and tone of the sentence. A positive sentiment is generally expressed with words and phrases of appreciation, gratitude, enthusiasm, and approval, whereas a negative sentiment is generally expressed with words and phrases of disapproval, disappointment, dissatisfaction, and criticism. Consider the context and tone of the statement in order to assess the sentiment accurately. Pay special attention to words that can be interpreted both positively and negatively, and consider the overall context and tone of the statement to assess sentiment accurately. Pay attention to the context and tone of the statement, not just the words used. For example, a statement like “Welllllll.... RT @JetBlue: Our fleet's on fleek. http://t.co/dHHomG2kiX” could be neutral sentiment even though the words “on fleek” could be interpreted as a positive sentiment. Additionally, consider sarcasm and irony when assessing sentiment. For example, \"@USAirways comin in clutch and sending me to Charlotte then home, I h8 u @AmericanAir, except for Wayne u a real g #ThankJesus #ThankMe\" is a negative sentiment despite the words \"comin in clutch\" suggesting a positive sentiment. Pay special attention to express words of gratitude, disappointment, criticism, appreciation, and dissatisfaction; these words offer important context to the sentiment of the statement. Consider the tone of the statement, not just the words used. For example, a statement like \"@JetBlue I cant look up my confirmation number at the moment on mobile. The email is no longer in my inbox\" is a neutral sentiment despite the words \"cant\" suggesting a negative sentiment. Additionally, a statement like \"@VirginAmerica is saving my sanity right now: http://t.co/ELtBOLjUl9\" is a neutral sentiment despite the word \"saving\" suggesting a positive sentiment. When assessing sentiment, be aware of sarcasm and irony. For example, \"@USAirways thank you for the apology\" is a neutral sentiment despite the words \"thank you\" suggesting a positive sentiment. Pay special attention to statements that include words that could be interpreted both positively and negatively; consider the overall context and tone of the statement to assess sentiment accurately. Consider the tone of the statement, not just the words used, and be aware of sarcasm and irony. For example, a statement like \"@united @JMS2802 : outsource it all United Airlines...your customers\n"
+    }
+}
