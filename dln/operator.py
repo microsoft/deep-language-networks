@@ -17,13 +17,13 @@ backward_interpreter = None
 
 class GPT:
     AVAILABLE_MODELS = [
-        "gpt-35-turbo",
         "text-davinci-003",
         "text-davinci-002",
         "code-davinci-002",
         "text-curie-001",
         "text-babbage-001",
         "text-ada-001",
+        "gpt-3.5-turbo",
         "gpt-4",
         "gpt-4-32k",
     ]
@@ -214,7 +214,7 @@ class GPT:
         generation_options = self.generation_options.copy()
         generation_options.update(**kwargs)
 
-        if self.engine in ("gpt-35-turbo", "gpt-4", "gpt-4-32k"):
+        if self.engine in ("gpt-3.5-turbo", "gpt-4", "gpt-4-32k"):
             if "return_logprobs" in generation_options:
                 del generation_options["return_logprobs"]
 
