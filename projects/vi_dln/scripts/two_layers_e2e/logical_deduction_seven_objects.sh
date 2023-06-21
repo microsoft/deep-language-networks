@@ -12,7 +12,6 @@ num_h_samples=5
 fwd_max_tokens=512
 bwd_max_tokens=1024
 trust_factor=0.
-nce="False"
 q_prompt_tpl="q_action_prompt:v3.5"
 logp_penalty=1.
 posterior_temp=0.75
@@ -50,7 +49,6 @@ for seed in 13 42 25; do
         --posterior_temp ${posterior_temp} \
         --strip_options_for_hidden True \
         --strip_prefix_for_hidden False \
-        --nce ${nce} \
         --fwd_max_tokens ${fwd_max_tokens} \
         --bwd_max_tokens ${bwd_max_tokens}
 done

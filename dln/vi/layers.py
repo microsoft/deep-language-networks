@@ -26,7 +26,7 @@ class PriorLayer:
         temperature=0.0,
         strip_double_newlines=True,
         max_tokens=256,
-    ):
+    ) -> np.array:
         """Forward pass throught this layer.
 
         Args:
@@ -34,6 +34,7 @@ class PriorLayer:
                             the prototypes.
             temperature: temperature to use for the forward pass
             strip_double_newlines: if True, strip any "\n\n" that might have been added
+            max_tokens: cap the max length for the forward pass
         """
         if output_classes is None:
             tpl_inputs = [
@@ -74,7 +75,6 @@ class PriorLayer:
         prompts=None,
         output_classes=None,
         agg="max",
-        context_score=False,
     ):
         requests = []
 
@@ -86,13 +86,22 @@ class PriorLayer:
 
         # build up a set of score requests
         outputs = LogProbsScore().score_requests(requests, output_classes, agg=agg)
-        
-        if output_classes or context_score:
+
+        if output_classes:
+            # return both log_p of target class and full distribution over classes
             return outputs
         return outputs[0]
 
 
 class ResidualPriorLayer(PriorLayer):
+
+    def __init__(self, forward_template, init=None, residual_template="classify_residual"):
+        super().__init__(forward_template, init=init)
+        self.residual_template = load_template(
+            residual_template
+        )
+        log_message("Residual template:\n", f"{repr(self.residual_template.template)}")
+
     def forward(self, inputs, **kwargs) -> np.array:
         outputs = super().forward(inputs, **kwargs)
         return outputs
@@ -106,8 +115,16 @@ class ResidualPriorLayer(PriorLayer):
                 tpl_input = self.forward_template.render(
                     input=input, prompt=self.weight
                 )
-                outputs_.append(tpl_input + "\nYour thoughts were:\n" + output)
+                outputs_.append(
+                    self.residual_template.render(
+                        input=tpl_input, output=output
+                    )
+                )
         else:
             for output, input in zip(outputs, inputs):
-                outputs_.append(input + "\nYour thoughts were:\n" + output)
+                outputs_.append(
+                    self.residual_template.render(
+                        input=input, output=output
+                    )
+                )
         return np.array(outputs_)

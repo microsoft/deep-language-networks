@@ -181,7 +181,6 @@ class PosteriorSampler:
         if strip_double_newlines:
             sampled = [s.replace("\n\n", "\n") for s in sampled]
 
-        num_alive = x.shape[0]
-        sampled = np.asarray(sampled).reshape(num_alive, num_samples)
+        sampled = np.asarray(sampled).reshape(x.shape[0], num_samples)
         assert sampled.shape[0] == x.shape[0]
         return sampled
