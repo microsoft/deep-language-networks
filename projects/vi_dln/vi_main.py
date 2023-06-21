@@ -303,11 +303,6 @@ def test(dataset, model, loss_fn, iteration, writer):
     default="text-davinci-003",
 )
 @click.option(
-    "--nce",
-    type=bool,
-    default=False,
-)
-@click.option(
     "--fwd_max_tokens",
     type=int,
     default=256,
@@ -356,7 +351,6 @@ def main(
     decay_logp_penalty,
     posterior_temp,
     model_type,
-    nce,
     fwd_max_tokens,
     bwd_max_tokens,
 ):
@@ -406,7 +400,6 @@ def main(
         p_class=p_class,
         init_p1=init_p1,
         init_p2=init_p2,
-        nce=nce,
         use_h_argmax=use_h_argmax,
         output_classes=output_classes,
         strip_options_for_hidden=strip_options_for_hidden,

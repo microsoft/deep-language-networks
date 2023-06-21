@@ -9,7 +9,6 @@ held_out_prompt_ranking=True
 use_memory=2
 tolerance=2
 num_h_samples=5
-nce=False
 q_prompt_tpl="q_action_prompt:v3.5"
 logp_penalty=2.
 posterior_temp=1.
@@ -46,6 +45,5 @@ for seed in 13 42 25; do
         --logp_penalty ${logp_penalty} \
         --posterior_temp ${posterior_temp} \
         --strip_options_for_hidden True \
-        --strip_prefix_for_hidden False \
-        --nce ${nce}
+        --strip_prefix_for_hidden False
 done

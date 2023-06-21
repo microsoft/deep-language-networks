@@ -39,7 +39,6 @@ class VILModel:
         p2_max_tokens: int = 20,
         posterior_temp: float = 1.0,
         strip_prefix_for_hidden: str = None,
-        nce: bool = False,
     ):
         """
         Args:
@@ -66,7 +65,6 @@ class VILModel:
             use_memory: whether to use memory, if 0, we don't use memory, if n, we include n best DEV prompts in the list of candidate prompts to select from, etc...
             train_p1: whether to train the first prompt
             train_p2: whether to train the second prompt
-            nce: use nce for hidden scoring
         """
         if task_description is None:
             raise ValueError(
@@ -109,7 +107,6 @@ class VILModel:
         self.posterior_temp = posterior_temp
         self.num_p2_steps = 1
         self.num_p1_steps = 1
-        self.nce = nce
 
         if self.forward_use_classes:
             assert (
@@ -314,15 +311,6 @@ class VILModel:
             score = np.sum(log_likes * class_weights[:, :, None], axis=1).mean(0)
         return score
 
-    def compute_nce_score(self, log_likes, class_weights=None):
-        import scipy.special
-        # log p(h | pi) - log p(h)
-        score = np.sum(
-            class_weights[:, :, None]
-            * np.log(scipy.special.softmax(log_likes, axis=1)), 1,
-        ).mean(0)
-        return score
-
     def inference_vi(
         self,
         x: np.array,
@@ -492,11 +480,7 @@ class VILModel:
                     p_tilde_1.shape[0],
                 )
                 ll_orig = ll[:, 0, :]
-                if self.nce:
-                    log_message(colored("Evaluating NCE scores for p1...", "yellow"))
-                    p1_elbo = self.compute_nce_score(ll[:, 1:, :], eval_weights)
-                else:
-                    p1_elbo = self.compute_elbo_score(ll[:, 1:, :], eval_weights)
+                p1_elbo = self.compute_elbo_score(ll[:, 1:, :], eval_weights)
 
                 # Compute an exploration like logp penalty.
                 if self.logp_penalty > 0.0:
