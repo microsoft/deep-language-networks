@@ -94,7 +94,13 @@ class PriorLayer:
 
 
 class ResidualPriorLayer(PriorLayer):
-    RESIDUAL_MESSAGE = "\nYour thoughts were:\n"
+
+    def __init__(self, forward_template, init=None, residual_template="classify_residual"):
+        super().__init__(forward_template, init=init)
+        self.residual_template = load_template(
+            residual_template
+        )
+        log_message("Residual template:\n", f"{repr(self.residual_template.template)}")
 
     def forward(self, inputs, **kwargs) -> np.array:
         outputs = super().forward(inputs, **kwargs)
@@ -109,8 +115,16 @@ class ResidualPriorLayer(PriorLayer):
                 tpl_input = self.forward_template.render(
                     input=input, prompt=self.weight
                 )
-                outputs_.append(tpl_input + self.RESIDUAL_MESSAGE + output)
+                outputs_.append(
+                    self.residual_template.render(
+                        input=tpl_input, output=output
+                    )
+                )
         else:
             for output, input in zip(outputs, inputs):
-                outputs_.append(input + self.RESIDUAL_MESSAGE + output)
+                outputs_.append(
+                    self.residual_template.render(
+                        input=input, output=output
+                    )
+                )
         return np.array(outputs_)
