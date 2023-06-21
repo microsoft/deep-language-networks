@@ -32,6 +32,11 @@ you need to set the OPENAI_API_TYPE, OPENAI_API_BASE and OPENAI_API_VERSION.
 The OPENAI_API_TYPE must be set to 'azure' and the others correspond to the properties of your endpoint.
 
 
+## Running experiments
+
+Please see the [Variational Inference README](projects/vi_dln/README.md) for information on how to run experiments.
+
+
 ## Limitations
 
 When it comes to large-scale natural language models, there are particular fairness and responsible AI issues to consider.
