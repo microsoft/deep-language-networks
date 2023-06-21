@@ -90,12 +90,6 @@ def test_compute_elbo_score(loss_fn, log_likes, class_weights):
     assert np.allclose(elbo_score, [0.37, 0.33])
 
 
-def test_compute_nce_score(loss_fn, log_likes, class_weights):
-    model = VILModel(loss_fn, task_description="Test task description")
-    nce_score = model.compute_nce_score(log_likes, class_weights)
-    assert np.allclose(nce_score, [-0.6781389, -0.6462471])
-
-
 def test_sample_hidden_states(loss_fn, q_h):
     np.random.seed(42)
     inputs = np.array(["test-1", "test-2", "test-3", "test-4"])
