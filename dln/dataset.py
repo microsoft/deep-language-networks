@@ -9,31 +9,22 @@ from os.path import join as pjoin
 from dln.score import OutputClasses
 
 
-def load_config(config_file):
-    assert os.path.exists(config_file), "Invalid config file"
-    with open(config_file) as reader:
-        config = yaml.safe_load(reader)
-    return config
-
-
-
-DATASET_BASEPATH = os.path.dirname(os.path.abspath(__file__))
-DATASET_INFO = load_config(pjoin(DATASET_BASEPATH, "dataset_info.yaml"))
-
-
 class Dataset:
     def __init__(self, dataset_path, dataset, seed, use_label_mapping=True, prefix=None, append_options=True):
         self.dataset_name = dataset
         self.data_path = dataset_path
         self.random_seed = seed
-        self.prefix = DATASET_INFO[self.dataset_name].get("prefix", "")
-        self.label_mapping = DATASET_INFO[self.dataset_name].get("label_mapping", {})
+        self.dataset_info = self._load_config(
+            pjoin(os.path.dirname(os.path.abspath(__file__)), "dataset_info.yaml")
+        )
+        self.prefix = self.dataset_info[self.dataset_name].get("prefix", "")
+        self.label_mapping = self.dataset_info[self.dataset_name].get("label_mapping", {})
         self.use_label_mapping = (
             use_label_mapping
             and self.label_mapping is not None
         )
         self.append_options = append_options
-        self.instruction = DATASET_INFO[self.dataset_name]["instruction"]
+        self.instruction = self.dataset_info[self.dataset_name]["instruction"]
         self.rng = np.random.RandomState(self.random_seed)
 
         # load dataset from file
@@ -51,6 +42,13 @@ class Dataset:
             % (self.train_size, self.dev_size, self.test_size)
         )
         self.reset()
+
+    @staticmethod
+    def _load_config(config_file):
+        assert os.path.exists(config_file), "Invalid config file"
+        with open(config_file) as reader:
+            config = yaml.safe_load(reader)
+        return config
 
     @property
     def train_size(self):
@@ -297,7 +295,7 @@ class Dataset:
         return res_sentence, res_label
 
 
-def init_dataset(dataset, seed):
+def init_dataset(dataset_id, seed):
     dataset_location = {
         "subj": "./data/ordered_prompt",
         "mpqa": "./data/ordered_prompt",
@@ -310,13 +308,15 @@ def init_dataset(dataset, seed):
         "logical_deduction_seven_objects": "./data/bbh",
     }
 
-    assert dataset in dataset_location, f"Dataset {dataset} not found"
+    assert dataset_id in dataset_location, f"Dataset {dataset_id} not found"
 
-    dataset = Dataset(dataset_location[dataset], dataset, seed)
-    prefix = dataset.prefix
-    task_description = dataset.instruction
-    protos = list(dataset.label_mapping.values())
+    dataset = Dataset(dataset_location[dataset_id], dataset_id, seed)
+    val_examples = {"hyperbaton": 300}.get(dataset_id, -1)
+    protos = {
+        "hyperbaton": ["a|A", "b|B"],
+        "navigate": ['yes|Yes', 'no|No'],
+        "date_understanding": ['a|A', 'b|B', 'c|C', 'd|D', 'e|E', 'f|F'],
+        "logical_deduction_seven_objects": ['a|A', 'b|B', 'c|C', 'd|D', 'e|E', 'f|F', 'g|G'],
+    }.get(dataset_id, list(dataset.label_mapping.values()))
     output_classes = OutputClasses(protos=protos)
-    val_examples = {"hyperbaton": 300}.get(dataset, -1)
-
-    return prefix, task_description, dataset, output_classes, val_examples
+    return dataset, output_classes, val_examples

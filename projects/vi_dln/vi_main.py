@@ -284,7 +284,7 @@ def main(
 
     init_p1, init_p2 = init_prompts(dataset, init_p1, init_p2)
 
-    prefix, task_description, dataset, output_classes, val_examples = init_dataset(dataset, seed)
+    dataset, output_classes, val_examples = init_dataset(dataset, seed)
 
     forward_instantiate(
         model_type,
@@ -302,7 +302,7 @@ def main(
     loss_fn = ZeroOneLoss(postproc=postprocess_prediction)
     model = VILModel(
         loss_fn,
-        task_description=task_description,
+        task_description=dataset.instruction,
         two_layers=not one_layer,
         num_p_samples=num_p_samples,
         num_h_samples=num_h_samples,
@@ -326,7 +326,7 @@ def main(
         p1_max_tokens=256,
         p2_max_tokens=20,
         posterior_temp=posterior_temp,
-        strip_prefix_for_hidden=prefix if strip_prefix_for_hidden else None,
+        strip_prefix_for_hidden=dataset.prefix if strip_prefix_for_hidden else None,
     )
 
     running_acc = 0.0
