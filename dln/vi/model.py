@@ -468,11 +468,10 @@ class VILModel:
                 # (batch_size, num_h_samples, num_p_samples)
                 log_message(colored("Evaluating log likelihoods for p1...", "yellow"))
 
-                ll, _ = self.encoder_l1.log_p(
+                ll = self.encoder_l1.log_p(
                     inputs=np.array([eval[0] for eval in evals]),
                     targets=np.array([eval[1] for eval in evals]),
                     prompts=np.array([eval[2] for eval in evals]),
-                    context_score=True,
                 )
                 ll = ll.reshape(
                     eval_batch_size,
