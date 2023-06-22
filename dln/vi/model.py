@@ -1,10 +1,10 @@
 from collections import Counter
 
 import numpy as np
-from dln.loss import LLoss
-from dln.score import OutputClasses
 from termcolor import colored
 
+from dln.loss import LLoss
+from dln.score import OutputClasses
 from dln.vi.layers import PriorLayer, ResidualPriorLayer
 from dln.vi.sampler import PosteriorSampler, PromptSampler
 from dln.vi.utils import compute_pairwise_kl, log_message
@@ -162,13 +162,13 @@ class VILModel:
                 evals.append((x[i], y[i], p_tilde_2[k]))
 
         # batch_size, num_p_samples
-        ll, lps = self.encoder_l2.log_p(
+        ll = self.encoder_l2.log_p(
             inputs=np.array([eval[0] for eval in evals]),
             targets=np.array([eval[1] for eval in evals]),
             prompts=np.array([eval[2] for eval in evals]),
             output_classes=self.output_classes,
             agg="sum" if self.forward_use_classes else "max",
-        )
+        ).targets
         # batch_size, num_p_samples
         ll = ll.reshape(batch_size, p_tilde_2.shape[0])
 
@@ -235,12 +235,12 @@ class VILModel:
         if num_h_samples > 1:
             log_message(colored("Tightening posterior approximation...", "yellow"))
             y_repeat = y.repeat(num_h_samples, axis=0)
-            ll, _ = self.encoder_l2.log_p(
+            ll = self.encoder_l2.log_p(
                 inputs=residual_h_tilde_1.flatten(),
                 targets=y_repeat.flatten(),
                 output_classes=self.output_classes,
                 agg="sum" if self.forward_use_classes else "max",
-            )
+            ).targets
             ll = ll.reshape(batch_size, num_h_samples)
 
             if add_prior_term_to_score:
@@ -251,7 +251,9 @@ class VILModel:
                         "yellow",
                     )
                 )
-                pr = self.encoder_l1.log_p(x_repeat, h_tilde_1.flatten()).reshape(
+                pr = self.encoder_l1.log_p(
+                    x_repeat, h_tilde_1.flatten()
+                ).targets.reshape(
                     batch_size, num_h_samples
                 )
                 logits = pr + ll
@@ -389,13 +391,13 @@ class VILModel:
                             )
                 # batch_size, num_h_samples, num_p_samples
                 log_message(colored("Evaluating log likelihoods for p2...", "yellow"))
-                ll, _ = self.encoder_l2.log_p(
+                ll = self.encoder_l2.log_p(
                     inputs=np.array([eval[0] for eval in evals]),
                     targets=np.array([eval[1] for eval in evals]),
                     prompts=np.array([eval[2] for eval in evals]),
                     output_classes=self.output_classes,
                     agg="sum" if self.forward_use_classes else "max",
-                )
+                ).targets
                 ll = ll.reshape(eval_batch_size, num_h_samples, p_tilde_2.shape[0])
 
                 if self.trust_factor > 0.0:
@@ -403,13 +405,13 @@ class VILModel:
                     for i in range(batch_size):
                         for k in range(p_tilde_2.shape[0]):
                             evals.append((r_h1[i], y[i], p_tilde_2[k]))
-                    _, lps = self.encoder_l2.log_p(
+                    lps = self.encoder_l2.log_p(
                         inputs=np.array([eval[0] for eval in evals]),
                         targets=np.array([eval[1] for eval in evals]),
                         prompts=np.array([eval[2] for eval in evals]),
                         output_classes=self.output_classes,
                         agg="sum" if self.forward_use_classes else "max",
-                    )
+                    ).contexts
                     lps = lps.reshape(batch_size, p_tilde_2.shape[0], -1)
                     p2_kl = compute_pairwise_kl(lps)
                 else:
@@ -468,12 +470,11 @@ class VILModel:
                 # (batch_size, num_h_samples, num_p_samples)
                 log_message(colored("Evaluating log likelihoods for p1...", "yellow"))
 
-                ll, _ = self.encoder_l1.log_p(
+                ll = self.encoder_l1.log_p(
                     inputs=np.array([eval[0] for eval in evals]),
                     targets=np.array([eval[1] for eval in evals]),
                     prompts=np.array([eval[2] for eval in evals]),
-                    context_score=True,
-                )
+                ).targets
                 ll = ll.reshape(
                     eval_batch_size,
                     num_h_samples + 1,
