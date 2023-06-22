@@ -6,6 +6,8 @@ from collections import defaultdict
 
 from os.path import join as pjoin
 
+from dln.score import OutputClasses
+
 
 def load_config(config_file):
     assert os.path.exists(config_file), "Invalid config file"
@@ -24,8 +26,8 @@ class Dataset:
         self.dataset_name = dataset
         self.data_path = dataset_path
         self.random_seed = seed
-        self.prefix = prefix
-        self.label_mapping = DATASET_INFO[self.dataset_name].get("label_mapping")
+        self.prefix = DATASET_INFO[self.dataset_name].get("prefix", "")
+        self.label_mapping = DATASET_INFO[self.dataset_name].get("label_mapping", {})
         self.use_label_mapping = (
             use_label_mapping
             and self.label_mapping is not None
@@ -293,3 +295,28 @@ class Dataset:
                 res_sentence.append(self.dataset[split]["sentence"][idx])
                 res_sentence.append(self.dataset[split]["label"][idx])
         return res_sentence, res_label
+
+
+def init_dataset(dataset, seed):
+    dataset_location = {
+        "subj": "./data/ordered_prompt",
+        "mpqa": "./data/ordered_prompt",
+        "trec": "./data/ordered_prompt",
+        "disaster": "./data/leopard",
+        "airline": "./data/leopard",
+        "hyperbaton": "./data/bbh",
+        "navigate": "./data/bbh",
+        "date_understanding": "./data/bbh",
+        "logical_deduction_seven_objects": "./data/bbh",
+    }
+
+    assert dataset in dataset_location, f"Dataset {dataset} not found"
+
+    dataset = Dataset(dataset_location[dataset], dataset, seed)
+    prefix = dataset.prefix
+    task_description = dataset.instruction
+    protos = list(dataset.label_mapping.values())
+    output_classes = OutputClasses(protos=protos)
+    val_examples = {"hyperbaton": 300}.get(dataset, -1)
+
+    return prefix, task_description, dataset, output_classes, val_examples

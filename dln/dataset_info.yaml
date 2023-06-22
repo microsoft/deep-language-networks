@@ -10,7 +10,7 @@ mpqa:
   # tremendous opportunities
   # 1
   label_mapping: {'0': 'negative', '1': 'positive'}
-  instruction: "Read the following review, then choose whether it is negative or positive.\n"
+  instruction: "Read the following review, then choose whether it is negative or positive."
   eval_example_template: "{{ input }}\nThe answer is {{ label }}\n"
   eval_template: "{{ input }}\nThe answer is "
   output_type: "single word"
@@ -23,7 +23,7 @@ trec:
   # Who do Herb and Tootsie live next door to ?
   # 3
   label_mapping: {'0': 'description', '1': 'entity', '2': 'expression', '3': 'human','4': 'location', '5': 'number'}
-  instruction: "Read the following question, then choose whether it is about a description, entity, expression, human, location or number.\n"
+  instruction: "Read the following question, then choose whether it is about a description, entity, expression, human, location or number."
   eval_example_template: "{{ input }}\nThe answer is {{ label }}\n"
   eval_template: "{{ input }}\nThe answer is "
   output_type: "single word"
@@ -35,8 +35,9 @@ subj:
   # 0
   # a team of scientists is recruited in a crash project to send a ship and bomb into the center of the earth to prevent the catastrophe .
   # 1
+  prefix: ""
   label_mapping: {'0': 'subjective', '1': 'objective'}
-  instruction: "Read the following sentence, then choose whether it is subjective or objective.\n"
+  instruction: "Read the following sentence, then choose whether it is subjective or objective."
   eval_template: "{{ input }}\nThe above sentence is:"
   eval_example_template: "{{ input }}\nThe answer is {{ label }}\n"
   eval_template: "{{ input }}\nThe answer is "
@@ -51,7 +52,8 @@ date_understanding:
   # raw data example:
   # On May 9th, 2017 Jane bought 40 eggs. She ate one per day. Today she ran out of eggs. What is the date 24 hours later in MM/DD/YYYY?\nOptions:\n(A) 06/19/2017\n(B) 07/17/2017\n(C) 06/20/2017\n(D) 06/18/2017\n(E) 06/15/2017\n(F) 07/10/2017
   # (A)
-  instruction: "Infer the date from context.\n"
+  prefix: "Infer the date from context."
+  instruction: "Infer the date from context."
   eval_example_template: "{{ input }}\nThe answer is {{ label }}\n"
   eval_template: "{{ input }}\nThe answer is "
   output_type: "single word"
@@ -61,7 +63,8 @@ hyperbaton:
   # raw data example:
   # Which sentence has the correct adjective order:\nOptions:\n(A) pyramidal American glass exercise surfboard\n(B) glass exercise American pyramidal surfboard
   # (A)
-  instruction: "Order adjectives correctly in English sentences.\n"
+  prefix: "Which sentence has the correct adjective order:\n"
+  instruction: "Which sentence has the correct adjective order:"
   eval_example_template: "{{ input }}\nThe answer is {{ label }}\n"
   eval_template: "{{ input }}\nThe answer is "
   output_type: "single word"
@@ -71,7 +74,8 @@ logical_deduction_seven_objects:
   # raw data example:
   # The following paragraphs each describe a set of seven objects arranged in a fixed order. The statements are logically consistent within each paragraph. On a branch, there are seven birds: a hummingbird, a cardinal, a blue jay, an owl, a raven, a quail, and a robin. The hummingbird is to the left of the quail. The robin is to the left of the cardinal. The blue jay is the leftmost. The cardinal is the fourth from the left. The raven is the third from the right. The owl is the third from the left.\nOptions:\n(A) The hummingbird is the second from the right\n(B) The cardinal is the second from the right\n(C) The blue jay is the second from the right\n(D) The owl is the second from the right\n(E) The raven is the second from the right\n(F) The quail is the second from the right\n(G) The robin is the second from the right
   # (A)
-  instruction: "A seven-object logical deduction task which requires deducing the order of a sequence of objects.\n"
+  prefix: "The following paragraphs each describe a set of seven objects arranged in a fixed order. The statements are logically consistent within each paragraph."
+  instruction: "The following paragraphs each describe a set of seven objects arranged in a fixed order. The statements are logically consistent within each paragraph."
   eval_example_template: "{{ input }}\nThe answer is {{ label }}\n"
   eval_template: "{{ input }}\nThe answer is "
   output_type: "single word"
@@ -81,7 +85,8 @@ navigate:
   # raw data example:
   # If you follow these instructions, do you return to the starting point? Always face forward. Take 1 step right. Take 3 steps left. Take 2 steps right.\nOptions:\n- Yes\n- No
   # Yes
-  instruction: "Given a series of navigation instructions, determine whether one would end up back at the starting point.\n"
+  prefix: "If you follow these instructions, do you return to the starting point?"
+  instruction: "If you follow these instructions, do you return to the starting point?"
   eval_example_template: "{{ input }}\nThe answer is {{ label }}\n"
   eval_template: "{{ input }}\nThe answer is "
   output_type: "single word"
@@ -98,7 +103,7 @@ disaster:
   # #golf McIlroy fuels PGA speculation after video: Injured world number one Rory McIlroy fueled speculatio... http://t.co/dCyYJVmXHR #news
   # Not Relevant
   label_mapping: {'Not Relevant': 'no', 'Relevant': 'yes'}
-  instruction: "Read the following sentence, then choose whether it is relevant to a disaster.\n"
+  instruction: "Read the following sentence, then choose whether it is relevant to a disaster."
   eval_example_template: "{{ input }}\nThe answer is {{ label }}\n"
   eval_template: "{{ input }}\nThe answer is "
   output_type: "single word"
@@ -113,7 +118,7 @@ airline:
   # @USAirways I'm flying with you this Summer. Will I be able to leave Miami Airport during my 12 hour stopover there?
   # neutral
   label_mapping: {'positive': 'positive', 'negative': 'negative', 'neutral': 'neutral'}
-  instruction: "Read the following sentence, then choose whether it is positive, negative, or neutral.\n"
+  instruction: "Read the following sentence, then choose whether it is positive, negative, or neutral."
   eval_example_template: "{{ input }}\nThe answer is {{ label }}\n"
   eval_template: "{{ input }}\nThe answer is "
   output_type: "single word"

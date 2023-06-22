@@ -8,10 +8,9 @@ import os
 import click
 import numpy as np
 import tqdm
-from dln.dataset import Dataset
+from dln.dataset import Dataset, init_dataset
 from dln.loss import ZeroOneLoss
 from dln.operator import backward_instantiate, forward_instantiate
-from dln.score import OutputClasses
 from dln.postprocessing import postprocess_prediction
 from termcolor import colored
 from torch.utils.tensorboard import SummaryWriter
@@ -33,93 +32,6 @@ def init_prompts(dataset, init_p1, init_p2):
             best_weights = json.load(f)
         init_p2 = best_weights[dataset]["best_weights"]
     return init_p1, init_p2
-
-
-def init_dataset(dataset, seed):
-    val_examples = -1
-    if dataset == "subj":
-        prefix = ""
-        task_description = (
-            "Read the following sentence, then choose whether it is subjective or objective."
-        )
-        dataset = Dataset("../../data/ordered_prompt", "subj", seed)
-        output_classes = OutputClasses(protos=["subjective", "objective"])
-    elif dataset == "trec":
-        prefix = ""
-        task_description = "Read the following question, then choose whether it is about a description, entity, expression, human, location or number."
-        dataset = Dataset("../../data/ordered_prompt", "trec", seed)
-        output_classes = OutputClasses(
-            protos=[
-                "description",
-                "entity",
-                "expression",
-                "human",
-                "location",
-                "number",
-            ]
-        )
-    elif dataset == "mpqa":
-        prefix = ""
-        task_description = "Read the following review, then choose whether it is negative or positive."
-        dataset = Dataset("../../data/ordered_prompt", "mpqa", seed)
-        output_classes = OutputClasses(
-            protos=["negative", "positive"]
-        )
-    elif dataset == "disaster":
-        prefix = ""
-        task_description = "Read the following sentence, then choose whether it is relevant to a disaster."
-        dataset = Dataset("../../data/leopard", "disaster", seed)
-        output_classes = OutputClasses(
-            protos=["no", "yes"]
-        )
-    elif dataset == "airline":
-        prefix = ""
-        task_description = "Read the following sentence, then choose whether it is positive, negative, or neutral."
-        dataset = Dataset("../../data/leopard", "airline", seed, append_options=True)
-        output_classes = OutputClasses(
-            protos=["positive", "negative", "neutral"]
-        )
-    elif dataset == "hyperbaton":
-        prefix = "Which sentence has the correct adjective order:\n"
-        task_description = prefix.strip()
-        dataset = Dataset(
-            "../../data/bbh",
-            "hyperbaton",
-            seed,
-        )
-        val_examples = 300
-        output_classes = OutputClasses(protos=["a|A", "b|B"])
-    elif dataset == "navigate":
-        # do not strip the instruction
-        prefix = (
-            "If you follow these instructions, do you return to the starting point?"
-        )
-        task_description = prefix.strip()
-        dataset = Dataset(
-            "../../data/bbh", "navigate", seed,
-        )
-        output_classes = OutputClasses(protos=["yes|Yes", "no|No"])
-    elif dataset == "date_understanding":
-        # do not strip the instruction
-        prefix = "Infer the date from context."
-        task_description = prefix.strip()
-        dataset = Dataset("../../data/bbh", "date_understanding", seed)
-        output_classes = OutputClasses(
-            protos=["a|A", "b|B", "c|C", "d|D", "e|E", "f|F"]
-        )
-    elif dataset == "logical_deduction_seven_objects":
-        # do not strip the instruction
-        prefix = "The following paragraphs each describe a set of seven objects arranged in a fixed order. The statements are logically consistent within each paragraph."
-        task_description = prefix.strip()
-        dataset = Dataset(
-            "../../data/bbh",
-            "logical_deduction_seven_objects",
-            seed,
-        )
-        output_classes = OutputClasses(
-            protos=["a|A", "b|B", "c|C", "d|D", "e|E", "f|F", "g|G"]
-        )
-    return prefix, task_description, dataset, output_classes, val_examples
 
 
 def validate(dataset, model, loss_fn, iteration, val_examples, val_scores, writer):
