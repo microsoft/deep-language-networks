@@ -1,4 +1,10 @@
 # Deep Language Networks
+<div align="center">
+
+[[ArXiv]](https://arxiv.org/abs/2306.12509)
+[[Tweet]](https://twitter.com/le_roux_nicolas/status/1672218768800464899?s=20)
+
+</div>
 
 In this repository, you will find the code for
 "Deep Language Networks: Joint Prompt Training of Stacked LLMs using Variational Inference".
@@ -58,6 +64,19 @@ even if realistic, is neither representative of performance in uncontrolled envi
 nor enough to justify the deployment of these models in high stakes situations.
 Please refer to our paper for the specific evaluations we conducted.
 
+## Citing Deep Language Networks
+If you find DLNs useful, please consider citing this work!
+
+```text
+@article{sordoni2023deep,
+      title={Deep Language Networks: Joint Prompt Training of Stacked LLMs using Variational Inference}, 
+      author={Alessandro Sordoni and Xingdi Yuan and Marc-Alexandre Côté and Matheus Pereira and Adam Trischler and Ziang Xiao and Arian Hosseini and Friederike Niedtner and Nicolas Le Roux},
+      year={2023},
+      eprint={2306.12509},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL}
+}
+```
 
 ## Contributing
 
