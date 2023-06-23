@@ -2,7 +2,6 @@
 <div align="center">
 
 [[ArXiv]](https://arxiv.org/abs/2306.12509)
-[[Tweet]](https://twitter.com/le_roux_nicolas/status/1672218768800464899?s=20)
 
 </div>
 
