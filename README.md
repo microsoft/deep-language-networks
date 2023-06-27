@@ -2,6 +2,7 @@
 <div align="center">
 
 [[ArXiv]](https://arxiv.org/abs/2306.12509)
+[[Blog]](https://medium.com/@friederike.niedtner/deep-language-networks-stacking-llms-in-trainable-layers-e7f719bcabde)
 
 </div>
 
