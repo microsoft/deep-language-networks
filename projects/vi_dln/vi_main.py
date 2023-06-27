@@ -1,33 +1,32 @@
-import json
-from collections import Counter
-
 import datetime
+import json
 import logging
 import os
+from collections import Counter
 
 import click
 import numpy as np
 import tqdm
-from dln.dataset import Dataset, init_dataset
-from dln.loss import ZeroOneLoss
-from dln.operator import backward_instantiate, forward_instantiate
-from dln.postprocessing import postprocess_prediction
 from termcolor import colored
 from torch.utils.tensorboard import SummaryWriter
 
+from dln.dataset import init_dataset
+from dln.loss import ZeroOneLoss
+from dln.operator import backward_instantiate, forward_instantiate
+from dln.postprocessing import postprocess_prediction
 from dln.vi.model import VILModel, log_message
 
 
 def init_prompts(dataset, init_p1, init_p2):
-    """ Initialize the prompts for the two layers of the model.
+    """Initialize the prompts for the two layers of the model.
     If init_p1 or init_p2 is a json file, load the best weights from the json file.
     """
 
-    if init_p1 and init_p1.endswith('.json'):
+    if init_p1 and init_p1.endswith(".json"):
         with open(init_p1) as f:
             best_weights = json.load(f)
         init_p1 = best_weights[dataset]["best_weights"]
-    elif init_p2 and init_p2.endswith('.json'):
+    elif init_p2 and init_p2.endswith(".json"):
         with open(init_p2) as f:
             best_weights = json.load(f)
         init_p2 = best_weights[dataset]["best_weights"]
@@ -144,7 +143,7 @@ def test(dataset, model, loss_fn, iteration, writer):
 )
 @click.option(
     "--fwd_temp",
-    default=0.,
+    default=0.0,
     help="Forward temperature",
 )
 @click.option(
@@ -168,10 +167,14 @@ def test(dataset, model, loss_fn, iteration, writer):
     help="Uses classes in the forward pass, constrains the output space.",
 )
 @click.option(
-    "--init_p1", type=str, default="Decompose the problem to make it simpler:",
+    "--init_p1",
+    type=str,
+    default="Decompose the problem to make it simpler:",
 )
 @click.option(
-    "--init_p2", type=str, default=None,
+    "--init_p2",
+    type=str,
+    default=None,
 )
 @click.option(
     "--held_out_prompt_ranking",
@@ -194,7 +197,7 @@ def test(dataset, model, loss_fn, iteration, writer):
 @click.option(
     "--logp_penalty",
     type=float,
-    default=0.,
+    default=0.0,
     help="Logp penalty for hiddens that haven't worked. Encourages exploration.",
 )
 @click.option(
@@ -288,7 +291,7 @@ def main(
 
     forward_instantiate(
         model_type,
-        temperature=0.,
+        temperature=0.0,
         max_tokens=fwd_max_tokens,
         stop=None,
     )
@@ -341,8 +344,12 @@ def main(
     for iteration in range(iters + 1):
         log_message("STARTING EPOCH {} - {}".format(iteration, out_dir))
 
-        if iteration % val_freq == 0 and (iteration > 0 or do_first_eval or do_zero_shot):
-            dev_acc = validate(dataset, model, loss_fn, iteration, val_examples, val_scores, writer)
+        if iteration % val_freq == 0 and (
+            iteration > 0 or do_first_eval or do_zero_shot
+        ):
+            dev_acc = validate(
+                dataset, model, loss_fn, iteration, val_examples, val_scores, writer
+            )
             if dev_acc > best_dev:
                 best_dev = dev_acc
                 best_ps = (model.encoder_l1.weight, model.encoder_l2.weight)
@@ -383,8 +390,10 @@ def main(
 
         log_message(colored("Training P2? {}".format(model.train_p2), "red"))
         log_message(colored("LOGPenalty? {}".format(model.logp_penalty), "red"))
-        elbo, p1, p2, loss, elbo1, elbo2 = model.forward(np.array(x), np.array(y), temperature=fwd_temp)
-    
+        elbo, p1, p2, loss, elbo1, elbo2 = model.forward(
+            np.array(x), np.array(y), temperature=fwd_temp
+        )
+
         # Update prompts
         model.encoder_l1.weight = p1
         model.encoder_l2.weight = p2
