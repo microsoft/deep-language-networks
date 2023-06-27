@@ -5,7 +5,7 @@ import pytest
 
 from dln.loss import ZeroOneLoss
 from dln.postprocessing import postprocess_prediction
-from dln.score import OutputClasses
+from dln.score import LogProbs, OutputClasses
 from dln.vi.layers import PriorLayer, ResidualPriorLayer
 from dln.vi.model import VILModel
 from dln.vi.sampler import PosteriorSampler, PromptSampler
@@ -52,17 +52,13 @@ def log_p_fn():
         prompts=None,
         output_classes=None,
         agg="max",
-        context_score=False,
     ):
         np.random.seed(42)
-        logprobs = np.random.rand(len(inputs))
-        dist = None
-        if output_classes:
-            dist = np.random.rand(len(inputs), len(output_classes))
-        if context_score:
-            dist = np.random.rand(len(inputs))
-        if dist is not None:
-            return logprobs, dist
+        logprobs = LogProbs(
+            np.random.rand(len(inputs)),
+            np.random.rand(len(inputs), len(output_classes))
+            if output_classes else None
+        )
         return logprobs
 
     return log_p
@@ -100,11 +96,11 @@ def test_sample_hidden_states(loss_fn, q_h):
         loss_fn, task_description="Test task description", num_h_samples=num_h_samples
     )
     total_h_samples = len(inputs) * num_h_samples
-    mock_l2_log_p = (
+    mock_l2_log_p = LogProbs(
         np.random.rand(total_h_samples),
         np.random.rand(total_h_samples, num_h_samples),
     )
-    mock_l1_log_p = np.random.rand(total_h_samples)
+    mock_l1_log_p = LogProbs(np.random.rand(total_h_samples), None)
 
     with patch.object(
         PosteriorSampler, "sample_q_h", return_value=q_h

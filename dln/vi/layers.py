@@ -1,10 +1,10 @@
 from typing import List
 
 import numpy as np
-from dln.operator import forward_evaluate
-from dln.score import LogProbsScore, OutputClasses, ScoreRequest
-from dln.template import load_template
 
+from dln.operator import forward_evaluate
+from dln.score import LogProbs, LogProbsScore, OutputClasses, ScoreRequest
+from dln.template import load_template
 from dln.vi.utils import log_message
 
 
@@ -51,9 +51,9 @@ class PriorLayer:
             # compute constrained forward pass on the output classes
             targets = [output_classes.prototype(0) for _ in inputs]
             # compute log p of each output class, second return value is the p(class)
-            _, lp = self.log_p(
+            lp = self.log_p(
                 inputs, targets, output_classes=output_classes, agg="sum"
-            )
+            ).contexts
             # best output class index
             best_output_class_index = np.argmax(lp, axis=1)
             # get the best output class token
@@ -75,7 +75,7 @@ class PriorLayer:
         prompts=None,
         output_classes=None,
         agg="max",
-    ):
+    ) -> LogProbs:
         requests = []
 
         if prompts is None:
@@ -85,12 +85,8 @@ class PriorLayer:
             requests.append(self.log_p_request(input, target, prompt=prompt))
 
         # build up a set of score requests
-        outputs = LogProbsScore().score_requests(requests, output_classes, agg=agg)
-
-        if output_classes:
-            # return both log_p of target class and full distribution over classes
-            return outputs
-        return outputs[0]
+        logprobs = LogProbsScore().score_requests(requests, output_classes, agg=agg)
+        return logprobs
 
 
 class ResidualPriorLayer(PriorLayer):

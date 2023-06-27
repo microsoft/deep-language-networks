@@ -49,13 +49,13 @@ def test_log_p_with_output_classes(top_logprobs):
     outputs = ["B", "A"]
     output_classes = OutputClasses(protos=["a|A", "b|B"])
     prior_layer = PriorLayer(forward_template="suffix_forward", init="")
-    with patch("dln.score.lops.forward_evaluate", top_logprobs):
-        logp, distribs = prior_layer.log_p(
+    with patch("dln.score.forward_evaluate", top_logprobs):
+        logp = prior_layer.log_p(
             inputs, outputs, output_classes=output_classes
         )
-    np.testing.assert_almost_equal(logp, [-8.67468626, -0.44289729])
+    np.testing.assert_almost_equal(logp.targets, [-8.67468626, -0.44289729])
     np.testing.assert_almost_equal(
-        distribs,
+        logp.contexts,
         [
             [9.99829143e-01, 1.70856546e-04],
             [6.42173164e-01, 3.57826836e-01],
@@ -68,9 +68,9 @@ def test_log_p_without_output_classes(raw_logprobs, score_requests):
     inputs = [s.context for s in score_requests]
     outputs = ["B", "A"]
     prior_layer = PriorLayer(forward_template="suffix_forward", init="")
-    with patch("dln.score.lops.forward_evaluate", raw_logprobs):
+    with patch("dln.score.forward_evaluate", raw_logprobs):
         logp = prior_layer.log_p(inputs, outputs)
-    np.testing.assert_almost_equal(logp, [-1.48348267, -1.47351816])
+    np.testing.assert_almost_equal(logp.targets, [-1.48348267, -1.47351816])
 
 
 def test_forward_with_output_class(top_logprobs):
@@ -78,7 +78,7 @@ def test_forward_with_output_class(top_logprobs):
     inputs = ["1 + 1", "1 * 1"]
     output_classes = OutputClasses(protos=["A|a", "B|b"])
     prior_layer = PriorLayer(forward_template="suffix_forward", init="")
-    with patch("dln.score.lops.forward_evaluate", top_logprobs):
+    with patch("dln.score.forward_evaluate", top_logprobs):
         result = prior_layer.forward(inputs, output_classes)
     np.testing.assert_equal(result, ["A", "A"])
 

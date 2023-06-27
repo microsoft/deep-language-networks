@@ -1,9 +1,10 @@
+import logging
 from dataclasses import dataclass
 from typing import Any, List
-import logging
+
 import numpy as np
 
-import dln.operator as lops
+from dln.operator import forward_evaluate
 
 
 @dataclass
@@ -30,15 +31,23 @@ class OutputClasses:
         return self.protos[i].split("|")[0]
 
 
+@dataclass
+class LogProbs:
+    targets: np.ndarray
+    contexts: np.ndarray
+
+
 class LogProbsScore:
     def __init__(self, encoder=None):
         if encoder is None:
             import tiktoken
 
-            encoder = tiktoken.encoding_for_model(lops.forward_interpreter.engine)
+            from dln.operator import forward_interpreter
+
+            encoder = tiktoken.encoding_for_model(forward_interpreter.engine)
         self.encoder = encoder
 
-    def score_requests(self, requests, output_classes=None, agg="max"):
+    def score_requests(self, requests, output_classes=None, agg="max") -> LogProbs:
         # create the batched inputs for the model
         if output_classes is not None:
             return self._forward_logprobs_score_api_with_classes(
@@ -54,7 +63,7 @@ class LogProbsScore:
 
     def _forward_logprobs_score_api_with_classes(
         self, contexts, targets, output_classes, agg="max"
-    ):
+    ) -> LogProbs:
         eval_kwargs = {
             "temperature": 0.,
             "max_tokens": 1,
@@ -70,7 +79,7 @@ class LogProbsScore:
 
         print("# Scoring requests = {}".format(len(contexts)))
         print("# Scoring unique requests = {}".format(len(unique_contexts)))
-        eval_results = lops.forward_evaluate(
+        eval_results = forward_evaluate(
             to_eval,
             async_generation=True,
             **eval_kwargs,
@@ -119,9 +128,9 @@ class LogProbsScore:
             output_classes_scores = output_classes_scores / output_classes_scores.sum()
             output_logprobs.append(np.log(output_classes_scores[output_class_index[0]]))
             output_distribs.append(output_classes_scores)
-        return np.asarray(output_logprobs), np.asarray(output_distribs)
+        return LogProbs(np.asarray(output_logprobs), np.asarray(output_distribs))
 
-    def _forward_logprobs_score_api(self, contexts, targets):
+    def _forward_logprobs_score_api(self, contexts, targets) -> LogProbs:
         logging.info("# Scoring requests = {}".format(len(contexts)))
 
         eval_kwargs = {
@@ -141,7 +150,7 @@ class LogProbsScore:
         # only perform unique evals
         unique_keys = list(set(eval_batch))
         unique_keys_to_positions = {key: i for i, key in enumerate(unique_keys)}
-        unique_eval_results = lops.forward_evaluate(
+        unique_eval_results = forward_evaluate(
             unique_keys,
             async_generation=True,
             **eval_kwargs,
@@ -161,4 +170,4 @@ class LogProbsScore:
             context_log_probs = token_log_probs[1:num_tokens_prompt]
             output_logprobs.append(sum(target_log_probs) / (len(target_log_probs) + 1e-5))
             context_logprobs.append(sum(context_log_probs) / (len(context_log_probs) + 1e-5))
-        return np.asarray(output_logprobs), np.asarray(context_logprobs)
+        return LogProbs(np.asarray(output_logprobs), np.asarray(context_logprobs))
