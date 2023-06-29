@@ -29,7 +29,7 @@ class Dataset:
         self.label_mapping = self.dataset_info[self.dataset_name].get(
             "label_mapping", {}
         )
-        self.use_label_mapping = use_label_mapping and self.label_mapping is not None
+        self.use_label_mapping = use_label_mapping and self.label_mapping
         self.append_options = append_options
         self.instruction = self.dataset_info[self.dataset_name]["instruction"]
         self.rng = np.random.RandomState(self.random_seed)
@@ -314,17 +314,20 @@ class Dataset:
         return res_sentence, res_label
 
 
-def init_dataset(dataset_id, seed):
+def init_dataset(dataset_id, seed, data_dir):
+    ordered_prompt = os.path.join(data_dir, "ordered_prompt")
+    leopard = os.path.join(data_dir, "leopard")
+    bbh = os.path.join(data_dir, "bbh")
     dataset_location = {
-        "subj": "./data/ordered_prompt",
-        "mpqa": "./data/ordered_prompt",
-        "trec": "./data/ordered_prompt",
-        "disaster": "./data/leopard",
-        "airline": "./data/leopard",
-        "hyperbaton": "./data/bbh",
-        "navigate": "./data/bbh",
-        "date_understanding": "./data/bbh",
-        "logical_deduction_seven_objects": "./data/bbh",
+        "subj": ordered_prompt,
+        "mpqa": ordered_prompt,
+        "trec": ordered_prompt,
+        "disaster": leopard,
+        "airline": leopard,
+        "hyperbaton": bbh,
+        "navigate": bbh,
+        "date_understanding": bbh,
+        "logical_deduction_seven_objects": bbh,
     }
 
     assert dataset_id in dataset_location, f"Dataset {dataset_id} not found"

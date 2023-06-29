@@ -102,6 +102,7 @@ def test(dataset, model, loss_fn, iteration, writer):
 @click.command()
 @click.option("--seed", default=42, help="Random seed.")
 @click.option("--out_dir", default="log/")
+@click.option("--data_dir", default="../../data")
 @click.option("--val_freq", default=2)
 @click.option("--do_first_eval", is_flag=True)
 @click.option("--do_zero_shot", is_flag=True)
@@ -232,6 +233,7 @@ def test(dataset, model, loss_fn, iteration, writer):
 def main(
     seed,
     out_dir,
+    data_dir,
     val_freq,
     do_first_eval,
     do_zero_shot,
@@ -287,7 +289,7 @@ def main(
 
     init_p1, init_p2 = init_prompts(dataset, init_p1, init_p2)
 
-    dataset, output_classes, val_examples = init_dataset(dataset, seed)
+    dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir)
 
     forward_instantiate(
         model_type,
