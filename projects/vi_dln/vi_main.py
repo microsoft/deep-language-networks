@@ -1,125 +1,36 @@
-import json
-from collections import Counter
-
 import datetime
+import json
 import logging
 import os
+from collections import Counter
 
 import click
 import numpy as np
 import tqdm
-from dln.dataset import Dataset
-from dln.loss import ZeroOneLoss
-from dln.operator import backward_instantiate, forward_instantiate
-from dln.score import OutputClasses
-from dln.postprocessing import postprocess_prediction
 from termcolor import colored
 from torch.utils.tensorboard import SummaryWriter
 
+from dln.dataset import init_dataset
+from dln.loss import ZeroOneLoss
+from dln.operator import backward_instantiate, forward_instantiate
+from dln.postprocessing import postprocess_prediction
 from dln.vi.model import VILModel, log_message
 
 
 def init_prompts(dataset, init_p1, init_p2):
-    """ Initialize the prompts for the two layers of the model.
+    """Initialize the prompts for the two layers of the model.
     If init_p1 or init_p2 is a json file, load the best weights from the json file.
     """
 
-    if init_p1 and init_p1.endswith('.json'):
+    if init_p1 and init_p1.endswith(".json"):
         with open(init_p1) as f:
             best_weights = json.load(f)
         init_p1 = best_weights[dataset]["best_weights"]
-    elif init_p2 and init_p2.endswith('.json'):
+    elif init_p2 and init_p2.endswith(".json"):
         with open(init_p2) as f:
             best_weights = json.load(f)
         init_p2 = best_weights[dataset]["best_weights"]
     return init_p1, init_p2
-
-
-def init_dataset(dataset, seed):
-    val_examples = -1
-    if dataset == "subj":
-        prefix = ""
-        task_description = (
-            "Read the following sentence, then choose whether it is subjective or objective."
-        )
-        dataset = Dataset("../../data/ordered_prompt", "subj", seed)
-        output_classes = OutputClasses(protos=["subjective", "objective"])
-    elif dataset == "trec":
-        prefix = ""
-        task_description = "Read the following question, then choose whether it is about a description, entity, expression, human, location or number."
-        dataset = Dataset("../../data/ordered_prompt", "trec", seed)
-        output_classes = OutputClasses(
-            protos=[
-                "description",
-                "entity",
-                "expression",
-                "human",
-                "location",
-                "number",
-            ]
-        )
-    elif dataset == "mpqa":
-        prefix = ""
-        task_description = "Read the following review, then choose whether it is negative or positive."
-        dataset = Dataset("../../data/ordered_prompt", "mpqa", seed)
-        output_classes = OutputClasses(
-            protos=["negative", "positive"]
-        )
-    elif dataset == "disaster":
-        prefix = ""
-        task_description = "Read the following sentence, then choose whether it is relevant to a disaster."
-        dataset = Dataset("../../data/leopard", "disaster", seed)
-        output_classes = OutputClasses(
-            protos=["no", "yes"]
-        )
-    elif dataset == "airline":
-        prefix = ""
-        task_description = "Read the following sentence, then choose whether it is positive, negative, or neutral."
-        dataset = Dataset("../../data/leopard", "airline", seed, append_options=True)
-        output_classes = OutputClasses(
-            protos=["positive", "negative", "neutral"]
-        )
-    elif dataset == "hyperbaton":
-        prefix = "Which sentence has the correct adjective order:\n"
-        task_description = prefix.strip()
-        dataset = Dataset(
-            "../../data/bbh",
-            "hyperbaton",
-            seed,
-        )
-        val_examples = 300
-        output_classes = OutputClasses(protos=["a|A", "b|B"])
-    elif dataset == "navigate":
-        # do not strip the instruction
-        prefix = (
-            "If you follow these instructions, do you return to the starting point?"
-        )
-        task_description = prefix.strip()
-        dataset = Dataset(
-            "../../data/bbh", "navigate", seed,
-        )
-        output_classes = OutputClasses(protos=["yes|Yes", "no|No"])
-    elif dataset == "date_understanding":
-        # do not strip the instruction
-        prefix = "Infer the date from context."
-        task_description = prefix.strip()
-        dataset = Dataset("../../data/bbh", "date_understanding", seed)
-        output_classes = OutputClasses(
-            protos=["a|A", "b|B", "c|C", "d|D", "e|E", "f|F"]
-        )
-    elif dataset == "logical_deduction_seven_objects":
-        # do not strip the instruction
-        prefix = "The following paragraphs each describe a set of seven objects arranged in a fixed order. The statements are logically consistent within each paragraph."
-        task_description = prefix.strip()
-        dataset = Dataset(
-            "../../data/bbh",
-            "logical_deduction_seven_objects",
-            seed,
-        )
-        output_classes = OutputClasses(
-            protos=["a|A", "b|B", "c|C", "d|D", "e|E", "f|F", "g|G"]
-        )
-    return prefix, task_description, dataset, output_classes, val_examples
 
 
 def validate(dataset, model, loss_fn, iteration, val_examples, val_scores, writer):
@@ -232,7 +143,7 @@ def test(dataset, model, loss_fn, iteration, writer):
 )
 @click.option(
     "--fwd_temp",
-    default=0.,
+    default=0.0,
     help="Forward temperature",
 )
 @click.option(
@@ -256,10 +167,14 @@ def test(dataset, model, loss_fn, iteration, writer):
     help="Uses classes in the forward pass, constrains the output space.",
 )
 @click.option(
-    "--init_p1", type=str, default="Decompose the problem to make it simpler:",
+    "--init_p1",
+    type=str,
+    default="Decompose the problem to make it simpler:",
 )
 @click.option(
-    "--init_p2", type=str, default=None,
+    "--init_p2",
+    type=str,
+    default=None,
 )
 @click.option(
     "--held_out_prompt_ranking",
@@ -282,7 +197,7 @@ def test(dataset, model, loss_fn, iteration, writer):
 @click.option(
     "--logp_penalty",
     type=float,
-    default=0.,
+    default=0.0,
     help="Logp penalty for hiddens that haven't worked. Encourages exploration.",
 )
 @click.option(
@@ -372,11 +287,11 @@ def main(
 
     init_p1, init_p2 = init_prompts(dataset, init_p1, init_p2)
 
-    prefix, task_description, dataset, output_classes, val_examples = init_dataset(dataset, seed)
+    dataset, output_classes, val_examples = init_dataset(dataset, seed)
 
     forward_instantiate(
         model_type,
-        temperature=0.,
+        temperature=0.0,
         max_tokens=fwd_max_tokens,
         stop=None,
     )
@@ -390,7 +305,7 @@ def main(
     loss_fn = ZeroOneLoss(postproc=postprocess_prediction)
     model = VILModel(
         loss_fn,
-        task_description=task_description,
+        task_description=dataset.instruction,
         two_layers=not one_layer,
         num_p_samples=num_p_samples,
         num_h_samples=num_h_samples,
@@ -414,7 +329,7 @@ def main(
         p1_max_tokens=256,
         p2_max_tokens=20,
         posterior_temp=posterior_temp,
-        strip_prefix_for_hidden=prefix if strip_prefix_for_hidden else None,
+        strip_prefix_for_hidden=dataset.prefix if strip_prefix_for_hidden else None,
     )
 
     running_acc = 0.0
@@ -429,8 +344,12 @@ def main(
     for iteration in range(iters + 1):
         log_message("STARTING EPOCH {} - {}".format(iteration, out_dir))
 
-        if iteration % val_freq == 0 and (iteration > 0 or do_first_eval or do_zero_shot):
-            dev_acc = validate(dataset, model, loss_fn, iteration, val_examples, val_scores, writer)
+        if iteration % val_freq == 0 and (
+            iteration > 0 or do_first_eval or do_zero_shot
+        ):
+            dev_acc = validate(
+                dataset, model, loss_fn, iteration, val_examples, val_scores, writer
+            )
             if dev_acc > best_dev:
                 best_dev = dev_acc
                 best_ps = (model.encoder_l1.weight, model.encoder_l2.weight)
@@ -471,8 +390,10 @@ def main(
 
         log_message(colored("Training P2? {}".format(model.train_p2), "red"))
         log_message(colored("LOGPenalty? {}".format(model.logp_penalty), "red"))
-        elbo, p1, p2, loss, elbo1, elbo2 = model.forward(np.array(x), np.array(y), temperature=fwd_temp)
-    
+        elbo, p1, p2, loss, elbo1, elbo2 = model.forward(
+            np.array(x), np.array(y), temperature=fwd_temp
+        )
+
         # Update prompts
         model.encoder_l1.weight = p1
         model.encoder_l2.weight = p2

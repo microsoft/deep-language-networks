@@ -1,37 +1,37 @@
-import os
 import json
-import yaml
-import numpy as np
+import os
 from collections import defaultdict
-
 from os.path import join as pjoin
 
+import numpy as np
+import yaml
 
-def load_config(config_file):
-    assert os.path.exists(config_file), "Invalid config file"
-    with open(config_file) as reader:
-        config = yaml.safe_load(reader)
-    return config
-
-
-
-DATASET_BASEPATH = os.path.dirname(os.path.abspath(__file__))
-DATASET_INFO = load_config(pjoin(DATASET_BASEPATH, "dataset_info.yaml"))
+from dln.score import OutputClasses
 
 
 class Dataset:
-    def __init__(self, dataset_path, dataset, seed, use_label_mapping=True, prefix=None, append_options=True):
+    def __init__(
+        self,
+        dataset_path,
+        dataset,
+        seed,
+        use_label_mapping=True,
+        prefix="",
+        append_options=True,
+    ):
         self.dataset_name = dataset
         self.data_path = dataset_path
         self.random_seed = seed
-        self.prefix = prefix
-        self.label_mapping = DATASET_INFO[self.dataset_name].get("label_mapping")
-        self.use_label_mapping = (
-            use_label_mapping
-            and self.label_mapping is not None
+        self.dataset_info = self._load_config(
+            pjoin(os.path.dirname(os.path.abspath(__file__)), "dataset_info.yaml")
         )
+        self.prefix = self.dataset_info[self.dataset_name].get("prefix", prefix)
+        self.label_mapping = self.dataset_info[self.dataset_name].get(
+            "label_mapping", {}
+        )
+        self.use_label_mapping = use_label_mapping and self.label_mapping is not None
         self.append_options = append_options
-        self.instruction = DATASET_INFO[self.dataset_name]["instruction"]
+        self.instruction = self.dataset_info[self.dataset_name]["instruction"]
         self.rng = np.random.RandomState(self.random_seed)
 
         # load dataset from file
@@ -49,6 +49,13 @@ class Dataset:
             % (self.train_size, self.dev_size, self.test_size)
         )
         self.reset()
+
+    @staticmethod
+    def _load_config(config_file):
+        assert os.path.exists(config_file), "Invalid config file"
+        with open(config_file) as reader:
+            config = yaml.safe_load(reader)
+        return config
 
     @property
     def train_size(self):
@@ -86,13 +93,18 @@ class Dataset:
                 "navigate",
                 "date_understanding",
             ), self.dataset_name
-            train_valid_file_path = os.path.join(self.data_path.replace("bbh", "bb_minus_bbh"), self.dataset_name + ".json")
+            train_valid_file_path = os.path.join(
+                self.data_path.replace("bbh", "bb_minus_bbh"),
+                self.dataset_name + ".json",
+            )
             with open(train_valid_file_path) as fin:
                 data = json.load(fin)
                 data = data["examples"]
                 train_size = len(data) // 2
                 dev_size = len(data) - train_size
-                train_size = min(train_size, 1000)  # some dataset has too many data, don't want to have a too large train/valid size
+                train_size = min(
+                    train_size, 1000
+                )  # some dataset has too many data, don't want to have a too large train/valid size
                 dev_size = min(dev_size, 1000)
                 assert train_size > 0, train_size
                 assert dev_size > 0, dev_size
@@ -122,10 +134,7 @@ class Dataset:
                     self.dataset["test"]["label"].append(target)
 
         elif "ordered_prompt" in self.data_path:
-            assert self.dataset_name in (
-                "mpqa",
-                "trec",
-                "subj"), self.dataset_name
+            assert self.dataset_name in ("mpqa", "trec", "subj"), self.dataset_name
 
             for split in ["train", "dev", "test"]:
                 _split = "dev_subsample" if split == "dev" else split
@@ -139,13 +148,18 @@ class Dataset:
                         datapoint = json.loads(line)
                         sentence, label = datapoint["sentence"], datapoint["label"]
                         if self.append_options:
-                            sentence = [sentence, "Options:"] + ["- " + item for item in list(self.label_mapping.values())]
+                            sentence = [sentence, "Options:"] + [
+                                "- " + item
+                                for item in list(self.label_mapping.values())
+                            ]
                             sentence = "\n".join(sentence)
                         sentence_list.append(sentence)
                         label_list.append(label)
 
                 if split == "train":
-                    indices = data_shuffling_rng.choice(len(sentence_list), 1000, replace=False)
+                    indices = data_shuffling_rng.choice(
+                        len(sentence_list), 1000, replace=False
+                    )
                     for idx in indices:
                         self.dataset[split]["sentence"].append(sentence_list[idx])
                         self.dataset[split]["label"].append(label_list[idx])
@@ -153,15 +167,15 @@ class Dataset:
                     self.dataset[split]["sentence"] = sentence_list
                     self.dataset[split]["label"] = label_list
                 elif split == "test":
-                    indices = data_shuffling_rng.choice(len(sentence_list), 250, replace=False)
+                    indices = data_shuffling_rng.choice(
+                        len(sentence_list), 250, replace=False
+                    )
                     for idx in indices:
                         self.dataset[split]["sentence"].append(sentence_list[idx])
                         self.dataset[split]["label"].append(label_list[idx])
 
         elif "leopard" in self.data_path:
-            assert self.dataset_name in (
-                "disaster",
-                "airline"), self.dataset_name
+            assert self.dataset_name in ("disaster", "airline"), self.dataset_name
             file_path = os.path.join(
                 self.data_path, self.dataset_name, self.dataset_name + "_eval.json"
             )
@@ -172,7 +186,9 @@ class Dataset:
                 for i in range(len(data)):
                     sentence, label = data[i]["sentence1"], data[i]["label"]
                     if self.append_options:
-                        sentence = [sentence, "Options:"] + ["- " + item for item in list(self.label_mapping.values())]
+                        sentence = [sentence, "Options:"] + [
+                            "- " + item for item in list(self.label_mapping.values())
+                        ]
                         sentence = "\n".join(sentence)
                     sentence_list.append(sentence)
                     label_list.append(label)
@@ -236,7 +252,10 @@ class Dataset:
                 i = 0
                 while len(indices) < batch_size:
                     indices += self.rng.choice(
-                        self.dataset["train_per_class"][pick_order[i % len(pick_order)]], 1
+                        self.dataset["train_per_class"][
+                            pick_order[i % len(pick_order)]
+                        ],
+                        1,
                     ).tolist()
                     i += 1
             else:
@@ -281,7 +300,7 @@ class Dataset:
         return len(self.dataset[split]["label"])
 
     def get_data(self, split="train", indices=None):
-        """ get all data from a split """
+        """get all data from a split"""
         assert split in self.dataset
         if indices is None:
             res_sentence = self.dataset[split]["sentence"]
@@ -293,3 +312,38 @@ class Dataset:
                 res_sentence.append(self.dataset[split]["sentence"][idx])
                 res_sentence.append(self.dataset[split]["label"][idx])
         return res_sentence, res_label
+
+
+def init_dataset(dataset_id, seed):
+    dataset_location = {
+        "subj": "./data/ordered_prompt",
+        "mpqa": "./data/ordered_prompt",
+        "trec": "./data/ordered_prompt",
+        "disaster": "./data/leopard",
+        "airline": "./data/leopard",
+        "hyperbaton": "./data/bbh",
+        "navigate": "./data/bbh",
+        "date_understanding": "./data/bbh",
+        "logical_deduction_seven_objects": "./data/bbh",
+    }
+
+    assert dataset_id in dataset_location, f"Dataset {dataset_id} not found"
+
+    dataset = Dataset(dataset_location[dataset_id], dataset_id, seed)
+    val_examples = {"hyperbaton": 300}.get(dataset_id, -1)
+    protos = {
+        "hyperbaton": ["a|A", "b|B"],
+        "navigate": ["yes|Yes", "no|No"],
+        "date_understanding": ["a|A", "b|B", "c|C", "d|D", "e|E", "f|F"],
+        "logical_deduction_seven_objects": [
+            "a|A",
+            "b|B",
+            "c|C",
+            "d|D",
+            "e|E",
+            "f|F",
+            "g|G",
+        ],
+    }.get(dataset_id, list(dataset.label_mapping.values()))
+    output_classes = OutputClasses(protos=protos)
+    return dataset, output_classes, val_examples
