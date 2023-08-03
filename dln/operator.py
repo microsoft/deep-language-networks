@@ -60,6 +60,7 @@ class GPT:
             | retry_if_exception_type(openai.error.APIError)
             | retry_if_exception_type(openai.error.APIConnectionError)
             | retry_if_exception_type(openai.error.RateLimitError)
+            | retry_if_exception_type(openai.error.ServiceUnavailableError)
         ),
     )
     async def aget_chat_completion_response(self, prompt, **kwargs):
@@ -100,6 +101,7 @@ class GPT:
             | retry_if_exception_type(openai.error.APIError)
             | retry_if_exception_type(openai.error.APIConnectionError)
             | retry_if_exception_type(openai.error.RateLimitError)
+            | retry_if_exception_type(openai.error.ServiceUnavailableError)
         ),
     )
     def get_chat_completion_response(self, prompt, **kwargs):
@@ -140,6 +142,7 @@ class GPT:
             | retry_if_exception_type(openai.error.APIError)
             | retry_if_exception_type(openai.error.APIConnectionError)
             | retry_if_exception_type(openai.error.RateLimitError)
+            | retry_if_exception_type(openai.error.ServiceUnavailableError)
         ),
     )
     def get_completion_response(
