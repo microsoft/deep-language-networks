@@ -219,10 +219,9 @@ class VILModel:
                 log_message("#", i, "ACC", p2_acc_i, ",", p_tilde_2_i)
             log_message("----------")
 
-            log_message("Best P2 Index: ", np.argmax(p2_elbo))
+            log_message("Best P2 Index: ", best_p2_idx)
             log_message("Best P2: ", best_p2)
             log_message("Best P2 ACC: ", best_p2_acc)
-
             return best_p2_acc, None, best_p2
         else:
             raise NotImplementedError()
