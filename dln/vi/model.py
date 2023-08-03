@@ -169,21 +169,6 @@ class VILModel:
             for k in range(p_tilde_2.shape[0]):
                 evals.append((x[i], y[i], p_tilde_2[k]))
 
-        # batch_size, num_p_samples
-        ll = self.encoder_l2.log_p(
-            inputs=np.array([eval[0] for eval in evals]),
-            targets=np.array([eval[1] for eval in evals]),
-            prompts=np.array([eval[2] for eval in evals]),
-            output_classes=self.output_classes,
-            agg="sum" if self.forward_use_classes else "max",
-        ).logp_targets
-        # batch_size, num_p_samples
-        ll = ll.reshape(batch_size, p_tilde_2.shape[0])
-
-        p2_elbo = ll.mean(axis=0)
-        best_p2 = p_tilde_2[np.argmax(p2_elbo)]
-        best_p2_elbo = np.max(p2_elbo)
-
         if self.output_scoring_function == "logprobs":
             # batch_size, num_p_samples
             ll = self.encoder_l2.log_p(
