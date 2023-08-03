@@ -440,17 +440,8 @@ class VILModel:
                                     p_tilde_2[k],
                                 )
                             )
-                # batch_size, num_h_samples, num_p_samples
-                log_message(colored("Evaluating log likelihoods for p2...", "yellow"))
-                ll = self.encoder_l2.log_p(
-                    inputs=np.array([eval[0] for eval in evals]),
-                    targets=np.array([eval[1] for eval in evals]),
-                    prompts=np.array([eval[2] for eval in evals]),
-                    output_classes=self.output_classes,
-                    agg="sum" if self.forward_use_classes else "max",
-                ).logp_targets
-                ll = ll.reshape(eval_batch_size, num_h_samples, p_tilde_2.shape[0])
 
+                # batch_size, num_h_samples, num_p_samples
                 if self.output_scoring_function == "logprobs":
                     # batch_size, num_h_samples, num_p_samples
                     log_message(colored("Evaluating log likelihoods for p2...", "yellow"))
@@ -531,30 +522,8 @@ class VILModel:
                 # build array: (num_samples, num_h_samples, num_p_samples)
                 evals = []
                 eval_h_tilde_1 = np.concatenate([h1[:, None], eval_h_tilde_1], 1)
-                for i in range(eval_batch_size):
-                    for j in range(num_h_samples + 1):
-                        for k in range(p_tilde_1.shape[0]):
-                            evals.append(
-                                (
-                                    eval_x[i],
-                                    eval_h_tilde_1[i, j], 
-                                    p_tilde_1[k],
-                                )
-                            )
 
-                # (batch_size, num_h_samples, num_p_samples)
-                log_message(colored("Evaluating log likelihoods for p1...", "yellow"))
-
-                ll = self.encoder_l1.log_p(
-                    inputs=np.array([eval[0] for eval in evals]),
-                    targets=np.array([eval[1] for eval in evals]),
-                    prompts=np.array([eval[2] for eval in evals]),
-                ).logp_targets
-                ll = ll.reshape(
-                    eval_batch_size,
-                    num_h_samples + 1,
-                    p_tilde_1.shape[0],
-                )
+                ll = self.score_p1(eval_x, eval_h_tilde_1, p_tilde_1)
                 ll_orig = ll[:, 0, :]
                 p1_elbo = self.compute_elbo_score(ll[:, 1:, :], eval_weights)
 
