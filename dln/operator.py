@@ -4,6 +4,8 @@ import asyncio
 import numpy as np
 import openai
 import logging
+import tiktoken
+import os
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -35,6 +37,19 @@ class GPT:
             )
         self.generation_options = generation_options
         self.engine = model_name
+        self.encoder = tiktoken.encoding_for_model(self.engine)
+        openai.api_version = os.environ.get('OPENAI_API_VERSION')
+
+    def encode(self, string):
+        return self.encoder.encode(string)
+
+    @property
+    def has_log_probs(self):
+        return not (
+            "gpt-3.5" in self.engine or
+            "gpt-4" in self.engine or
+            "gpt-35" in self.engine
+        )
 
     @retry(
         reraise=True,

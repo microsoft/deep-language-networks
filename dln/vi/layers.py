@@ -1,7 +1,9 @@
 from typing import List
 
 import numpy as np
+from dln.loss import ZeroOneLoss
 
+import dln.operator
 from dln.operator import forward_evaluate
 from dln.score import LogProbs, LogProbsScore, OutputClasses, ScoreRequest
 from dln.template import load_template
@@ -48,16 +50,37 @@ class PriorLayer:
                 max_tokens=max_tokens,
             )
         else:
-            # compute constrained forward pass on the output classes
-            targets = [output_classes.prototype(0) for _ in inputs]
-            # compute log p of each output class, second return value is the p(class)
-            lp = self.log_p(
-                inputs, targets, output_classes=output_classes, agg="sum"
-            ).contexts
-            # best output class index
-            best_output_class_index = np.argmax(lp, axis=1)
-            # get the best output class token
-            outputs = [output_classes.prototype(idx) for idx in best_output_class_index]
+            if dln.operator.forward_interpreter.has_log_probs:
+                # compute log p of each output class, second return value is the p(class)
+                targets = [output_classes.prototype(0) for _ in inputs]
+                lp = self.log_p(
+                    inputs, targets, output_classes=output_classes, agg="sum"
+                ).distribution
+                # best output class index
+                best_output_class_index = np.argmax(lp, axis=1)
+                # get the best output class token
+                outputs = [output_classes.prototype(idx) for idx in best_output_class_index]
+            else:
+                tpl_inputs = [
+                    self.forward_template.render(input=input, prompt=self.weight)
+                    for input in inputs
+                ]
+                logit_bias = {}
+                max_len = 0
+
+                for i in range(len(output_classes)):
+                    token_ids = dln.operator.forward_interpreter.encode(output_classes.prototype(i))
+                    max_len = max(max_len, len(token_ids))
+                    assert max_len == 1
+                    logit_bias[token_ids[0]] = 100
+
+                outputs = forward_evaluate(
+                    tpl_inputs,
+                    stop=self.forward_template.stop_tokens,
+                    temperature=temperature,
+                    max_tokens=max_len,
+                    logit_bias=logit_bias,
+                )
         # strip any "\n\n" that might have been added
         if strip_double_newlines:
             outputs = [o.replace("\n\n", "\n") for o in outputs]
@@ -87,6 +110,38 @@ class PriorLayer:
         # build up a set of score requests
         logprobs = LogProbsScore().score_requests(requests, output_classes, agg=agg)
         return logprobs
+
+    def accuracy(
+        self,
+        inputs: List[str],
+        targets: List[str],
+        prompts=None,
+        num_samples=1,
+        max_tokens=256,
+        postprocess_prediction=None,
+    ) -> LogProbs:
+        requests = []
+
+        if prompts is None:
+            prompts = [self.weight for _ in inputs]
+
+        for _ in range(num_samples):
+            for input, _, prompt in zip(inputs, targets, prompts):
+                requests.append(self.forward_template.render(input=input, prompt=prompt))
+
+        # build up a set of score requests
+        outputs = forward_evaluate(
+            requests,
+            stop=self.forward_template.stop_tokens,
+            temperature=1.0 if num_samples > 1 else 0.,
+            max_tokens=max_tokens,
+        )
+        targets = np.array([t for t in targets] * num_samples)
+
+        loss = ZeroOneLoss(postprocess_prediction)
+        losses = loss(outputs, targets).reshape(-1, num_samples)
+        accuracy = (1. - losses).mean(1)
+        return accuracy
 
 
 class ResidualPriorLayer(PriorLayer):

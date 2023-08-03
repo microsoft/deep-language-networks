@@ -15,7 +15,7 @@ def test_logprobs_score_with_output_classes(score_requests, top_logprobs):
             score_requests, output_classes=OutputClasses(protos=["a|A", "b|B"])
         )
 
-    np.testing.assert_almost_equal(logprobs.targets, [-8.6746863, -0.4428973])
+    np.testing.assert_almost_equal(logprobs.logp_targets, [-8.6746863, -0.4428973])
     np.testing.assert_almost_equal(
         logprobs.contexts,
         [
@@ -31,5 +31,5 @@ def test_logprobs_score_without_output_classes(score_requests, raw_logprobs):
     with patch("dln.score.forward_evaluate", raw_logprobs):
         logprobs = logprobs_score.score_requests(score_requests)
 
-    np.testing.assert_almost_equal(logprobs.targets, [-0.7682657, -0.7632834])
-    np.testing.assert_almost_equal(logprobs.contexts, [-2.8217665, -2.73069])
+    np.testing.assert_almost_equal(logprobs.logp_targets, [-0.7682657, -0.7632834])
+    np.testing.assert_almost_equal(logprobs.distribution, [-2.8217665, -2.73069])

@@ -53,7 +53,7 @@ def test_log_p_with_output_classes(top_logprobs):
         logp = prior_layer.log_p(
             inputs, outputs, output_classes=output_classes
         )
-    np.testing.assert_almost_equal(logp.targets, [-8.67468626, -0.44289729])
+    np.testing.assert_almost_equal(logp.logp_targets, [-8.67468626, -0.44289729])
     np.testing.assert_almost_equal(
         logp.contexts,
         [
@@ -70,7 +70,7 @@ def test_log_p_without_output_classes(raw_logprobs, score_requests):
     prior_layer = PriorLayer(forward_template="suffix_forward", init="")
     with patch("dln.score.forward_evaluate", raw_logprobs):
         logp = prior_layer.log_p(inputs, outputs)
-    np.testing.assert_almost_equal(logp.targets, [-1.48348267, -1.47351816])
+    np.testing.assert_almost_equal(logp.logp_targets, [-1.48348267, -1.47351816])
 
 
 def test_forward_with_output_class(top_logprobs):

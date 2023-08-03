@@ -33,8 +33,8 @@ class OutputClasses:
 
 @dataclass
 class LogProbs:
-    targets: np.ndarray
-    contexts: np.ndarray
+    logp_targets: np.ndarray
+    distribution: np.ndarray
 
 
 class LogProbsScore:
@@ -123,7 +123,7 @@ class LogProbsScore:
             output_class_index = [i for i, output_class in enumerate(output_classes) if target in output_class.split("|")]
             assert (
                 len(output_class_index) == 1
-            ), "The target shouldn't appear in two output classes!"
+            ), "The target shouldn't appear in two output classes! {}".format(target)
             # accuracy here
             output_classes_scores = output_classes_scores / output_classes_scores.sum()
             output_logprobs.append(np.log(output_classes_scores[output_class_index[0]]))

@@ -52,18 +52,30 @@ def validate(dataset, model, loss_fn, iteration, val_examples, val_scores, write
         )
         dataset.reset_pointer("dev")
         num_examples = 0
+        class_counter = Counter()
+        total_counter = Counter()
 
         for batch in dataset.iterate("dev", batch_size=20):
             x, y = batch
             y_hat = model.forward(np.array(x))
-            acc += len(y) - np.sum(loss_fn(y_hat, y))
+            losses = loss_fn(y_hat, y)
+            acc += len(y) - np.sum(losses)
             tot += len(y)
+            num_examples += len(y)
+
+            for xi, yi, yhati, li in zip(x, y, y_hat, losses):
+                total_counter.update([yi])
+                if li > 0:
+                    class_counter.update([yi])
+
             pbar.update(len(y))
             pbar.set_postfix_str(f"{acc / tot:.1%}")
-            num_examples += len(y)
 
             if num_examples == val_examples:
                 break
+
+        for k, v in class_counter.items():
+            log_message(f"{k}: {float(v)/total_counter[k]}")
         dev_acc = acc / tot
         val_scores[val_key] = dev_acc
 
@@ -110,6 +122,7 @@ def test(dataset, model, loss_fn, iteration, writer):
 @click.option("--q_prompt", default="q_action_prompt")
 @click.option("--p_hidden", default="suffix_forward_tbs")
 @click.option("--p_class", default="classify_forward")
+@click.option("--p_residual", type=str, default="classify_residual")
 @click.option("--balance_batch", is_flag=True, help="Balance batch.")
 @click.option("--batch_size", type=int, default=20)
 @click.option("--one_layer", is_flag=True)
@@ -241,6 +254,7 @@ def main(
     q_prompt,
     p_hidden,
     p_class,
+    p_residual,
     fwd_temp,
     bwd_temp,
     balance_batch,
@@ -260,6 +274,8 @@ def main(
     init_p1,
     init_p2,
     tolerance,
+    output_scoring_function,
+    hidden_scoring_function,
     forward_use_classes,
     held_out_prompt_ranking,
     train_p1,
@@ -315,6 +331,7 @@ def main(
         q_prompt=q_prompt,
         p_hidden=p_hidden,
         p_class=p_class,
+        p_residual=p_residual,
         init_p1=init_p1,
         init_p2=init_p2,
         use_h_argmax=use_h_argmax,
@@ -332,6 +349,8 @@ def main(
         p2_max_tokens=20,
         posterior_temp=posterior_temp,
         strip_prefix_for_hidden=dataset.prefix if strip_prefix_for_hidden else None,
+        output_scoring_function=output_scoring_function,
+        hidden_scoring_function=hidden_scoring_function,
     )
 
     running_acc = 0.0
