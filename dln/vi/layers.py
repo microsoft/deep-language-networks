@@ -117,7 +117,7 @@ class PriorLayer:
         targets: List[str],
         prompts=None,
         num_samples=1,
-        max_tokens=256,
+        max_tokens=10,
         postprocess_prediction=None,
     ) -> LogProbs:
         requests = []

@@ -114,7 +114,7 @@ class VILModel:
         self.num_p1_steps = 1
         self.output_scoring_function = output_scoring_function
         self.hidden_scoring_function = hidden_scoring_function
-        self.num_acc_mc_samples = 3
+        self.num_acc_mc_samples = 1
 
         if self.forward_use_classes:
             assert (
