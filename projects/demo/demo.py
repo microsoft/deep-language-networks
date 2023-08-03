@@ -23,8 +23,6 @@ DATASETS = [
     ("subj", "1 Layer - Subj"),
     ("hyperbaton", "1 Layer - Hyperbaton"),
     ("navigate", "2 Layers - Navigate"),
-    # ("navigate-dwich", "2 Layers - Navigate Dwich"),
-    ("navigate-best", "2 Layers - Navigate Best"),
 ]
 
 
@@ -257,10 +255,9 @@ def main(args):
 
         # text = ["Dev Acc"] * len(df["step"][df["dev_acc"] >= 0])
         fig.add_trace(
-            # go.Scatter(x=df["step"][df["dev_acc"]>=0], y=df["dev_acc"][df["dev_acc"]>=0], name="Dev acc", hoverinfo='none'),#, text=text, **hover_config),
             go.Scatter(
                 x=dev_df["step"], y=dev_df["dev_acc"], name="Dev acc", **hover_config
-            ),  # , text=text, **hover_config),
+            ),
             secondary_y=False,
         )
 
@@ -276,9 +273,7 @@ def main(args):
             secondary_y=True,
         )
 
-        # # Add figure title
-        # fig.update_layout()
-        # Set x-axis title
+        # Set x-axes title
         fig.update_xaxes(title_text="steps", nticks=20)
 
         # Set y-axes titles
