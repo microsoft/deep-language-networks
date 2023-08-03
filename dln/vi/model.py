@@ -193,6 +193,7 @@ class VILModel:
 
             log_message("Best P2 Index: ", np.argmax(p2_elbo))
             log_message("Best P2: ", best_p2)
+            log_message("Best P2 ELBO: ", best_p2_elbo)
 
             return best_p2_elbo, None, best_p2
         elif self.output_scoring_function == "accuracy":
@@ -208,6 +209,7 @@ class VILModel:
                 postprocess_prediction=postprocess_prediction,
             )
             acc = acc.reshape(batch_size, p_tilde_2.shape[0]).mean(0)
+
             best_p2_idx = np.argmax(acc)
             best_p2 = p_tilde_2[best_p2_idx]
             best_p2_acc = np.max(acc)
@@ -217,9 +219,13 @@ class VILModel:
                 log_message("#", i, "ACC", p2_acc_i, ",", p_tilde_2_i)
             log_message("----------")
 
-        log_message("Best P2 Index: ", np.argmax(p2_elbo))
-        log_message("Best P2: ", best_p2)
-        return best_p2_elbo, None, best_p2
+            log_message("Best P2 Index: ", np.argmax(p2_elbo))
+            log_message("Best P2: ", best_p2)
+            log_message("Best P2 ACC: ", best_p2_acc)
+
+            return best_p2_acc, None, best_p2
+        else:
+            raise NotImplementedError()
 
     def sample_hidden_states(
         self,
