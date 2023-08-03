@@ -221,6 +221,18 @@ def test(dataset, model, loss_fn, iteration, writer):
     help="Decay logp penalty linearly, reaching zero at the last iteration.",
 )
 @click.option(
+    "--output_scoring_function",
+    type=str,
+    default="logprobs",
+    help="Use logprobs to score output predictions.",
+)
+@click.option(
+    "--hidden_scoring_function",
+    type=str,
+    default="logprobs",
+    help="Use logprobs to score hidden states",
+)
+@click.option(
     "--posterior_temp",
     type=float,
     default=1.0,

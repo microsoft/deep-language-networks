@@ -176,7 +176,7 @@ class VILModel:
             prompts=np.array([eval[2] for eval in evals]),
             output_classes=self.output_classes,
             agg="sum" if self.forward_use_classes else "max",
-        ).targets
+        ).logp_targets
         # batch_size, num_p_samples
         ll = ll.reshape(batch_size, p_tilde_2.shape[0])
 
@@ -458,7 +458,7 @@ class VILModel:
                     prompts=np.array([eval[2] for eval in evals]),
                     output_classes=self.output_classes,
                     agg="sum" if self.forward_use_classes else "max",
-                ).targets
+                ).logp_targets
                 ll = ll.reshape(eval_batch_size, num_h_samples, p_tilde_2.shape[0])
 
                 if self.output_scoring_function == "logprobs":
@@ -485,7 +485,7 @@ class VILModel:
                             prompts=np.array([eval[2] for eval in evals]),
                             output_classes=self.output_classes,
                             agg="sum" if self.forward_use_classes else "max",
-                        ).contexts
+                        ).distribution
                         lps = lps.reshape(batch_size, p_tilde_2.shape[0], -1)
                         p2_kl = compute_pairwise_kl(lps)
                     else:
@@ -559,7 +559,7 @@ class VILModel:
                     inputs=np.array([eval[0] for eval in evals]),
                     targets=np.array([eval[1] for eval in evals]),
                     prompts=np.array([eval[2] for eval in evals]),
-                ).targets
+                ).logp_targets
                 ll = ll.reshape(
                     eval_batch_size,
                     num_h_samples + 1,

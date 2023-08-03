@@ -55,7 +55,7 @@ def test_log_p_with_output_classes(top_logprobs):
         )
     np.testing.assert_almost_equal(logp.logp_targets, [-8.67468626, -0.44289729])
     np.testing.assert_almost_equal(
-        logp.contexts,
+        logp.distribution,
         [
             [9.99829143e-01, 1.70856546e-04],
             [6.42173164e-01, 3.57826836e-01],
