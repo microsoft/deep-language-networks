@@ -7,7 +7,7 @@ from dln.loss import LLoss
 from dln.score import OutputClasses
 from dln.vi.layers import PriorLayer, ResidualPriorLayer
 from dln.vi.sampler import PosteriorSampler, PromptSampler
-from dln.vi.utils import compute_pairwise_kl, log_message
+from dln.vi.utils import compute_pairwise_kl, log_message, ResultLogEntry
 
 
 class VILModel:
@@ -113,6 +113,7 @@ class VILModel:
                 self.output_classes is not None
             ), "Cannot use classes for forward without output classes"
         self.prompt_memory = []
+        self.result_entry = ResultLogEntry()
 
     def get_from_memory(self, layer_index=0):
         assert layer_index in [0, 1], "Layer index out of bounds"
@@ -173,6 +174,7 @@ class VILModel:
         ll = ll.reshape(batch_size, p_tilde_2.shape[0])
 
         p2_elbo = ll.mean(axis=0)
+        self.result_entry.log_candidates(p_tilde_2, p2_elbo)
         best_p2 = p_tilde_2[np.argmax(p2_elbo)]
         best_p2_elbo = np.max(p2_elbo)
 
@@ -504,6 +506,7 @@ class VILModel:
             best_p1_elbo = 0.0
             best_p1_index = 0
 
+        self.result_entry.log_candidates(p_tilde_2, p2_elbo, p_tilde_1, p1_elbo)
         log_message("--- P1 ---")
         for i, (p_tilde_1_i, p1_elbo_i) in enumerate(zip(p_tilde_1, p1_elbo)):
             log_message("#", i, "ELBO:", p1_elbo_i, ",", p_tilde_1_i)
@@ -598,6 +601,8 @@ class VILModel:
                 temperature=temperature,
                 max_tokens=self.p2_max_tokens,
             )
+        self.result_entry.log_hiddens(hiddens=h_1_out, size=len(x))
+        self.result_entry.log_outputs(outputs=y_hat)
 
         y_hat = np.array([self.loss_fn.postproc(y_hat_i) for y_hat_i in y_hat])
         if y is not None:
