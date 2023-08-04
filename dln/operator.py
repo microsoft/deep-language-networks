@@ -224,7 +224,16 @@ class GPT:
         )
         return outputs
 
-    def generate(self, inputs, async_generation=True, **kwargs):
+    def _mini_batch(self, inputs, batch_size=20):
+        input_length = len(inputs)
+        num_batches = input_length // batch_size + (
+            1 if input_length % batch_size > 0 else 0
+        )
+        for i in range(num_batches):
+            input_batch = inputs[batch_size * i : batch_size * (i + 1)]
+            yield input_batch
+
+    def generate(self, inputs, async_generation=True, batch_size=20, **kwargs):
         if type(inputs) is not list:
             inputs = [inputs]
 
@@ -237,10 +246,13 @@ class GPT:
                 del generation_options["return_logprobs"]
 
             if async_generation is True:
-                # async
-                outputs = asyncio.run(
-                    self.gather_chat_response(inputs, **generation_options)
-                )
+                # async call api, devide to mini batches to avoid call rate limit
+                outputs = []
+                for input_batch in self._mini_batch(inputs, batch_size=10):
+                    outputs_batch = asyncio.run(
+                        self.gather_chat_response(input_batch, **generation_options)
+                    )
+                    outputs = outputs + outputs_batch
             else:
                 # call api one by one
                 outputs = [
@@ -249,18 +261,12 @@ class GPT:
                 ]
         else:
             # devide to mini batches (max batch size = 20 according to openai)
-            max_batch_size = 20
-            input_length = len(inputs)
-            num_batches = input_length // max_batch_size + (
-                1 if input_length % max_batch_size > 0 else 0
-            )
             outputs = []
-            for i in range(num_batches):
-                input_batch = inputs[max_batch_size * i : max_batch_size * (i + 1)]
-                output_batch = self.get_completion_response(
+            for input_batch in self._mini_batch(inputs, batch_size=batch_size):
+                outputs_batch = self.get_completion_response(
                     input_batch, **generation_options
                 )
-                outputs = outputs + output_batch
+                outputs = outputs + outputs_batch
         return outputs
 
 
