@@ -21,7 +21,7 @@ class DLNTemplate:
         if kwargs.get("message") is None:
             kwargs["message"] = self.message
 
-        return Template(self.template).render(**kwargs)
+        return Template(self.template).render(**kwargs).lstrip().rstrip()
 
 
 class Templates:

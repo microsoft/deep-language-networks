@@ -41,8 +41,8 @@ class VILModel:
         p2_max_tokens: int = 20,
         posterior_temp: float = 1.0,
         strip_prefix_for_hidden: str = None,
-        output_scoring_function = "logprobs",
-        hidden_scoring_function = "logprobs"
+        output_scoring_function: str = "logprobs",
+        hidden_scoring_function: str = "logprobs",
     ):
         """
         Args:
@@ -631,12 +631,11 @@ class VILModel:
             x_.append(x_i)
         return np.array(x_)
 
-    def forward(self, x, y=None, temperature=0.0):
+    def forward(self, x, y=None, infos=None, temperature=0.0):
         """
         Args:
             temperature: temperature to use for the forward pass.
         """
-        # execute first template
         if self.two_layers:
             if self.strip_options_for_hidden:
                 x_stripped = self.strip_options(x)
@@ -663,6 +662,17 @@ class VILModel:
             )
         else:
             h_1_out, h_1 = None, None
+
+            # format infos (i.e. few-shot examples)
+            if infos is not None:
+                infos = "\n\n\n".join(
+                    [
+                        self.encoder_l2.forward_template.render(prompt="", input=info[0], answer=info[1])
+                        for info in infos
+                    ]
+                )
+                x = np.array([infos + "\n\n\n" + x_ for x_ in x])
+
             y_hat = self.encoder_l2(
                 x,
                 output_classes=self.output_classes

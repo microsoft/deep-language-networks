@@ -21,6 +21,7 @@ class Dataset:
         self.dataset_name = dataset
         self.data_path = dataset_path
         self.random_seed = seed
+        self.few_shot = None
         self.dataset_info = self._load_config(
             pjoin(os.path.dirname(os.path.abspath(__file__)), "dataset_info.yaml")
         )
@@ -66,6 +67,26 @@ class Dataset:
     @property
     def test_size(self):
         return len(self.dataset["test"]["label"])
+
+    def init_few_shot(self, n):
+        indices = []
+        pick_order = self.rng.choice(
+            list(self.dataset["train_per_class"].keys()),
+            len(self.dataset["train_per_class"].keys()),
+            replace=False,
+        )
+
+        i = 0
+        while len(indices) < n:
+            indices += self.rng.choice(
+                self.dataset["train_per_class"][
+                    pick_order[i % len(pick_order)]
+                ],
+                1,
+            ).tolist()
+        x = [self.dataset["train"]["sentence"][i] for i in indices]
+        y = [self.dataset["train"]["label"][i] for i in indices]
+        self.few_shot = list(zip(x, y))
 
     def resize(self, split, size):
         indices = np.random.permutation(np.arange(len(self.dataset[split]["label"])))[
@@ -273,6 +294,8 @@ class Dataset:
             else:
                 label_list.append(self.dataset[split]["label"][idx])
 
+        if self.few_shot is not None:
+            return sentence_list, label_list, self.few_shot    
         return sentence_list, label_list
 
     def iterate(self, split, batch_size, random_sample=False):

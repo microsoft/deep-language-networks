@@ -36,19 +36,21 @@ for method in glob.glob(root + "/**/output.log", recursive=True):
                 line = escape_ansi(line).partition("TEST ACC:")[-1]
                 test_accuracy.append(float(line.strip()))
 
-    if dev_accuracy and test_accuracy:
+    if dev_accuracy:
         results[name]["dev"].append(np.max(dev_accuracy))
+    if test_accuracy:
         results[name]["test"].append(test_accuracy[0])
 
 
 for key, val in results.items():
-    if val["dev"] and val["test"]:
-        print(
-            "{:50s}".format(key),
-            ":",
-            val["dev"],
-            val["test"],
-            "AVG: ",
-            np.mean(val["dev"]),
-            np.mean(val["test"]),
-        )
+    for s in ["dev", "test"]:
+        if val[s]:
+            print(
+                "{:50s}".format(key),
+                "--",
+                s,
+                "--",
+                val[s],
+                "AVG: ",
+                np.mean(val[s]),
+            )

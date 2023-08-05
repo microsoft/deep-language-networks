@@ -56,8 +56,8 @@ def validate(dataset, model, loss_fn, iteration, val_examples, val_scores, write
         total_counter = Counter()
 
         for batch in dataset.iterate("dev", batch_size=20):
-            x, y = batch
-            y_hat = model.forward(np.array(x))
+            x, y, infos = batch
+            y_hat = model.forward(np.array(x), infos=infos)
             losses = loss_fn(y_hat, y)
             acc += len(y) - np.sum(losses)
             tot += len(y)
@@ -90,6 +90,7 @@ def test(dataset, model, loss_fn, iteration, writer):
     log_message(colored("TESTING...", "red"))
     acc = 0.0
     tot = 0.0
+    i = 0
     pbar = tqdm.tqdm(
         total=dataset.get_size("test"),
         bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
@@ -98,8 +99,8 @@ def test(dataset, model, loss_fn, iteration, writer):
 
     dataset.reset_pointer("test")
     for batch in dataset.iterate("test", batch_size=20):
-        x, y = batch
-        y_hat = model.forward(np.array(x))
+        x, y, infos = batch
+        y_hat = model.forward(np.array(x), infos=infos)
         acc += len(y) - np.sum(loss_fn(y_hat, y))
         tot += len(y)
         pbar.update(len(y))
@@ -118,6 +119,7 @@ def test(dataset, model, loss_fn, iteration, writer):
 @click.option("--val_freq", default=2)
 @click.option("--do_first_eval", is_flag=True)
 @click.option("--do_zero_shot", is_flag=True)
+@click.option("--do_few_shot", default=-1, type=int)
 @click.option("--q_hidden", default="suffix_forward_tbs")
 @click.option("--q_prompt", default="q_action_prompt")
 @click.option("--p_hidden", default="suffix_forward_tbs")
@@ -164,9 +166,6 @@ def test(dataset, model, loss_fn, iteration, writer):
     "--bwd_temp",
     default=0.7,
     help="Backward temperature",
-)
-@click.option(
-    "--one_batch", type=float, default=0.0, help="Run only one batch, debug mode."
 )
 @click.option(
     "--use_memory",
@@ -262,6 +261,7 @@ def main(
     val_freq,
     do_first_eval,
     do_zero_shot,
+    do_few_shot,
     q_hidden,
     q_prompt,
     p_hidden,
@@ -281,7 +281,6 @@ def main(
     strip_answer_for_hidden,
     strip_prefix_for_hidden,
     trust_factor,
-    one_batch,
     use_memory,
     init_p1,
     init_p2,
@@ -318,6 +317,7 @@ def main(
     init_p1, init_p2 = init_prompts(dataset, init_p1, init_p2)
 
     dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir)
+    dataset.init_few_shot(do_few_shot)
 
     forward_instantiate(
         model_type,
@@ -369,8 +369,6 @@ def main(
     running_elbo = 0.0
     best_dev = 0.0
     best_ps = [model.encoder_l1.weight, model.encoder_l2.weight]
-    train_x, train_y = None, None
-    sample_next_batch = False
     val_scores = {}
 
     patience = 0
@@ -378,7 +376,7 @@ def main(
         log_message("STARTING EPOCH {} - {}".format(iteration, out_dir))
 
         if iteration % val_freq == 0 and (
-            iteration > 0 or do_first_eval or do_zero_shot
+            iteration > 0 or do_first_eval
         ):
             dev_acc = validate(
                 dataset, model, loss_fn, iteration, val_examples, val_scores, writer
@@ -402,21 +400,12 @@ def main(
                 patience = 0
 
         # zero shot or allow last iteration for validation
-        if do_zero_shot or iteration == iters:
+        if do_zero_shot or do_few_shot > 0 or iteration == iters:
             break
 
-        if one_batch > 0.0 and train_x is not None and not sample_next_batch:
-            # use the same batch, just re-shuffle the examples in the batch
-            permutation_indices = np.random.permutation(np.arange(len(train_x)))
-            x, y = np.asarray([train_x[i] for i in permutation_indices]), np.asarray(
-                [train_y[i] for i in permutation_indices]
-            )
-            log_message(colored("USING SAME BATCH FOR TRAINING!!!", "yellow"))
-        else:
-            x, y = dataset.get_batch(
-                "train", batch_size, random_sample=True, balance=balance_batch
-            )
-            train_x, train_y = x, y
+        x, y, infos = dataset.get_batch(
+            "train", batch_size, random_sample=True, balance=balance_batch
+        )
 
         if decay_logp_penalty:
             model.logp_penalty = logp_penalty * (1.0 - (iteration / iters))
@@ -424,7 +413,7 @@ def main(
         log_message(colored("Training P2? {}".format(model.train_p2), "red"))
         log_message(colored("LOGPenalty? {}".format(model.logp_penalty), "red"))
         elbo, p1, p2, loss, elbo1, elbo2 = model.forward(
-            np.array(x), np.array(y), temperature=fwd_temp
+            np.array(x), np.array(y), infos=infos, temperature=fwd_temp
         )
 
         # Update prompts
@@ -438,9 +427,6 @@ def main(
         else:
             running_elbo = 0.2 * elbo + 0.8 * running_elbo
             running_acc = 0.2 * (1.0 - loss) + 0.8 * running_acc
-
-        # get another batch if training accuracy is too good!
-        sample_next_batch = (1.0 - loss) > one_batch
 
         log_message("--------------------")
         log_message(colored("{} TRAINING EPOCH DONE.".format(iteration), "blue"))
