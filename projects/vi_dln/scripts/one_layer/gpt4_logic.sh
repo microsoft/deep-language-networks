@@ -1,9 +1,9 @@
 set -x  # print commands to terminal
-dataset=subj
+dataset=logical_deduction_seven_objects
 p_class_tpl="classify_forward:3.0"
 iters=20
 batch_size=10
-num_p_samples=10
+num_p_samples=15
 bwd_temp=0.7
 held_out_prompt_ranking=True
 use_memory=2
@@ -14,7 +14,8 @@ logp_penalty=2.
 posterior_temp=1.
 model_type="gpt-4"
 
-dir=log/one_layer_gpt_4/${dataset}
+dir=log/one_layer_gpt_4_temp_0.7_new/${dataset}
+/bin/rm -rf ${dir}
 
 for seed in 13 42 25; do
     python vi_main.py \
@@ -32,7 +33,6 @@ for seed in 13 42 25; do
         --use_memory ${use_memory} \
         --tolerance ${tolerance} \
         --held_out_prompt_ranking ${held_out_prompt_ranking} \
-        --train_p1 True \
         --output_scoring_function accuracy \
         --model_type ${model_type}
 done
