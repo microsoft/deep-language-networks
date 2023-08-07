@@ -15,13 +15,12 @@ class VILModel:
     def __init__(
         self,
         loss_fn: LLoss,
-        task_description: str,
+        init_p1: str,
+        init_p2: str,
         two_layers=True,
         num_h_samples: int = 3,
         num_p_samples: int = 5,
         use_h_argmax: bool = False,
-        init_p1: str = None,
-        init_p2: str = None,
         q_prompt: str = "q_action_prompt:latest",
         q_hidden: str = "suffix_forward_tbs:latest",
         p_hidden: str = "suffix_forward_tbs:latest",
@@ -47,14 +46,13 @@ class VILModel:
         """
         Args:
             loss_fn: loss function to use
-            task_description: task description, required
             two_layers: whether to use two layers or one layer
             num_h_samples: number of posterior samples to use for the hidden state
             num_p_samples: number of posterior samples to use for the prompt
             use_h_argmax: whether to use the argmax of the posterior distribution when selecting best prompts, if False, then
                           we compute num_h_samples * num_p_samples scores and select prompts based on the sum of the num_h_samples scores
-            init_p1: initialization for the first prompt, if None, uses "Decompose the problem to make it simpler:"
-            init_p2: initialization for the second prompt, if None, uses task description
+            init_p1: initialization for the first prompt
+            init_p2: initialization for the second prompt
             q_prompt: prompt for the posterior over the prompt
             q_hidden: prompt for the posterior over the hidden state
             p_hidden: forward template for the forward pass that generates the hidden state
@@ -70,19 +68,14 @@ class VILModel:
             train_p1: whether to train the first prompt
             train_p2: whether to train the second prompt
         """
-        if task_description is None:
-            raise ValueError(
-                "task_description must be provided when instantiating the VIModel."
-            )
-
         self.encoder_l1 = ResidualPriorLayer(
             forward_template=p_hidden,
-            init=init_p1 if init_p1 is not None else task_description,
+            init=init_p1,
             residual_template=p_residual,
         )
         self.encoder_l2 = PriorLayer(
             forward_template=p_class,
-            init=init_p2 if init_p2 is not None else task_description,
+            init=init_p2,
         )
         if not two_layers:
             self.encoder_l1.weight = None
@@ -100,7 +93,6 @@ class VILModel:
         self.num_h_samples = num_h_samples
         self.num_p_samples = num_p_samples
         self.use_h_argmax = use_h_argmax
-        self.task_description = task_description
         self.forward_use_classes = forward_use_classes
         self.held_out_prompt_ranking = held_out_prompt_ranking
         self.use_memory = use_memory
@@ -667,7 +659,9 @@ class VILModel:
             if infos is not None:
                 infos = "\n\n\n".join(
                     [
-                        self.encoder_l2.forward_template.render(prompt="", input=info[0], answer=info[1])
+                        self.encoder_l2.forward_template.render(
+                            prompt="", input=info[0], answer=info[1]
+                        )
                         for info in infos
                     ]
                 )
