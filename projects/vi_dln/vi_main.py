@@ -88,12 +88,10 @@ def validate(dataset, model, loss_fn, iteration, val_examples, val_scores, write
     return dev_acc
 
 
-def test(dataset, model, loss_fn, iteration, writer):
+def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     log_message(colored("TESTING...", "red"))
     acc = 0.0
     tot = 0.0
-    i = 0
-    cost = 0.0
     all_accs = []
 
     pbar = tqdm.tqdm(
@@ -106,7 +104,7 @@ def test(dataset, model, loss_fn, iteration, writer):
     dataset.reset_pointer("test")
     for batch in dataset.iterate("test", batch_size=20):
         x, y, infos = batch
-        y_hat = model.forward(np.array(x), infos=infos)
+        y_hat = model.forward(np.array(x), infos=infos, cost_only=cost_only)
         all_accs += (1. - loss_fn(y_hat, y)).tolist()
         acc += len(y) - np.sum(loss_fn(y_hat, y))
         tot += len(y)
@@ -143,6 +141,7 @@ def test(dataset, model, loss_fn, iteration, writer):
 @click.option("--num_p_samples", type=int, default=5)
 @click.option("--num_h_samples", type=int, default=3)
 @click.option("--tolerance", type=int, default=-1)
+@click.option("--compute_cost", is_flag=True)
 @click.option(
     "--strip_options_for_hidden",
     type=bool,
@@ -268,6 +267,7 @@ def main(
     out_dir,
     data_dir,
     val_freq,
+    compute_cost,
     do_first_eval,
     do_zero_shot,
     do_few_shot,
@@ -460,7 +460,7 @@ def main(
     log_message("Best L1 weights:", model.encoder_l1.weight)
     log_message("Best L2 weights:", model.encoder_l2.weight)
 
-    test_acc = test(dataset, model, loss_fn, iteration, writer)
+    test_acc = test(dataset, model, loss_fn, iteration, writer, cost_only=compute_cost)
 
     log_message(colored("DEV ACC: {}".format(best_dev), "green"))
     log_message(colored("TEST ACC: {}".format(test_acc), "green"))

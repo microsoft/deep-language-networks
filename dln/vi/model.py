@@ -625,7 +625,7 @@ class VILModel:
             x_.append(x_i)
         return np.array(x_)
 
-    def forward(self, x, y=None, infos=None, temperature=0.0):
+    def forward(self, x, y=None, infos=None, temperature=0.0, cost_only=False):
         """
         Args:
             temperature: temperature to use for the forward pass.
@@ -669,7 +669,15 @@ class VILModel:
                 )
                 x = np.array([infos + "\n\n\n" + x_ for x_ in x])
 
-            self.cost += compute_cost(x)
+            # only compute cost! save inference
+            if cost_only:
+                x = [
+                    self.encoder_l2.forward_template.render(input=x_, prompt=self.encoder_l2.weight)
+                    for x_ in x
+                ]
+                self.cost += compute_cost(x)
+                return ["" for _ in x]
+
             y_hat = self.encoder_l2(
                 x,
                 output_classes=self.output_classes

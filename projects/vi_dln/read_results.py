@@ -18,10 +18,11 @@ for method in glob.glob(root + "/**/output.log", recursive=True):
     # time should be -2, method -3
     name = "/".join(method.split("/")[:-2])
     if name not in results:
-        results[name] = {"dev": [], "test": [], "args": None}
+        results[name] = {"dev": [], "test": [], "cost": [], "args": None}
 
     dev_accuracy = []
     test_accuracy = []
+    token_cost = []
     with open(method, "r") as f:
         lines = f.readlines()
         for i, line in enumerate(lines):
@@ -35,15 +36,20 @@ for method in glob.glob(root + "/**/output.log", recursive=True):
             elif "TEST ACC:" in line:
                 line = escape_ansi(line).partition("TEST ACC:")[-1]
                 test_accuracy.append(float(line.strip()))
+            elif "COST:" in line:
+                line = escape_ansi(line).partition("COST:")[-1]
+                token_cost.append(float(line.strip()))
 
     if dev_accuracy:
         results[name]["dev"].append(np.max(dev_accuracy))
     if test_accuracy:
         results[name]["test"].append(test_accuracy[0])
+    if token_cost:
+        results[name]["cost"].append(token_cost[0])
 
 
 for key, val in results.items():
-    for s in ["dev", "test"]:
+    for s in ["dev", "test", "cost"]:
         if val[s]:
             print(
                 "{:50s}".format(key),
