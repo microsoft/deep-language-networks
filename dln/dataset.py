@@ -92,7 +92,12 @@ class Dataset:
             ).tolist()
             i += 1
         x = [self.dataset["train"]["sentence"][i] for i in indices]
-        y = [self.dataset["train"]["label"][i] for i in indices]
+
+        if self.use_label_mapping:
+            label_mapping = self.label_mapping
+            y = [label_mapping[self.dataset["train"]["label"][i]] for i in indices]
+        else:
+            y = [self.dataset["train"]["label"][i] for i in indices]
         return list(zip(x, y))
 
     def resize(self, split, size):
