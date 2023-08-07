@@ -94,7 +94,7 @@ def test(dataset, model, loss_fn, iteration, writer):
     tot = 0.0
     i = 0
     all_accs = []
-    
+
     pbar = tqdm.tqdm(
         total=dataset.get_size("test"),
         bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",

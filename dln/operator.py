@@ -42,7 +42,7 @@ class GPT:
         self.engine = model_name
 
         if self.engine == "any":
-            openai.api_base = "http://0.0.0.0:8082"
+            openai.api_base = "http://0.0.0.0:8081"
             openai.api_key = "any"
             openai.api_type = "openai"
             self.encoder = tiktoken.encoding_for_model("text-davinci-003")
