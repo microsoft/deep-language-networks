@@ -93,6 +93,8 @@ def test(dataset, model, loss_fn, iteration, writer):
     acc = 0.0
     tot = 0.0
     i = 0
+    all_accs = []
+    
     pbar = tqdm.tqdm(
         total=dataset.get_size("test"),
         bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
@@ -103,6 +105,7 @@ def test(dataset, model, loss_fn, iteration, writer):
     for batch in dataset.iterate("test", batch_size=20):
         x, y, infos = batch
         y_hat = model.forward(np.array(x), infos=infos)
+        all_accs += (1. - loss_fn(y_hat, y)).tolist()
         acc += len(y) - np.sum(loss_fn(y_hat, y))
         tot += len(y)
         pbar.update(len(y))
@@ -110,7 +113,8 @@ def test(dataset, model, loss_fn, iteration, writer):
 
     test_acc = acc / tot
     writer.add_scalar("test/acc", (test_acc), iteration)
-
+    # for sig-test purposes
+    log_message("ALL ACCS:", all_accs)
     return test_acc
 
 
