@@ -9,6 +9,7 @@ from dln.score import OutputClasses
 from dln.vi.layers import PriorLayer, ResidualPriorLayer
 from dln.vi.sampler import PosteriorSampler, PromptSampler
 from dln.vi.utils import compute_pairwise_kl, log_message
+from dln.operator import compute_cost
 
 
 class VILModel:
@@ -107,6 +108,7 @@ class VILModel:
         self.output_scoring_function = output_scoring_function
         self.hidden_scoring_function = hidden_scoring_function
         self.num_acc_mc_samples = 1
+        self.cost = 0.
 
         if self.forward_use_classes:
             assert (
@@ -667,6 +669,7 @@ class VILModel:
                 )
                 x = np.array([infos + "\n\n\n" + x_ for x_ in x])
 
+            self.cost += compute_cost(x)
             y_hat = self.encoder_l2(
                 x,
                 output_classes=self.output_classes

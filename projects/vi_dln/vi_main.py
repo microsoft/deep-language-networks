@@ -93,6 +93,7 @@ def test(dataset, model, loss_fn, iteration, writer):
     acc = 0.0
     tot = 0.0
     i = 0
+    cost = 0.0
     all_accs = []
 
     pbar = tqdm.tqdm(
@@ -101,6 +102,7 @@ def test(dataset, model, loss_fn, iteration, writer):
         desc="Eval",
     )
 
+    model.cost = 0.
     dataset.reset_pointer("test")
     for batch in dataset.iterate("test", batch_size=20):
         x, y, infos = batch
@@ -115,6 +117,7 @@ def test(dataset, model, loss_fn, iteration, writer):
     writer.add_scalar("test/acc", (test_acc), iteration)
     # for sig-test purposes
     log_message("ALL ACCS:", all_accs)
+    log_message("TOKEN COST:", model.cost)
     return test_acc
 
 

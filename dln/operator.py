@@ -17,6 +17,11 @@ forward_interpreter = None
 backward_interpreter = None
 
 
+def compute_cost(inputs):
+    assert forward_interpreter is not None
+    return np.sum(list([len(forward_interpreter.encode(input)) for input in inputs]))
+
+
 class GPT:
     AVAILABLE_MODELS = [
         "text-davinci-003",
