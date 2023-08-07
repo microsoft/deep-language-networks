@@ -29,6 +29,7 @@ class GPT:
         "gpt-4",
         "gpt-4-32k",
         "gpt-4-0613",
+        "any",
     ]
 
     def __init__(self, model_name="text-davinci-003", **generation_options):
@@ -36,9 +37,17 @@ class GPT:
             raise ValueError(
                 f"model_name should be one of: {','.join(self.AVAILABLE_MODELS)}"
             )
+
         self.generation_options = generation_options
         self.engine = model_name
-        self.encoder = tiktoken.encoding_for_model(self.engine)
+
+        if self.engine == "any":
+            openai.api_base = "http://0.0.0.0:8082"
+            openai.api_key = "any"
+            openai.api_type = "openai"
+            self.encoder = tiktoken.encoding_for_model("text-davinci-003")
+        else:
+            self.encoder = tiktoken.encoding_for_model(self.engine)
         openai.api_version = os.environ.get('OPENAI_API_VERSION')
 
     def encode(self, string):
@@ -243,7 +252,7 @@ class GPT:
         generation_options = self.generation_options.copy()
         generation_options.update(**kwargs)
 
-        if self.engine in ("gpt-3.5-turbo", "gpt-4", "gpt-4-32k", "gpt-4-0613"):
+        if self.engine in ("gpt-3.5-turbo", "gpt-4", "gpt-4-32k", "gpt-4-0613", "any"):
             if "return_logprobs" in generation_options:
                 del generation_options["return_logprobs"]
 
