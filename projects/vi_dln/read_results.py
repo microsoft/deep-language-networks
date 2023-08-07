@@ -16,7 +16,7 @@ results = {}
 
 for method in glob.glob(root + "/**/output.log", recursive=True):
     # time should be -2, method -3
-    name = method.split("/")[-3]
+    name = "/".join(method.split("/")[:-2])
     if name not in results:
         results[name] = {"dev": [], "test": [], "args": None}
 
