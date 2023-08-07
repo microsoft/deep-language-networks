@@ -43,6 +43,9 @@ class PriorLayer:
                 self.forward_template.render(input=input, prompt=self.weight)
                 for input in inputs
             ]
+
+            log_message(tpl_inputs[0])
+
             outputs = forward_evaluate(
                 tpl_inputs,
                 stop=self.forward_template.stop_tokens,
