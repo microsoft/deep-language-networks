@@ -28,6 +28,7 @@ class GPT:
         "gpt-3.5-turbo",
         "gpt-4",
         "gpt-4-32k",
+        "gpt-4-0613",
     ]
 
     def __init__(self, model_name="text-davinci-003", **generation_options):
@@ -48,7 +49,8 @@ class GPT:
         return not (
             "gpt-3.5" in self.engine or
             "gpt-4" in self.engine or
-            "gpt-35" in self.engine
+            "gpt-35" in self.engine or
+            "gpt-4-0613" in self.engine
         )
 
     @retry(
@@ -241,7 +243,7 @@ class GPT:
         generation_options = self.generation_options.copy()
         generation_options.update(**kwargs)
 
-        if self.engine in ("gpt-3.5-turbo", "gpt-4", "gpt-4-32k"):
+        if self.engine in ("gpt-3.5-turbo", "gpt-4", "gpt-4-32k", "gpt-4-0613"):
             if "return_logprobs" in generation_options:
                 del generation_options["return_logprobs"]
 
