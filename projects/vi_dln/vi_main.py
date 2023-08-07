@@ -25,11 +25,13 @@ def init_prompts(dataset, init_p1, init_p2):
     if init_p1 and init_p1.endswith(".json"):
         with open(init_p1) as f:
             best_weights = json.load(f)
-        init_p1 = best_weights[dataset]["best_weights"]
+        init_p1 = best_weights[dataset.name]["best_weights"]
     elif init_p2 and init_p2.endswith(".json"):
         with open(init_p2) as f:
             best_weights = json.load(f)
-        init_p2 = best_weights[dataset]["best_weights"]
+        init_p2 = best_weights[dataset.name]["best_weights"]
+    if init_p2 is None:
+        init_p2 = dataset.instruction
     return init_p1, init_p2
 
 
@@ -314,10 +316,11 @@ def main(
 
     writer = SummaryWriter(f"{out_dir}")
 
-    init_p1, init_p2 = init_prompts(dataset, init_p1, init_p2)
+    dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir, do_few_shot)
 
-    dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir)
-    dataset.init_few_shot(do_few_shot)
+    init_p1, init_p2 = init_prompts(dataset, init_p1, init_p2)
+    log_message("Init P1: ", init_p1)
+    log_message("Init P2: ", init_p2)
 
     forward_instantiate(
         model_type,
@@ -335,7 +338,8 @@ def main(
     loss_fn = ZeroOneLoss(postproc=postprocess_prediction)
     model = VILModel(
         loss_fn,
-        task_description=dataset.instruction,
+        init_p1=init_p1,
+        init_p2=init_p2,
         two_layers=not one_layer,
         num_p_samples=num_p_samples,
         num_h_samples=num_h_samples,
@@ -344,8 +348,6 @@ def main(
         p_hidden=p_hidden,
         p_class=p_class,
         p_residual=p_residual,
-        init_p1=init_p1,
-        init_p2=init_p2,
         use_h_argmax=use_h_argmax,
         output_classes=output_classes,
         strip_options_for_hidden=strip_options_for_hidden,
@@ -400,7 +402,7 @@ def main(
                 patience = 0
 
         # zero shot or allow last iteration for validation
-        if do_zero_shot or do_few_shot > 0 or iteration == iters:
+        if do_zero_shot or do_few_shot >= 0 or iteration == iters:
             break
 
         x, y, infos = dataset.get_batch(
