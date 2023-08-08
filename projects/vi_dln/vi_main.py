@@ -415,7 +415,7 @@ def main(
                 patience = 0
 
         # zero shot or allow last iteration for validation
-        if do_zero_shot or do_few_shot >= 0 or iteration == iters:
+        if do_zero_shot or iteration == iters or (do_few_shot >= 0 and not train_p1 and not train_p2):
             break
 
         x, y, infos = dataset.get_batch(
