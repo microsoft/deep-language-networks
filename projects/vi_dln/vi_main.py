@@ -30,6 +30,13 @@ def init_prompts(dataset, init_p1, init_p2):
         with open(init_p2) as f:
             best_weights = json.load(f)
         init_p2 = best_weights[dataset.name]["best_weights"]
+    elif init_p2 and init_p2.endswith(".log"):
+        with open(init_p2) as f:
+            lines = f.readlines()
+            for line in lines:
+                if "Best L2 weights" in line:
+                    init_p2 = line.partition("Best L2 weights:")[-1].strip()
+                    break
     if init_p2 is None:
         init_p2 = dataset.instruction
     return init_p1, init_p2
