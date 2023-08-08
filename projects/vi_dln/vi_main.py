@@ -251,6 +251,11 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     default="text-davinci-003",
 )
 @click.option(
+    "--bwd_model_type",
+    type=str,
+    default=None,
+)
+@click.option(
     "--fwd_max_tokens",
     type=int,
     default=256,
@@ -304,6 +309,7 @@ def main(
     decay_logp_penalty,
     posterior_temp,
     model_type,
+    bwd_model_type,
     fwd_max_tokens,
     bwd_max_tokens,
 ):
@@ -336,7 +342,7 @@ def main(
         stop=None,
     )
     backward_instantiate(
-        model_type,
+        bwd_model_type or model_type,
         temperature=bwd_temp,
         max_tokens=bwd_max_tokens,
         stop=None,
