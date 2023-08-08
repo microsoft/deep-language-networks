@@ -31,12 +31,16 @@ def init_prompts(dataset, init_p1, init_p2):
             best_weights = json.load(f)
         init_p2 = best_weights[dataset.name]["best_weights"]
     elif init_p2 and init_p2.endswith(".log"):
+        found = False
         with open(init_p2) as f:
             lines = f.readlines()
             for line in lines:
                 if "Best L2 weights" in line:
                     init_p2 = line.partition("Best L2 weights:")[-1].strip()
+                    found = True
                     break
+            if not found:
+                raise ValueError("Best weights were not found in the log file!")
     if init_p2 is None:
         init_p2 = dataset.instruction
     return init_p1, init_p2
@@ -274,6 +278,12 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     default=512,
     help="Backward max tokens.",
 )
+@click.option(
+    "--num_p1_steps",
+    type=int,
+    default=1,
+    help="Number of prompt optimization steps for the hidden layer.",
+)
 def main(
     seed,
     out_dir,
@@ -319,6 +329,7 @@ def main(
     bwd_model_type,
     fwd_max_tokens,
     bwd_max_tokens,
+    num_p1_steps,
 ):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S.%f")
     out_dir = f"{out_dir}/{timestamp}"
@@ -385,6 +396,7 @@ def main(
         strip_prefix_for_hidden=dataset.prefix if strip_prefix_for_hidden else None,
         output_scoring_function=output_scoring_function,
         hidden_scoring_function=hidden_scoring_function,
+        num_p1_steps=num_p1_steps,
     )
 
     running_acc = 0.0

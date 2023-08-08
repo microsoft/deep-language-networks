@@ -43,6 +43,7 @@ class VILModel:
         strip_prefix_for_hidden: str = None,
         output_scoring_function: str = "logprobs",
         hidden_scoring_function: str = "logprobs",
+        num_p1_steps: int = 1,
     ):
         """
         Args:
@@ -104,7 +105,7 @@ class VILModel:
         self.p2_max_tokens = p2_max_tokens
         self.posterior_temp = posterior_temp
         self.num_p2_steps = 1
-        self.num_p1_steps = 1
+        self.num_p1_steps = num_p1_steps
         self.output_scoring_function = output_scoring_function
         self.hidden_scoring_function = hidden_scoring_function
         self.num_acc_mc_samples = 1
@@ -409,7 +410,8 @@ class VILModel:
         if self.train_p2:
             current_prompt = self.encoder_l2.weight
             p2_elbos = []
-            for i in range(self.num_p2_steps):
+
+            for num_step in range(self.num_p2_steps):
                 # sample from the prompt distribution, (num_prompts,)
                 p_tilde_2: np.array = self.prompt_sampler.sample_q_p(
                     inputs=r_h1,
@@ -437,8 +439,8 @@ class VILModel:
 
                 # batch_size, num_h_samples, num_p_samples
                 if self.output_scoring_function == "logprobs":
-                    # batch_size, num_h_samples, num_p_samples
                     log_message(colored("Evaluating log likelihoods for p2...", "yellow"))
+
                     scores = self.encoder_l2.log_p(
                         inputs=np.array([eval[0] for eval in evals]),
                         targets=np.array([eval[1] for eval in evals]),
@@ -448,6 +450,7 @@ class VILModel:
                     ).logp_targets
                     scores = scores.reshape(eval_batch_size, num_h_samples, p_tilde_2.shape[0])
 
+                    # trust factor diminishes changes to output layer
                     if self.trust_factor > 0.0:
                         evals = []
                         for i in range(batch_size):
@@ -465,6 +468,7 @@ class VILModel:
                         p2_kl = compute_pairwise_kl(lps)
                     else:
                         p2_kl = np.zeros(p_tilde_2.shape[0])
+
                 elif self.output_scoring_function == "accuracy":
                     log_message(colored("Evaluating accuracies for p2...", "yellow"))
                     scores = self.encoder_l2.accuracy(
@@ -484,6 +488,11 @@ class VILModel:
                 best_p2_index = np.argmax(p2_reward)
                 current_prompt = best_p2
                 p2_elbos.append(best_p2_elbo)
+
+                log_message(f"P2 optimization step done [{num_step + 1}/{self.num_p2_steps}].")
+                log_message(f"Optimization metric: {best_p2_elbo}")
+                log_message(f"Current prompt selected: {best_p2}")
+
             log_message("Optimization of P2... DONE.", p2_elbos)
         else:
             p_tilde_2 = np.asarray([self.encoder_l2.weight])
@@ -499,7 +508,7 @@ class VILModel:
             current_prompt = self.encoder_l1.weight
             p1_elbos = []
 
-            for i in range(self.num_p1_steps):
+            for num_step in range(self.num_p1_steps):
                 p_tilde_1: np.array = self.prompt_sampler.sample_q_p(
                     inputs=x,
                     y=h_tilde_1_star,
@@ -509,19 +518,20 @@ class VILModel:
                     num_samples=self.num_p_samples,
                     held_out_half=self.held_out_prompt_ranking,
                 )
+
                 if self.prompt_memory:
                     p_tilde_1 = np.concatenate([p_tilde_1, self.get_from_memory(0)], 0)
 
                 # marginalize over all posterior samples
                 # build array: (num_samples, num_h_samples, num_p_samples)
                 evals = []
-                eval_h_tilde_1 = np.concatenate([h1[:, None], eval_h_tilde_1], 1)
+                eval_h_tilde_1_ = np.concatenate([h1[:, None], eval_h_tilde_1], 1)
+                scores = self.score_p1(eval_x, eval_h_tilde_1_, p_tilde_1)
 
-                ll = self.score_p1(eval_x, eval_h_tilde_1, p_tilde_1)
-                ll_orig = ll[:, 0, :]
-                p1_elbo = self.compute_elbo_score(ll[:, 1:, :], eval_weights)
+                ll_orig = scores[:, 0, :]
+                p1_elbo = self.compute_elbo_score(scores[:, 1:, :], eval_weights)
 
-                # Compute an exploration like logp penalty.
+                # Compute an exploration like logp penalty that penalizes the log-likelihood of wrong thoughts
                 if self.logp_penalty > 0.0:
                     error_terms = np.where(losses > 0.0)[0]
 
@@ -533,7 +543,13 @@ class VILModel:
                 best_p1_elbo = np.max(p1_elbo)
                 best_p1_index = np.argmax(p1_elbo)
                 current_prompt = best_p1
+
+                log_message(f"P1 optimization step done [{num_step + 1}/{self.num_p1_steps}].")
+                log_message(f"Optimization metric: {best_p1_elbo}")
+                log_message(f"Current prompt selected: {best_p1}")
+
                 p1_elbos.append(best_p1_elbo)
+
             log_message("Optimization of P1... DONE.", p1_elbos)
         else:
             p_tilde_1 = np.asarray([self.encoder_l1.weight])
@@ -560,6 +576,8 @@ class VILModel:
 
     def score_p1(self, eval_x, eval_h_tilde_1, p_tilde_1):
         if self.hidden_scoring_function == "logprobs":
+            log_message(colored("Evaluating log likelihoods for p1...", "yellow"))
+
             evals = []
             for i in range(eval_h_tilde_1.shape[0]):
                 for j in range(eval_h_tilde_1.shape[1]):
@@ -572,12 +590,12 @@ class VILModel:
                             )
                         )
             # (batch_size, num_h_samples, num_p_samples)
-            log_message(colored("Evaluating log likelihoods for p1...", "yellow"))
             scores = self.encoder_l1.log_p(
                 inputs=np.array([eval[0] for eval in evals]),
                 targets=np.array([eval[1] for eval in evals]),
                 prompts=np.array([eval[2] for eval in evals]),
             ).logp_targets
+
             scores = scores.reshape(
                 eval_h_tilde_1.shape[0],
                 eval_h_tilde_1.shape[1],
