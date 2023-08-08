@@ -1,9 +1,8 @@
 set -x  # print commands to terminal
-dataset=logical_deduction_seven_objects
 p_class_tpl="classify_forward:3.0"
 iters=20
-batch_size=10
-num_p_samples=15
+batch_size=20
+num_p_samples=10
 bwd_temp=0.7
 held_out_prompt_ranking=True
 use_memory=2
@@ -13,23 +12,22 @@ q_prompt_tpl="q_action_prompt:v3.5"
 logp_penalty=2.
 posterior_temp=1.
 model_type="local-2"
+bwd_model_type="text-davinci-003"
 
 # dataset
 for dataset in navigate subj logical_deduction_seven_objects; do
-# n_shot
-for n_shot in 0 5; do
 
-dir=log/any/${dataset}/${n_shot}shot/
+dir=log/any/${dataset}/DLN-1/
 
 if [ ! -f ${dir}/done.txt ]; then
     /bin/rm -rf ${dir}
 
     # seed
-    for seed in 13 42; do
+    for seed in 13 42 25; do
         python vi_main.py \
             --balance_batch \
-            --do_few_shot ${n_shot} \
             --one_layer \
+            --do_first_eval \
             --num_p_samples ${num_p_samples} \
             --bwd_temp ${bwd_temp} \
             --iters ${iters} \
@@ -43,13 +41,12 @@ if [ ! -f ${dir}/done.txt ]; then
             --tolerance ${tolerance} \
             --held_out_prompt_ranking ${held_out_prompt_ranking} \
             --output_scoring_function accuracy \
-            --model_type ${model_type}
+            --model_type ${model_type} \
+            --bwd_model_type ${bwd_model_type}
     # seed
     done
 
     touch ${dir}/done.txt
 fi
-# n shot
-done
 # dataset
 done
