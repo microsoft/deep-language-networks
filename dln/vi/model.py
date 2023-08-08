@@ -477,7 +477,7 @@ class VILModel:
                     scores = scores.reshape(eval_batch_size, num_h_samples, p_tilde_2.shape[0])
                     p2_kl = np.zeros(p_tilde_2.shape[0])
 
-                p2_elbo = self.compute_elbo_score(ll[:, :, :], eval_weights)
+                p2_elbo = self.compute_elbo_score(scores, eval_weights)
                 p2_reward = p2_elbo - self.trust_factor * p2_kl
                 best_p2 = p_tilde_2[np.argmax(p2_reward)]
                 best_p2_elbo = np.max(p2_reward)
