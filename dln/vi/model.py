@@ -669,13 +669,14 @@ class VILModel:
                 )
                 x = np.array([infos + "\n\n\n" + x_ for x_ in x])
 
+            x = [
+                self.encoder_l2.forward_template.render(input=x_, prompt=self.encoder_l2.weight)
+                for x_ in x
+            ]
+            self.cost += compute_cost(x)
+
             # only compute cost! save inference
             if cost_only:
-                x = [
-                    self.encoder_l2.forward_template.render(input=x_, prompt=self.encoder_l2.weight)
-                    for x_ in x
-                ]
-                self.cost += compute_cost(x)
                 return ["" for _ in x]
 
             y_hat = self.encoder_l2(
