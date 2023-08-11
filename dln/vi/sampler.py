@@ -24,6 +24,7 @@ class PromptSampler:
             "Message alternatives:\n", f"{self.prompt_template.message_alternatives}"
         )
         self.evaluate_func = backward_evaluate
+        self.prompt_history = []
 
     def sample_q_p(
         self,
@@ -45,6 +46,8 @@ class PromptSampler:
             num_samples: number of samples to generate
             held_out_half: if True, only use the first half of the data points for sampling prompts
         """
+        self.prompt_history.append(prompt)
+
         infos = [
             Info(input=input_i, output=y_hat_i, target=y_i, loss=loss)
             for input_i, y_i, y_hat_i, loss in zip(inputs, y, y_hat, losses)
@@ -67,12 +70,12 @@ class PromptSampler:
                     tpls.append(
                         self.prompt_template.render(
                             backward_infos=infos_,
-                            prompt=prompt,
+                            prompt=self.prompt_history[-1],
                             message=message,
                         )
                     )
 
-                log_message("Prompt Sampler:", tpls[-1])
+                # log_message("Prompt Sampler:", tpls[-1])
                 log_message("Generating {} ~p proposals...".format(num_samples))
 
                 prompts = self.evaluate_func(
@@ -99,12 +102,15 @@ class PromptSampler:
 class PosteriorSampler:
     def __init__(self, q_template):
         self.q_templates = []
+
         for q_template in q_template.split("|"):
             self.q_templates.append(load_template(q_template))
+
         for q_template in self.q_templates:
             log_message("Q template:", f"{repr(q_template.template)}")
+
         self.stop_tokens = self.q_templates[0].stop_tokens
-        self.evaluate_func = backward_evaluate
+        self.rng = np.random.RandomState(0)
 
     def sample_q_h(
         self,
@@ -135,7 +141,7 @@ class PosteriorSampler:
         """
         tpls = []
 
-        for x_i, h_i, y_i in zip(x, h, y):
+        for i, (x_i, h_i, y_i) in enumerate(zip(x, h, y)):
             for j in range(num_samples):
                 # pick a template at random
                 q_template = self.q_templates[
@@ -147,17 +153,26 @@ class PosteriorSampler:
                     ]
                 else:
                     message = None
+
+                # pick another example in the set
+                all_indices = list(np.arange(len(x)))
+                all_indices.remove(i)
+                source_example = self.rng.choice(all_indices)
+
                 tpl = q_template.render(
                     input=x_i,
                     h=h_i,
+                    source_x=x[source_example],
+                    source_h=h[source_example],
                     prompt=prompt,
                     next_prompt=next_prompt,
                     y=y_i,
                     message=message,
                 )
+
+                # induce randomness
                 tpls.append(tpl)
 
-        # WATCH OUT: we only use max_tokens=128
         max_tokens = 256
         assert len(
             tpls
@@ -170,7 +185,7 @@ class PosteriorSampler:
                 num_samples, max_tokens
             )
         )
-        sampled = self.evaluate_func(
+        sampled = backward_evaluate(
             tpls,
             stop=self.stop_tokens,
             n=1,

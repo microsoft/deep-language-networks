@@ -82,7 +82,8 @@ class VILModel:
         if not two_layers:
             self.encoder_l1.weight = None
 
-        self.prompt_sampler = PromptSampler(q_prompt)
+        self.prompt_sampler_1 = PromptSampler(q_prompt)
+        self.prompt_sampler_2 = PromptSampler(q_prompt)
         self.q_sampler = PosteriorSampler(q_hidden)
 
         self.trust_factor = trust_factor
@@ -109,7 +110,7 @@ class VILModel:
         self.output_scoring_function = output_scoring_function
         self.hidden_scoring_function = hidden_scoring_function
         self.num_acc_mc_samples = 1
-        self.cost = 0.
+        self.cost = 0.0
 
         if self.forward_use_classes:
             assert (
@@ -173,7 +174,7 @@ class VILModel:
                 output_classes=self.output_classes,
                 agg="sum" if self.forward_use_classes else "max",
             ).logp_targets
-    
+
             # batch_size, num_p_samples
             ll = ll.reshape(batch_size, p_tilde_2.shape[0])
 
@@ -192,7 +193,7 @@ class VILModel:
 
             return best_p2_elbo, None, best_p2
         elif self.output_scoring_function == "accuracy":
-            if np.sum(losses) == 0.:
+            if np.sum(losses) == 0.0:
                 return 1.0, None, self.encoder_l2.weight
 
             acc = self.encoder_l2.accuracy(
@@ -268,7 +269,7 @@ class VILModel:
             h_tilde_1.flatten(), x_repeat
         ).reshape(batch_size, num_h_samples)
 
-        if num_h_samples > 1 and posterior_temp < 100.:
+        if num_h_samples > 1 and posterior_temp < 100.0:
             log_message(colored("Tightening posterior approximation...", "yellow"))
             y_repeat = y.repeat(num_h_samples, axis=0)
 
@@ -292,14 +293,13 @@ class VILModel:
                     )
                     pr = self.encoder_l1.log_p(
                         x_repeat, h_tilde_1.flatten()
-                    ).logp_targets.reshape(
-                        batch_size, num_h_samples
-                    )
+                    ).logp_targets.reshape(batch_size, num_h_samples)
                     logits = pr + ll
                 else:
                     log_message(
                         colored(
-                            "Scoring posterior samples only with log-likelihood!", "yellow"
+                            "Scoring posterior samples only with log-likelihood!",
+                            "yellow",
                         )
                     )
                     # we don't need to compute the prior log-prob of ~h
@@ -381,7 +381,7 @@ class VILModel:
             x=x,
             y=y,
             h1=h1,
-            include_h1=True,
+            include_h1=False,
             add_prior_term_to_score=True,
             posterior_temp=self.posterior_temp,
         )
@@ -413,7 +413,7 @@ class VILModel:
 
             for num_step in range(self.num_p2_steps):
                 # sample from the prompt distribution, (num_prompts,)
-                p_tilde_2: np.array = self.prompt_sampler.sample_q_p(
+                p_tilde_2: np.array = self.prompt_sampler_2.sample_q_p(
                     inputs=r_h1,
                     y=y,
                     y_hat=y_hat,
@@ -439,7 +439,9 @@ class VILModel:
 
                 # batch_size, num_h_samples, num_p_samples
                 if self.output_scoring_function == "logprobs":
-                    log_message(colored("Evaluating log likelihoods for p2...", "yellow"))
+                    log_message(
+                        colored("Evaluating log likelihoods for p2...", "yellow")
+                    )
 
                     scores = self.encoder_l2.log_p(
                         inputs=np.array([eval[0] for eval in evals]),
@@ -448,7 +450,9 @@ class VILModel:
                         output_classes=self.output_classes,
                         agg="sum" if self.forward_use_classes else "max",
                     ).logp_targets
-                    scores = scores.reshape(eval_batch_size, num_h_samples, p_tilde_2.shape[0])
+                    scores = scores.reshape(
+                        eval_batch_size, num_h_samples, p_tilde_2.shape[0]
+                    )
 
                     # trust factor diminishes changes to output layer
                     if self.trust_factor > 0.0:
@@ -478,7 +482,9 @@ class VILModel:
                         num_samples=self.num_acc_mc_samples,
                         postprocess_prediction=postprocess_prediction,
                     )
-                    scores = scores.reshape(eval_batch_size, num_h_samples, p_tilde_2.shape[0])
+                    scores = scores.reshape(
+                        eval_batch_size, num_h_samples, p_tilde_2.shape[0]
+                    )
                     p2_kl = np.zeros(p_tilde_2.shape[0])
 
                 p2_elbo = self.compute_elbo_score(scores, eval_weights)
@@ -489,7 +495,9 @@ class VILModel:
                 current_prompt = best_p2
                 p2_elbos.append(best_p2_elbo)
 
-                log_message(f"P2 optimization step done [{num_step + 1}/{self.num_p2_steps}].")
+                log_message(
+                    f"P2 optimization step done [{num_step + 1}/{self.num_p2_steps}]."
+                )
                 log_message(f"Optimization metric: {best_p2_elbo}")
                 log_message(f"Current prompt selected: {best_p2}")
 
@@ -509,7 +517,7 @@ class VILModel:
             p1_elbos = []
 
             for num_step in range(self.num_p1_steps):
-                p_tilde_1: np.array = self.prompt_sampler.sample_q_p(
+                p_tilde_1: np.array = self.prompt_sampler_1.sample_q_p(
                     inputs=x,
                     y=h_tilde_1_star,
                     y_hat=h1,
@@ -537,18 +545,23 @@ class VILModel:
 
                     if len(error_terms) > 0:
                         ll_errors = ll_orig[error_terms]
-                        p1_elbo = p1_elbo - self.logp_penalty * ll_errors.mean(0)
+                        p1_elbo = (
+                            p1_elbo
+                            - self.logp_penalty * ll_errors.sum(0) / ll_orig.shape[0]
+                        )
 
                 best_p1 = p_tilde_1[np.argmax(p1_elbo)]
                 best_p1_elbo = np.max(p1_elbo)
                 best_p1_index = np.argmax(p1_elbo)
                 current_prompt = best_p1
 
-                log_message(f"P1 optimization step done [{num_step + 1}/{self.num_p1_steps}].")
-                log_message(f"Optimization metric: {best_p1_elbo}")
-                log_message(f"Current prompt selected: {best_p1}")
-
                 p1_elbos.append(best_p1_elbo)
+
+                log_message(
+                    f"P1 optimization step done [{num_step + 1}/{self.num_p1_steps}]."
+                )
+                log_message(f"Optimization metric: {'->'.join(['{:.3f}'.format(e) for e in p1_elbos])}")
+                log_message(f"Current prompt selected: {best_p1}")
 
             log_message("Optimization of P1... DONE.", p1_elbos)
         else:
@@ -585,7 +598,7 @@ class VILModel:
                         evals.append(
                             (
                                 eval_x[i],
-                                eval_h_tilde_1[i, j], 
+                                eval_h_tilde_1[i, j],
                                 p_tilde_1[k],
                             )
                         )
@@ -688,7 +701,9 @@ class VILModel:
                 x = np.array([infos + "\n\n\n" + x_ for x_ in x])
 
             x_ = [
-                self.encoder_l2.forward_template.render(input=x_, prompt=self.encoder_l2.weight)
+                self.encoder_l2.forward_template.render(
+                    input=x_, prompt=self.encoder_l2.weight
+                )
                 for x_ in x
             ]
             self.cost += compute_cost(x_)

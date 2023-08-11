@@ -1,9 +1,9 @@
 import glob
 import sys
-import os
 import re
 import json
 import numpy as np
+from termcolor import colored
 
 
 def escape_ansi(line):
@@ -16,7 +16,7 @@ results = {}
 
 for method in glob.glob(root + "/**/output.log", recursive=True):
     # time should be -2, method -3
-    name = "/".join(method.split("/")[:-2])
+    name = "/".join(method.split("/")[-3:-2])
     if name not in results:
         results[name] = {"dev": [], "test": [], "cost": [], "args": None}
 
@@ -47,16 +47,15 @@ for method in glob.glob(root + "/**/output.log", recursive=True):
     if token_cost:
         results[name]["cost"].append(token_cost[0])
 
-
+data = []
 for key, val in results.items():
-    for s in ["dev", "test", "cost"]:
+    results = {"name": key}
+    for s in ["dev", "test"]:
         if val[s]:
-            print(
-                "{:50s}".format(key),
-                "--",
-                s,
-                "--",
-                val[s],
-                "AVG: ",
-                np.mean(val[s]),
-            )
+            results[s] = "{:.3f}".format(np.mean(val[s])) + " +/- " + "{:.3f}".format(np.std(val[s]))
+    data.append(results)
+
+
+import pandas
+
+print(pandas.DataFrame(data).sort_values("dev"))

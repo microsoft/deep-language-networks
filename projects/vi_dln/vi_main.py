@@ -201,7 +201,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option(
     "--init_p1",
     type=str,
-    default="Decompose the problem to make it simpler:",
+    default="",
 )
 @click.option(
     "--init_p2",
