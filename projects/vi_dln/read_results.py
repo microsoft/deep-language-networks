@@ -53,6 +53,7 @@ for key, val in results.items():
     for s in ["dev", "test"]:
         if val[s]:
             results[s] = "{:.3f}".format(np.mean(val[s])) + " +/- " + "{:.3f}".format(np.std(val[s]))
+            results["n_seeds"] = len(val[s])
     data.append(results)
 
 
