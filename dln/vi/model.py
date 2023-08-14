@@ -43,7 +43,10 @@ class VILModel:
         strip_prefix_for_hidden: str = None,
         output_scoring_function: str = "logprobs",
         hidden_scoring_function: str = "logprobs",
+        posterior_sharpening_include_prior: bool = True,
+        posterior_sharpening_use_mi_regularization: bool = False,
         num_p1_steps: int = 1,
+        use_nce: bool = False,
     ):
         """
         Args:
@@ -82,8 +85,8 @@ class VILModel:
         if not two_layers:
             self.encoder_l1.weight = None
 
-        self.prompt_sampler_1 = PromptSampler(q_prompt)
-        self.prompt_sampler_2 = PromptSampler(q_prompt)
+        self.prompt_sampler_1 = PromptSampler.create(q_prompt)
+        self.prompt_sampler_2 = PromptSampler.create(q_prompt)
         self.q_sampler = PosteriorSampler(q_hidden)
 
         self.trust_factor = trust_factor
@@ -109,13 +112,17 @@ class VILModel:
         self.num_p1_steps = num_p1_steps
         self.output_scoring_function = output_scoring_function
         self.hidden_scoring_function = hidden_scoring_function
+        self.posterior_sharpening_include_prior = posterior_sharpening_include_prior
+        self.posterior_sharpening_use_mi_regularization = posterior_sharpening_use_mi_regularization
         self.num_acc_mc_samples = 1
         self.cost = 0.0
+        self.use_nce = use_nce
 
         if self.forward_use_classes:
             assert (
                 self.output_classes is not None
             ), "Cannot use classes for forward without output classes"
+
         self.prompt_memory = []
 
     def get_from_memory(self, layer_index=0):
@@ -228,8 +235,6 @@ class VILModel:
         y,
         h1,
         include_h1=False,
-        add_prior_term_to_score=True,
-        posterior_temp=1.0,
     ):
         # samples from the approx. posterior of h_1
         # (batch_size, num_h_samples)
@@ -247,6 +252,7 @@ class VILModel:
                 prompt=self.encoder_l1.weight,
                 next_prompt=self.encoder_l2.weight,
                 num_samples=self.num_h_samples,
+                return_logprobs=False,
             )
 
         # concatenate the original sample
@@ -269,7 +275,7 @@ class VILModel:
             h_tilde_1.flatten(), x_repeat
         ).reshape(batch_size, num_h_samples)
 
-        if num_h_samples > 1 and posterior_temp < 100.0:
+        if num_h_samples > 1 and self.posterior_temp < 100.0:
             log_message(colored("Tightening posterior approximation...", "yellow"))
             y_repeat = y.repeat(num_h_samples, axis=0)
 
@@ -280,10 +286,9 @@ class VILModel:
                     output_classes=self.output_classes,
                     agg="sum" if self.forward_use_classes else "max",
                 ).logp_targets
+                logits = ll.reshape(batch_size, num_h_samples)
 
-                ll = ll.reshape(batch_size, num_h_samples)
-
-                if add_prior_term_to_score:
+                if self.posterior_sharpening_include_prior:
                     # now compute the prior log-prob of ~h, log p(~h | x, p_1)
                     log_message(
                         colored(
@@ -291,10 +296,12 @@ class VILModel:
                             "yellow",
                         )
                     )
+
+                    # pr
                     pr = self.encoder_l1.log_p(
                         x_repeat, h_tilde_1.flatten()
                     ).logp_targets.reshape(batch_size, num_h_samples)
-                    logits = pr + ll
+                    logits = logits + pr
                 else:
                     log_message(
                         colored(
@@ -302,8 +309,22 @@ class VILModel:
                             "yellow",
                         )
                     )
-                    # we don't need to compute the prior log-prob of ~h
-                    logits = ll
+
+                if self.posterior_sharpening_use_mi_regularization:
+                    log_message(
+                        colored(
+                            "Scoring posterior samples with MI regularization!",
+                            "yellow",
+                        )
+                    )
+
+                    # mi regularization term
+                    mi = self.encoder_l2.log_p(
+                        h_tilde_1.flatten(), y_repeat.flatten()
+                    ).logp_targets.reshape(batch_size, num_h_samples)
+
+                    logits = logits - mi
+
             elif self.output_scoring_function == "accuracy":
                 logits = self.encoder_l2.accuracy(
                     inputs=residual_h_tilde_1.flatten(),
@@ -315,8 +336,8 @@ class VILModel:
             logits = np.zeros((batch_size, num_h_samples))
 
         # posterior weights for h_tilde_1, (batch_size, num_h_samples,)
-        weights = np.exp(logits / posterior_temp) / np.sum(
-            np.exp(logits / posterior_temp), axis=1, keepdims=True
+        weights = np.exp(logits / self.posterior_temp) / np.sum(
+            np.exp(logits / self.posterior_temp), axis=1, keepdims=True
         )
         assert (weights.sum(1).sum(0) - batch_size) < 1e-5
 
@@ -382,8 +403,6 @@ class VILModel:
             y=y,
             h1=h1,
             include_h1=False,
-            add_prior_term_to_score=True,
-            posterior_temp=self.posterior_temp,
         )
         num_h_samples = h_tilde_1.shape[1]
 
@@ -535,9 +554,13 @@ class VILModel:
                 evals = []
                 eval_h_tilde_1_ = np.concatenate([h1[:, None], eval_h_tilde_1], 1)
                 scores = self.score_p1(eval_x, eval_h_tilde_1_, p_tilde_1)
-
                 ll_orig = scores[:, 0, :]
-                p1_elbo = self.compute_elbo_score(scores[:, 1:, :], eval_weights)
+
+                if self.use_nce:
+                    weights = np.exp(scores[:, 1:, :]) / np.exp(scores[:, 1:, :]).sum(1)[:, None, :]
+                    p1_elbo = (eval_weights[:, :, None] * np.log(weights + 1e-12)).sum(1).mean(0)
+                else:
+                    p1_elbo = self.compute_elbo_score(scores[:, 1:, :], eval_weights)
 
                 # Compute an exploration like logp penalty that penalizes the log-likelihood of wrong thoughts
                 if self.logp_penalty > 0.0:

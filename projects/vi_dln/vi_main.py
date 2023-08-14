@@ -251,6 +251,18 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     help="Use logprobs to score hidden states",
 )
 @click.option(
+    "--posterior_sharpening_include_prior",
+    type=bool,
+    default=True,
+    help="Include prior term in the posterior sharpening.",
+)
+@click.option(
+    "--posterior_sharpening_use_mi_regularization",
+    type=bool,
+    default=False,
+    help="MI-type regularization term on the hidden states.",
+)
+@click.option(
     "--posterior_temp",
     type=float,
     default=1.0,
@@ -283,6 +295,12 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     type=int,
     default=1,
     help="Number of prompt optimization steps for the hidden layer.",
+)
+@click.option(
+    "--use_nce",
+    type=bool,
+    default=False,
+    help="Use NCE for hidden scoring.",
 )
 def main(
     seed,
@@ -318,6 +336,8 @@ def main(
     tolerance,
     output_scoring_function,
     hidden_scoring_function,
+    posterior_sharpening_include_prior,
+    posterior_sharpening_use_mi_regularization,
     forward_use_classes,
     held_out_prompt_ranking,
     train_p1,
@@ -330,6 +350,7 @@ def main(
     fwd_max_tokens,
     bwd_max_tokens,
     num_p1_steps,
+    use_nce,
 ):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S.%f")
     out_dir = f"{out_dir}/{timestamp}"
@@ -397,6 +418,9 @@ def main(
         output_scoring_function=output_scoring_function,
         hidden_scoring_function=hidden_scoring_function,
         num_p1_steps=num_p1_steps,
+        posterior_sharpening_include_prior=posterior_sharpening_include_prior,
+        posterior_sharpening_use_mi_regularization=posterior_sharpening_use_mi_regularization,
+        use_nce=use_nce,
     )
 
     running_acc = 0.0

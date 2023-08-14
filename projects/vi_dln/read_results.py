@@ -49,14 +49,15 @@ for method in glob.glob(root + "/**/output.log", recursive=True):
 
 data = []
 for key, val in results.items():
-    results = {"name": key}
+    res = {"name": key}
     for s in ["dev", "test"]:
         if val[s]:
-            results[s] = "{:.3f}".format(np.mean(val[s])) + " +/- " + "{:.3f}".format(np.std(val[s]))
-            results["n_seeds"] = len(val[s])
-    data.append(results)
+            res[s] = "{:.3f}".format(np.mean(val[s])) + " +/- " + "{:.3f}".format(np.std(val[s]))
+            res["n_seeds"] = len(val[s])
+    data.append(res)
 
 
 import pandas
 
+pandas.set_option('display.max_colwidth', max(len(k) + 10 for k in results))
 print(pandas.DataFrame(data).sort_values("dev"))
