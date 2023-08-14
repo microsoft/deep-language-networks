@@ -153,7 +153,7 @@ class VILModel:
     ):
         batch_size = y.shape[0]
 
-        p_tilde_2: np.array = self.prompt_sampler.sample_q_p(
+        p_tilde_2: np.array = self.prompt_sampler_2.sample_q_p(
             x,
             y,
             y_hat,
