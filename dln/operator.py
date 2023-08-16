@@ -16,17 +16,24 @@ backward_interpreter = None
 
 
 class GPT:
-    AVAILABLE_MODELS = [
+
+    CHAT_COMPLETION_MODELS = [
+        "gpt-3.5-turbo",
+        "gpt-4",
+        "gpt-4-32k",
+    ]
+
+    COMPLETION_MODELS = [
         "text-davinci-003",
         "text-davinci-002",
         "code-davinci-002",
         "text-curie-001",
         "text-babbage-001",
         "text-ada-001",
-        "gpt-3.5-turbo",
-        "gpt-4",
-        "gpt-4-32k",
     ]
+
+    AVAILABLE_MODELS = CHAT_COMPLETION_MODELS + COMPLETION_MODELS
+
 
     def __init__(self, model_name="text-davinci-003", **generation_options):
         if model_name not in self.AVAILABLE_MODELS:
@@ -214,7 +221,7 @@ class GPT:
         generation_options = self.generation_options.copy()
         generation_options.update(**kwargs)
 
-        if self.engine in ("gpt-3.5-turbo", "gpt-4", "gpt-4-32k"):
+        if self.engine in self.CHAT_COMPLETION_MODELS:
             if "return_logprobs" in generation_options:
                 del generation_options["return_logprobs"]
 
@@ -229,7 +236,7 @@ class GPT:
                     self.get_chat_completion_response(_input, **generation_options)
                     for _input in inputs
                 ]
-        else:
+        elif self.engine in self.COMPLETION_MODELS:
             # devide to mini batches (max batch size = 20 according to openai)
             max_batch_size = 20
             input_length = len(inputs)
@@ -243,14 +250,80 @@ class GPT:
                     input_batch, **generation_options
                 )
                 outputs = outputs + output_batch
+        else:
+            outputs = asyncio.run(
+                self.gather_vllm_response(inputs, **generation_options)
+            )
         return outputs
+
+
+class VLLM:
+
+    def __init__(self, model_name, **generation_options):
+        self.generation_options = generation_options
+        self.engine = model_name
+
+    async def aget_vllm_response(self, input, return_logprobs=False, raw_logprobs=False, top_logprobs=False, **kwargs):
+        # import ipdb; ipdb.set_trace()
+        response = openai.Completion.create(
+            model=self.engine,
+            prompt=input,
+            logprobs=top_logprobs or 1,
+            **kwargs,
+        )
+        response = response["choices"][0]
+        output = response["text"].strip()
+        if raw_logprobs:
+            nlls = response["logprobs"]["token_logprobs"]
+            lengths = response["logprobs"]["tokens"]
+        elif top_logprobs:
+            nlls = response["logprobs"]["top_logprobs"]
+            lengths = response["logprobs"]["tokens"]
+        else:
+            if "token_logprobs" in response["logprobs"]:
+                nlls = sum(response["logprobs"]["token_logprobs"])
+                lengths = len(response["logprobs"]["token_logprobs"])
+            else:
+                nlls = -np.inf
+                lengths = 1
+
+        if return_logprobs:
+            return output, nlls, lengths
+        return output
+
+    async def gather_vllm_response(self, inputs, return_logprobs=False, raw_logprobs=False, top_logprobs=False, **kwargs):
+        outputs = await asyncio.gather(
+            *[
+                self.aget_vllm_response(p, return_logprobs, raw_logprobs, top_logprobs, **kwargs)
+                for p in inputs
+            ]
+        )
+        return outputs
+
+    def generate(self, inputs, async_generation=True, **kwargs):
+        if type(inputs) is not list:
+            inputs = [inputs]
+
+        kwargs.pop("output_space", None)
+        generation_options = self.generation_options.copy()
+        generation_options.update(**kwargs)
+        outputs = asyncio.run(
+            self.gather_vllm_response(inputs, **generation_options)
+        )
+        return outputs
+
+
+def instantiate_model(model_name, **generation_options):
+    if model_name in GPT.AVAILABLE_MODELS:
+        return GPT(model_name, **generation_options)
+    return VLLM(model_name, **generation_options)
 
 
 def forward_instantiate(model_name="text-davinci-003", **generation_options):
     global forward_interpreter
 
     if forward_interpreter is None:
-        forward_interpreter = GPT(model_name, **generation_options)
+        forward_interpreter = instantiate_model(model_name, **generation_options)
     else:
         print("Forward interpreter already instantiated.")
         pass
@@ -260,7 +333,7 @@ def backward_instantiate(model_name="text-davinci-003", **generation_options):
     global backward_interpreter
 
     if backward_interpreter is None:
-        backward_interpreter = GPT(model_name, **generation_options)
+        backward_interpreter = instantiate_model(model_name, **generation_options)
     else:
         print("Backward interpreter already instantiated.")
         pass

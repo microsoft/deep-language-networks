@@ -40,12 +40,19 @@ class LogProbs:
 class LogProbsScore:
     def __init__(self, encoder=None):
         if encoder is None:
-            import tiktoken
-
-            from dln.operator import forward_interpreter
-
-            encoder = tiktoken.encoding_for_model(forward_interpreter.engine)
-        self.encoder = encoder
+            from dln.operator import forward_interpreter, GPT
+            if forward_interpreter.engine in GPT.AVAILABLE_MODELS:
+                import tiktoken
+                encoder = tiktoken.encoding_for_model(forward_interpreter.engine)
+            else:
+                import os
+                from transformers import AutoTokenizer
+                if forward_interpreter.engine.startswith("/"):
+                    pretrained_path = os.getenv("TOKENIZER_PATH")
+                else:
+                    pretrained_path = forward_interpreter.engine
+                encoder = AutoTokenizer.from_pretrained(pretrained_path)
+            self.encoder = encoder
 
     def score_requests(self, requests, output_classes=None, agg="max") -> LogProbs:
         # create the batched inputs for the model
@@ -132,10 +139,9 @@ class LogProbsScore:
 
     def _forward_logprobs_score_api(self, contexts, targets) -> LogProbs:
         logging.info("# Scoring requests = {}".format(len(contexts)))
-
         eval_kwargs = {
             "temperature": 0,
-            "max_tokens": 0,
+            "max_tokens": 1,  # vllm requires at least 1 token to be generated
             "echo": True,
             "return_logprobs": True,
             "raw_logprobs": True,
@@ -166,7 +172,7 @@ class LogProbsScore:
         context_logprobs = []
         for context, token_log_probs in zip(contexts, log_probs):
             num_tokens_prompt = len(self.encoder.encode(context))
-            target_log_probs = token_log_probs[num_tokens_prompt:]
+            target_log_probs = token_log_probs[num_tokens_prompt:-1]  # -1 to remove the generated token
             context_log_probs = token_log_probs[1:num_tokens_prompt]
             output_logprobs.append(sum(target_log_probs) / (len(target_log_probs) + 1e-5))
             context_logprobs.append(sum(context_log_probs) / (len(context_log_probs) + 1e-5))
