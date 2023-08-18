@@ -97,7 +97,7 @@ def main(args):
                 options=[
                     {"label": f"{title}", "value": id_} for id_, title in datasets
                 ],
-                value=datasets[0][0] if args.logfile else 'subj',
+                value=datasets[0][0],
                 multi=False,
                 style={
                     "backgroundColor": "rgb(229, 236, 246)",

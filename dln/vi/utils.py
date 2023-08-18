@@ -35,7 +35,7 @@ class ResultLogEntry():
     def log_metric(self, metric: str, value: float):
         self.metrics[metric] = value
 
-    def log_outputs(self, outputs: str):
+    def log_outputs(self, outputs):
         self.outputs = outputs
 
     def log_hiddens(self, hiddens, size):
