@@ -50,7 +50,7 @@ for method in glob.glob(root + "/**/output.log", recursive=True):
 data = []
 for key, val in results.items():
     res = {"name": key}
-    for s in ["dev", "test"]:
+    for s in ["dev", "test", "cost"]:
         if val[s]:
             res[s] = "{:.3f}".format(np.mean(val[s])) + " +/- " + "{:.3f}".format(np.std(val[s]))
             res["n_seeds"] = len(val[s])
@@ -60,4 +60,8 @@ for key, val in results.items():
 import pandas
 
 pandas.set_option('display.max_colwidth', max(len(k) + 10 for k in results))
-print(pandas.DataFrame(data).sort_values("dev"))
+
+try:
+    print(pandas.DataFrame(data).sort_values("dev"))
+except:
+    print(pandas.DataFrame(data))

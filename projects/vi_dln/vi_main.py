@@ -134,6 +134,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option("--seed", default=42, help="Random seed.")
 @click.option("--out_dir", default="log/")
 @click.option("--data_dir", default="../../data")
+@click.option("--num_train_examples", default=-1, type=int, help="Use only so many train examples.")
 @click.option("--val_freq", default=2)
 @click.option("--do_first_eval", is_flag=True)
 @click.option("--do_zero_shot", is_flag=True)
@@ -285,6 +286,12 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     help="Forward max tokens.",
 )
 @click.option(
+    "--p1_max_tokens",
+    type=int,
+    default=256,
+    help="Layer one max tokens.",
+)
+@click.option(
     "--bwd_max_tokens",
     type=int,
     default=512,
@@ -306,6 +313,7 @@ def main(
     seed,
     out_dir,
     data_dir,
+    num_train_examples,
     val_freq,
     compute_cost,
     do_first_eval,
@@ -349,6 +357,7 @@ def main(
     bwd_model_type,
     fwd_max_tokens,
     bwd_max_tokens,
+    p1_max_tokens,
     num_p1_steps,
     use_nce,
 ):
@@ -368,7 +377,7 @@ def main(
 
     writer = SummaryWriter(f"{out_dir}")
 
-    dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir, do_few_shot)
+    dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir, do_few_shot, num_train_examples)
 
     init_p1, init_p2 = init_prompts(dataset, init_p1, init_p2)
     log_message("Init P1: ", init_p1)
@@ -411,7 +420,7 @@ def main(
         train_p1=train_p1,
         train_p2=train_p2,
         logp_penalty=logp_penalty,
-        p1_max_tokens=256,
+        p1_max_tokens=p1_max_tokens,
         p2_max_tokens=20,
         posterior_temp=posterior_temp,
         strip_prefix_for_hidden=dataset.prefix if strip_prefix_for_hidden else None,
@@ -458,7 +467,7 @@ def main(
                 patience = 0
 
         # zero shot or allow last iteration for validation
-        if do_zero_shot or iteration == iters or (do_few_shot >= 0 and not train_p1 and not train_p2):
+        if do_zero_shot or iteration == iters or compute_cost or (do_few_shot >= 0 and not train_p1 and not train_p2):
             break
 
         x, y, infos = dataset.get_batch(

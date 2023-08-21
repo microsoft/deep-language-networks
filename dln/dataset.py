@@ -7,6 +7,7 @@ import numpy as np
 import yaml
 
 from dln.score import OutputClasses
+from dln.vi.utils import log_message
 
 
 class Dataset:
@@ -18,10 +19,12 @@ class Dataset:
         use_label_mapping=True,
         append_options=True,
         n_few_shots=-1,
+        num_train_examples=-1,
     ):
         self.dataset_name = dataset
         self.data_path = dataset_path
         self.random_seed = seed
+        self.num_train_examples = num_train_examples
         self.n_few_shots = n_few_shots
         self.dataset_info = self._load_config(
             pjoin(os.path.dirname(os.path.abspath(__file__)), "dataset_info.yaml")
@@ -85,9 +88,7 @@ class Dataset:
         i = 0
         while len(indices) < self.n_few_shots:
             indices += self.few_shot_rng.choice(
-                self.dataset["train_per_class"][
-                    pick_order[i % len(pick_order)]
-                ],
+                self.dataset["train_per_class"][pick_order[i % len(pick_order)]],
                 1,
             ).tolist()
             i += 1
@@ -241,6 +242,33 @@ class Dataset:
             train_per_class[label].append(index)
         self.dataset["train_per_class"] = train_per_class
 
+        if self.num_train_examples > 0:
+            log_message(f"Cutting dataset to {self.num_train_examples} examples.")
+            indices = []
+            pick_order = self.rng.choice(
+                list(self.dataset["train_per_class"].keys()),
+                len(self.dataset["train_per_class"].keys()),
+                replace=False,
+            )
+
+            i = 0
+            while len(indices) < self.num_train_examples:
+                indices += self.rng.choice(
+                    self.dataset["train_per_class"][
+                        pick_order[i % len(pick_order)]
+                    ],
+                    1,
+                ).tolist()
+                i += 1
+
+            self.dataset["train"]["sentence"] = [self.dataset["train"]["sentence"][i] for i in indices]
+            self.dataset["train"]["label"] = [self.dataset["train"]["label"][i] for i in indices]
+
+            train_per_class = defaultdict(list)
+            for index, label in enumerate(self.dataset["train"]["label"]):
+                train_per_class[label].append(index)
+            self.dataset["train_per_class"] = train_per_class
+
     def reset_pointer(self, split):
         if split == "train":
             self.train_pointer = 0
@@ -344,7 +372,7 @@ class Dataset:
         return res_sentence, res_label
 
 
-def init_dataset(dataset_id, seed, data_dir, do_few_shot):
+def init_dataset(dataset_id, seed, data_dir, do_few_shot, num_train_examples):
     ordered_prompt = os.path.join(data_dir, "ordered_prompt")
     leopard = os.path.join(data_dir, "leopard")
     bbh = os.path.join(data_dir, "bbh")
@@ -362,7 +390,13 @@ def init_dataset(dataset_id, seed, data_dir, do_few_shot):
 
     assert dataset_id in dataset_location, f"Dataset {dataset_id} not found"
 
-    dataset = Dataset(dataset_location[dataset_id], dataset_id, seed, n_few_shots=do_few_shot)
+    dataset = Dataset(
+        dataset_location[dataset_id],
+        dataset_id,
+        seed,
+        n_few_shots=do_few_shot,
+        num_train_examples=num_train_examples,
+    )
     val_examples = {"hyperbaton": 300}.get(dataset_id, -1)
     protos = {
         "hyperbaton": ["a|A", "b|B"],
