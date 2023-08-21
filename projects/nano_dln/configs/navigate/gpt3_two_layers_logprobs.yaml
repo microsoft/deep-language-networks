@@ -1,0 +1,21 @@
+experiment_name: gpt3_two_layers_logprobs
+fwd_model: text-davinci-003
+bwd_model: text-davinci-003
+do_train: true
+num_prompts: 5
+num_hiddens: 5
+batch_size: 10
+fwd_max_tokens: 512
+bwd_max_tokens: 512
+score_method: logprobs
+dataset: navigate
+data_path: ../../data/bbh
+num_layers: 2
+layers_initialization:
+  - layer_index: 0
+    initial_instruction: ""
+    output_formating_instruction: "Let's think step by step."
+  - layer_index: 1
+    initial_instruction: Read the following sentence, choose whether you return to the starting point.
+    output_formating_instruction: Now generate the output, which should be either 'yes' or 'no'.
+    output_classes: ["yes|Yes", "no|No"]

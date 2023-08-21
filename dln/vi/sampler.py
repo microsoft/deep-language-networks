@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import numpy as np
 from typing import Union, List
 from dln.operator import backward_evaluate
-from dln.template import load_template
+from dln.template import load_template, DLNTemplate
 
 from dln.vi.utils import log_message
 
@@ -198,9 +198,12 @@ class SequentialPromptSampler(PromptSampler):
 class PosteriorSampler:
     def __init__(self, q_template):
         self.q_templates = []
-
-        for q_template in q_template.split("|"):
-            self.q_templates.append(load_template(q_template))
+        
+        if type(q_template) != DLNTemplate:
+            for q_template in q_template.split("|"):
+                self.q_templates.append(load_template(q_template))
+        else:
+            self.q_templates.append(q_template)
 
         for q_template in self.q_templates:
             log_message("Q template:", f"{repr(q_template.template)}")
