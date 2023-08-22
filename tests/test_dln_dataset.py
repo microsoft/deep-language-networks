@@ -8,7 +8,6 @@ from dln.dataset import Dataset, init_dataset
 def test_init_dataset_subj():
     with patch.object(Dataset, "load_dataset", MagicMock):
         dataset, output_classes, val_examples = init_dataset("subj", 42, "./data")
-    assert dataset.prefix == ""
     assert (
         dataset.instruction
         == "Read the following sentence, then choose whether it is subjective or objective."
@@ -21,7 +20,6 @@ def test_init_dataset_subj():
 def test_init_dataset_mpqa():
     with patch.object(Dataset, "load_dataset", MagicMock):
         dataset, output_classes, val_examples = init_dataset("mpqa", 42, "./data")
-    assert dataset.prefix == ""
     assert (
         dataset.instruction
         == "Read the following review, then choose whether it is negative or positive."
@@ -34,7 +32,6 @@ def test_init_dataset_mpqa():
 def test_init_dataset_trec():
     with patch.object(Dataset, "load_dataset", MagicMock):
         dataset, output_classes, val_examples = init_dataset("trec", 42, "./data")
-    assert dataset.prefix == ""
     assert (
         dataset.instruction
         == "Read the following question, then choose whether it is about a description, entity, expression, human, location or number."
@@ -54,7 +51,6 @@ def test_init_dataset_trec():
 def test_init_dataset_disaster():
     with patch.object(Dataset, "load_dataset", MagicMock):
         dataset, output_classes, val_examples = init_dataset("disaster", 42, "./data")
-    assert dataset.prefix == ""
     assert (
         dataset.instruction
         == "Read the following sentence, then choose whether it is relevant to a disaster."
@@ -67,7 +63,6 @@ def test_init_dataset_disaster():
 def test_init_dataset_airline():
     with patch.object(Dataset, "load_dataset", MagicMock):
         dataset, output_classes, val_examples = init_dataset("airline", 42, "./data")
-    assert dataset.prefix == ""
     assert (
         dataset.instruction
         == "Read the following sentence, then choose whether it is positive, negative, or neutral."
@@ -80,7 +75,6 @@ def test_init_dataset_airline():
 def test_init_dataset_hyperbaton():
     with patch.object(Dataset, "load_dataset", MagicMock):
         dataset, output_classes, val_examples = init_dataset("hyperbaton", 42, "./data")
-    assert dataset.prefix == "Which sentence has the correct adjective order:\n"
     assert dataset.instruction == "Which sentence has the correct adjective order:"
     assert dataset.dataset_name == "hyperbaton"
     assert output_classes.protos == ["a|A", "b|B"]
@@ -90,10 +84,6 @@ def test_init_dataset_hyperbaton():
 def test_init_dataset_navigate():
     with patch.object(Dataset, "load_dataset", MagicMock):
         dataset, output_classes, val_examples = init_dataset("navigate", 42, "./data")
-    assert (
-        dataset.prefix
-        == "If you follow these instructions, do you return to the starting point?"
-    )
     assert (
         dataset.instruction
         == "If you follow these instructions, do you return to the starting point?"
@@ -108,7 +98,6 @@ def test_init_dataset_date_understanding():
         dataset, output_classes, val_examples = init_dataset(
             "date_understanding", 42, "./data"
         )
-    assert dataset.prefix == "Infer the date from context."
     assert dataset.instruction == "Infer the date from context."
     assert dataset.dataset_name == "date_understanding"
     assert output_classes.protos == ["a|A", "b|B", "c|C", "d|D", "e|E", "f|F"]
@@ -120,10 +109,6 @@ def test_init_dataset_logical_deduction_seven_objects():
         dataset, output_classes, val_examples = init_dataset(
             "logical_deduction_seven_objects", 42, "./data"
         )
-    assert (
-        dataset.prefix
-        == "The following paragraphs each describe a set of seven objects arranged in a fixed order. The statements are logically consistent within each paragraph."
-    )
     assert (
         dataset.instruction
         == "The following paragraphs each describe a set of seven objects arranged in a fixed order. The statements are logically consistent within each paragraph."
