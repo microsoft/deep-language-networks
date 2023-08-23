@@ -17,6 +17,12 @@ from dln.postprocessing import postprocess_prediction
 from dln.vi.model import VILModel, log_message
 from dln.vi.utils import ResultLogWriter
 
+try:
+    import wandb
+    wandb_installed = True
+except ImportError:
+    wandb_installed = False
+
 
 def init_prompts(dataset, init_p1, init_p2):
     """Initialize the prompts for the two layers of the model.
@@ -245,6 +251,11 @@ def test(dataset, model, loss_fn, iteration, writer):
     help="(Optional) Name of the experiment run to be saved in the result logs json file."
     "Useful when running multiple experiments with the same dataset name.",
 )
+@click.option(
+    "--enable_wandb",
+    is_flag=True,
+    help="Enable wandb logging. Requires wandb to be installed.",
+)
 def main(
     seed,
     out_dir,
@@ -287,6 +298,7 @@ def main(
     bwd_max_tokens,
     result_data_path,
     result_exp_name,
+    enable_wandb,
 ):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S.%f")
     out_dir = f"{out_dir}/{timestamp}"
@@ -298,14 +310,24 @@ def main(
         format="%(asctime)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-
     log_message(json.dumps(locals()))
     log_message("Logging to... {}".format(out_dir + "/output.log"))
+
+    wandb_enabled = False
+    if enable_wandb:
+        if wandb_installed:
+            wandb_enabled = True
+            wandb.init(config=locals(), project="dln")
+            prompt_table = wandb.Table(columns=["epoch", "w1", "w2"])
+        else:
+            log_message(colored("Wandb is not installed. Please install it to enable wandb logging.", "red"))
 
     writer = SummaryWriter(f"{out_dir}")
     result_writer = ResultLogWriter(dataset, path=result_data_path, name=result_exp_name)
 
     init_p1, init_p2 = init_prompts(dataset, init_p1, init_p2)
+    if wandb_enabled:
+        prompt_table.add_data(0, init_p1, init_p2)
 
     dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir)
 
@@ -370,6 +392,9 @@ def main(
             dev_acc = validate(
                 dataset, model, loss_fn, iteration, val_examples, val_scores, writer, result_writer
             )
+            if wandb_enabled:
+                wandb.log({"dev/acc": dev_acc, "epoch": iteration})
+
             model.result_entry.log_metric('dev_acc', dev_acc)
             if dev_acc > best_dev:
                 best_dev = dev_acc
@@ -448,6 +473,11 @@ def main(
         log_message(colored("BATCH Y BALANCE: {}".format(Counter(y)), "blue"))
         log_message(colored("BATCH X LEN: {}".format([len(x_i) for x_i in x]), "blue"))
 
+        if wandb_enabled:
+            prompt_table.add_data(iteration + 1, str(p1), str(p2))
+            wandb.log({"train/prompts" : prompt_table})
+            wandb.log({"train/elbo": elbo, "train/acc": (1.0 - loss), "epoch": iteration})
+
         writer.add_scalar("elbo", elbo, iteration)
         writer.add_scalar("elbo1", elbo1, iteration)
         writer.add_scalar("elbo2", elbo2, iteration)
@@ -467,6 +497,9 @@ def main(
     log_message("Best L2 weights:", model.encoder_l2.weight)
 
     test_acc = test(dataset, model, loss_fn, iteration, writer)
+
+    if wandb_enabled:
+        wandb.log({"test/acc": test_acc, "epoch": iteration})
 
     log_message(colored("DEV ACC: {}".format(best_dev), "green"))
     log_message(colored("TEST ACC: {}".format(test_acc), "green"))
