@@ -22,14 +22,6 @@ try:
     wandb_enabled = True
 except ImportError:
     wandb_enabled = False
-    
-
-try:
-    import wandb
-    wandb_enabled = True
-except ImportError:
-    wandb_enabled = False
-    
 
 
 def init_prompts(dataset, init_p1, init_p2):
