@@ -16,7 +16,6 @@ class Dataset:
         dataset,
         seed,
         use_label_mapping=True,
-        prefix="",
         append_options=True,
     ):
         self.dataset_name = dataset
@@ -25,7 +24,6 @@ class Dataset:
         self.dataset_info = self._load_config(
             pjoin(os.path.dirname(os.path.abspath(__file__)), "dataset_info.yaml")
         )
-        self.prefix = self.dataset_info[self.dataset_name].get("prefix", prefix)
         self.label_mapping = self.dataset_info[self.dataset_name].get(
             "label_mapping", {}
         )
@@ -268,9 +266,6 @@ class Dataset:
         sentence_list, label_list = [], []
         for idx in indices:
             sentence_list.append(self.dataset[split]["sentence"][idx])
-            if self.prefix is not None:
-                sentence_list[-1] = sentence_list[-1].replace(self.prefix, "")
-
             if self.use_label_mapping:
                 label_mapping = self.label_mapping
                 label_list.append(label_mapping[self.dataset[split]["label"][idx]])
