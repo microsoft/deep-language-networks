@@ -19,9 +19,9 @@ from dln.vi.utils import ResultLogWriter
 
 try:
     import wandb
-    wandb_enabled = True
+    wandb_installed = True
 except ImportError:
-    wandb_enabled = False
+    wandb_installed = False
 
 
 def init_prompts(dataset, init_p1, init_p2):
@@ -251,6 +251,11 @@ def test(dataset, model, loss_fn, iteration, writer):
     help="(Optional) Name of the experiment run to be saved in the result logs json file."
     "Useful when running multiple experiments with the same dataset name.",
 )
+@click.option(
+    "--enable_wandb",
+    is_flag=True,
+    help="Enable wandb logging. Requires wandb to be installed.",
+)
 def main(
     seed,
     out_dir,
@@ -293,6 +298,7 @@ def main(
     bwd_max_tokens,
     result_data_path,
     result_exp_name,
+    enable_wandb,
 ):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S.%f")
     out_dir = f"{out_dir}/{timestamp}"
@@ -307,9 +313,15 @@ def main(
     log_message(json.dumps(locals()))
     log_message("Logging to... {}".format(out_dir + "/output.log"))
 
-    if wandb_enabled:
-        wandb.init(config=locals(), project="dln")
-        prompt_table = wandb.Table(columns=["epoch", "w1", "w2"])
+    wandb_enabled = False
+    if enable_wandb:
+        if wandb_installed:
+            wandb_enabled = True
+            wandb.init(config=locals(), project="dln")
+            prompt_table = wandb.Table(columns=["epoch", "w1", "w2"])
+        else:
+            log_message(colored("Wandb is not installed. Please install it to enable wandb logging.", "red"))
+
     writer = SummaryWriter(f"{out_dir}")
     result_writer = ResultLogWriter(dataset, path=result_data_path, name=result_exp_name)
 
@@ -462,7 +474,7 @@ def main(
         log_message(colored("BATCH X LEN: {}".format([len(x_i) for x_i in x]), "blue"))
 
         if wandb_enabled:
-            prompt_table.add_data(iteration + 1, p1, p2)
+            prompt_table.add_data(iteration + 1, str(p1), str(p2))
             wandb.log({"train/prompts" : prompt_table})
             wandb.log({"train/elbo": elbo, "train/acc": (1.0 - loss), "epoch": iteration})
 
