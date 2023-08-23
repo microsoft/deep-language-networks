@@ -140,7 +140,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option("--val_freq", default=2)
 @click.option("--do_first_eval", is_flag=True)
 @click.option("--do_zero_shot", is_flag=True)
-@click.option("--do_few_shot", default=-1, type=int)
+@click.option("--n_shots", default=-1, type=int)
 @click.option("--q_hidden", default="suffix_forward_tbs")
 @click.option("--q_prompt", default="q_action_prompt")
 @click.option("--p_hidden", default="suffix_forward_tbs")
@@ -209,7 +209,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option(
     "--init_p2",
     type=str,
-    default=None,
+    default="",
 )
 @click.option(
     "--held_out_prompt_ranking",
@@ -333,7 +333,7 @@ def main(
     compute_cost,
     do_first_eval,
     do_zero_shot,
-    do_few_shot,
+    n_shots,
     q_hidden,
     q_prompt,
     p_hidden,
@@ -394,7 +394,7 @@ def main(
 
     writer = SummaryWriter(f"{out_dir}")
 
-    dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir, do_few_shot, num_train_examples)
+    dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir, n_shots, num_train_examples)
     result_writer = ResultLogWriter(dataset, path=result_data_path, name=result_exp_name)
 
     init_p1, init_p2 = init_prompts(dataset, init_p1, init_p2)
@@ -495,7 +495,7 @@ def main(
         )
 
         # zero shot or allow last iteration for validation
-        if do_zero_shot or iteration == iters or compute_cost or (do_few_shot >= 0 and not train_p1 and not train_p2):
+        if do_zero_shot or iteration == iters or compute_cost or (n_shots >= 0 and not train_p1 and not train_p2):
             break
 
         x, y, infos = dataset.get_batch(

@@ -372,7 +372,7 @@ class Dataset:
         return res_sentence, res_label
 
 
-def init_dataset(dataset_id, seed, data_dir, do_few_shot, num_train_examples):
+def init_dataset(dataset_id, seed, data_dir, n_few_shots=-1, num_train_examples=-1):
     ordered_prompt = os.path.join(data_dir, "ordered_prompt")
     leopard = os.path.join(data_dir, "leopard")
     bbh = os.path.join(data_dir, "bbh")
@@ -394,7 +394,7 @@ def init_dataset(dataset_id, seed, data_dir, do_few_shot, num_train_examples):
         dataset_location[dataset_id],
         dataset_id,
         seed,
-        n_few_shots=do_few_shot,
+        n_few_shots=n_few_shots,
         num_train_examples=num_train_examples,
     )
     val_examples = {"hyperbaton": 300}.get(dataset_id, -1)

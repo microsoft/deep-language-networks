@@ -11,7 +11,7 @@ from dln.vi.utils import log_message
 
 
 class PriorLayer:
-    def __init__(self, forward_template, init=None):
+    def __init__(self, forward_template, init=""):
         self.forward_template = load_template(
             forward_template
         )
@@ -149,7 +149,7 @@ class PriorLayer:
 
 class ResidualPriorLayer(PriorLayer):
 
-    def __init__(self, forward_template, init=None, residual_template="classify_residual"):
+    def __init__(self, forward_template, init="", residual_template="classify_residual"):
         super().__init__(forward_template, init=init)
         self.residual_template = load_template(
             residual_template
