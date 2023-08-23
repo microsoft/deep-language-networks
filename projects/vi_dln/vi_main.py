@@ -15,6 +15,7 @@ from dln.loss import ZeroOneLoss
 from dln.operator import backward_instantiate, forward_instantiate
 from dln.postprocessing import postprocess_prediction
 from dln.vi.model import VILModel, log_message
+from dln.vi.utils import ResultLogWriter
 
 
 def init_prompts(dataset, init_p1, init_p2):
@@ -46,7 +47,7 @@ def init_prompts(dataset, init_p1, init_p2):
     return init_p1, init_p2
 
 
-def validate(dataset, model, loss_fn, iteration, val_examples, val_scores, writer):
+def validate(dataset, model, loss_fn, iteration, val_examples, val_scores, writer, result_writer):
     log_message(colored("VALIDATING...", "red"))
     log_message("Current L1 weights:", model.encoder_l1.weight)
     log_message("Current L2 weights:", model.encoder_l2.weight)
@@ -71,6 +72,7 @@ def validate(dataset, model, loss_fn, iteration, val_examples, val_scores, write
         for batch in dataset.iterate("dev", batch_size=20):
             x, y, infos = batch
             y_hat = model.forward(np.array(x), infos=infos)
+            result_writer.write_examples(iteration, x, y, model.result_entry.outputs, model.result_entry.hiddens)
             losses = loss_fn(y_hat, y)
             acc += len(y) - np.sum(losses)
             tot += len(y)
@@ -309,6 +311,19 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     default=False,
     help="Use NCE for hidden scoring.",
 )
+@click.option(
+    "--result_data_path",
+    type=str,
+    default="../demo/result_data.json",
+    help="The path of the file where the result logs json are stored",
+)
+@click.option(
+    "--result_exp_name",
+    type=str,
+    default=None,
+    help="(Optional) Name of the experiment run to be saved in the result logs json file."
+    "Useful when running multiple experiments with the same dataset name.",
+)
 def main(
     seed,
     out_dir,
@@ -360,6 +375,8 @@ def main(
     p1_max_tokens,
     num_p1_steps,
     use_nce,
+    result_data_path,
+    result_exp_name,
 ):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S.%f")
     out_dir = f"{out_dir}/{timestamp}"
@@ -378,6 +395,7 @@ def main(
     writer = SummaryWriter(f"{out_dir}")
 
     dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir, do_few_shot, num_train_examples)
+    result_writer = ResultLogWriter(dataset, path=result_data_path, name=result_exp_name)
 
     init_p1, init_p2 = init_prompts(dataset, init_p1, init_p2)
     log_message("Init P1: ", init_p1)
@@ -446,8 +464,9 @@ def main(
             iteration > 0 or do_first_eval
         ):
             dev_acc = validate(
-                dataset, model, loss_fn, iteration, val_examples, val_scores, writer
+                dataset, model, loss_fn, iteration, val_examples, val_scores, writer, result_writer
             )
+            model.result_entry.log_metric('dev_acc', dev_acc)
             if dev_acc > best_dev:
                 best_dev = dev_acc
                 best_ps = (model.encoder_l1.weight, model.encoder_l2.weight)
@@ -465,6 +484,15 @@ def main(
                 model.encoder_l1.weight = best_ps[0]
                 model.encoder_l2.weight = best_ps[1]
                 patience = 0
+        else:
+            model.result_entry.log_metric('dev_acc', None)
+
+        result_writer.write_result(
+            step=iteration,
+            layers=[model.encoder_l2.weight] if one_layer else [model.encoder_l1.weight, model.encoder_l2.weight],
+            metrics=model.result_entry.metrics,
+            candidates=model.result_entry.candidates,
+        )
 
         # zero shot or allow last iteration for validation
         if do_zero_shot or iteration == iters or compute_cost or (do_few_shot >= 0 and not train_p1 and not train_p2):
@@ -508,6 +536,10 @@ def main(
         writer.add_scalar("elbo1", elbo1, iteration)
         writer.add_scalar("elbo2", elbo2, iteration)
         writer.add_scalar("acc", (1.0 - loss), iteration)
+        model.result_entry.log_metric('elbo', elbo)
+        model.result_entry.log_metric('acc', (1.0 - loss))
+        model.result_entry.log_metric('run_elbo', running_elbo)
+        model.result_entry.log_metric('run_acc', running_acc)
 
     log_message("--------------------")
     log_message("Loading best model...")
@@ -522,6 +554,7 @@ def main(
 
     log_message(colored("DEV ACC: {}".format(best_dev), "green"))
     log_message(colored("TEST ACC: {}".format(test_acc), "green"))
+    result_writer.save_to_json_file()
     writer.close()
 
 
