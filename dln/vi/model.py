@@ -16,8 +16,8 @@ class VILModel:
     def __init__(
         self,
         loss_fn: LLoss,
-        init_p1: str,
-        init_p2: str,
+        init_p1: str = "",
+        init_p2: str = "",
         two_layers=True,
         num_h_samples: int = 3,
         num_p_samples: int = 5,
@@ -83,7 +83,7 @@ class VILModel:
             init=init_p2,
         )
         if not two_layers:
-            self.encoder_l1.weight = None
+            self.encoder_l1.weight = ""
 
         self.prompt_sampler_1 = PromptSampler.create(q_prompt)
         self.prompt_sampler_2 = PromptSampler.create(q_prompt)

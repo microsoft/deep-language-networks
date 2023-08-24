@@ -86,7 +86,7 @@ def test_init_dataset_navigate():
         dataset, output_classes, val_examples = init_dataset("navigate", 42, "./data")
     assert (
         dataset.instruction
-        == "If you follow these instructions, do you return to the starting point?"
+        == "Read the following sentence, then determine whether you return to the starting point."
     )
     assert dataset.dataset_name == "navigate"
     assert output_classes.protos == ["yes|Yes", "no|No"]
@@ -111,7 +111,7 @@ def test_init_dataset_logical_deduction_seven_objects():
         )
     assert (
         dataset.instruction
-        == "The following paragraphs each describe a set of seven objects arranged in a fixed order. The statements are logically consistent within each paragraph."
+        == "A seven-object logical deduction task which requires deducing the order of a sequence of objects."
     )
     assert dataset.dataset_name == "logical_deduction_seven_objects"
     assert output_classes.protos == ["a|A", "b|B", "c|C", "d|D", "e|E", "f|F", "g|G"]

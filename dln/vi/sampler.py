@@ -210,6 +210,7 @@ class PosteriorSampler:
 
         self.stop_tokens = self.q_templates[0].stop_tokens
         self.rng = np.random.RandomState(0)
+        self.evaluate_func = backward_evaluate
 
     def sample_q_h(
         self,
@@ -230,12 +231,11 @@ class PosteriorSampler:
             y: labels
             y_hat: model predictions for the forward pass
             h: hidden states for the forward pass
-            task_description: task description if any
             prompt: prompt for the layer that generated h
             next_prompt: prompt for the layer above h
-            forward_template: template for the forward pass that generated h
             num_samples: number of samples to generate
             strip_double_newlines: strip double new lines from the output samples
+            return_logprobs: return the log probabilities of the samples
         Returns
             (batch_size, num_samples) array of hidden states
         """
@@ -281,7 +281,7 @@ class PosteriorSampler:
         log_message("Q proposals: " + str(len(tpls)) + ", Q template:" + "\n" + tpls[0])
         log_message("Generating {} ~h proposals...".format(num_samples))
 
-        sampled = backward_evaluate(
+        sampled = self.evaluate_func(
             tpls,
             stop=self.stop_tokens,
             n=1,

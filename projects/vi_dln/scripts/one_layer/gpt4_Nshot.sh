@@ -28,7 +28,7 @@ if [ ! -f ${dir}/done.txt ]; then
         python vi_main.py \
             --compute_cost \
             --balance_batch \
-            --do_few_shot ${n_shot} \
+            --n_shots ${n_shot} \
             --one_layer \
             --num_p_samples ${num_p_samples} \
             --bwd_temp ${bwd_temp} \

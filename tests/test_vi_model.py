@@ -65,7 +65,7 @@ def log_p_fn():
 
 
 def test_memory(loss_fn):
-    model = VILModel(loss_fn, task_description="Test task description", use_memory=2)
+    model = VILModel(loss_fn, use_memory=2)
     assert model.get_from_memory(0).size == 0
     assert model.get_from_memory(1).size == 0
     with pytest.raises(BaseException):
@@ -77,7 +77,7 @@ def test_memory(loss_fn):
 
 
 def test_compute_elbo_score(loss_fn, log_likes, class_weights):
-    model = VILModel(loss_fn, task_description="Test task description")
+    model = VILModel(loss_fn)
     elbo_score = model.compute_elbo_score(log_likes)
     expected_output = [[0.35, 0.4], [0.35, 0.15]]
     assert np.allclose(elbo_score, expected_output)
@@ -92,9 +92,7 @@ def test_sample_hidden_states(loss_fn, q_h):
     y = np.array(["test_1", "test_2", "test_3", "test_4"])
     h = np.array(["test 1", "test2", "test 3", "test4"])
     num_h_samples = 2
-    model = VILModel(
-        loss_fn, task_description="Test task description", num_h_samples=num_h_samples
-    )
+    model = VILModel(loss_fn, num_h_samples=num_h_samples)
     total_h_samples = len(inputs) * num_h_samples
     mock_l2_log_p = LogProbs(
         np.random.rand(total_h_samples),
@@ -157,7 +155,6 @@ def test_inference_one_layer(loss_fn, backward_info, log_p_fn):
     output_classes = OutputClasses(protos=["A", "B"])
     model = VILModel(
         loss_fn,
-        task_description="Test task description",
         output_classes=output_classes,
         num_h_samples=num_h_samples,
         num_p_samples=num_p_samples,
@@ -177,8 +174,8 @@ def test_inference_one_layer(loss_fn, backward_info, log_p_fn):
 @pytest.mark.parametrize(
     "train_p1, train_p2, expec_best_p1_elbo, expec_best_p2_elbo, expec_best_p1, expec_best_p2",
     [
-        (True, False, 0.39742681, 0.0, "prompt 2", "Test task description"),  # Train p1
-        (False, True, 0.0, 0.49596743, "Test task description", "prompt 2"),  # Train p2
+        (True, False, 0.39742681, 0.0, "prompt 2", ""),  # Train p1
+        (False, True, 0.0, 0.49596743, "", "prompt 2"),  # Train p2
         (True, True, 0.39742681, 0.49596743, "prompt 2", "prompt 2"),  # Train e2e
     ],
 )
@@ -201,7 +198,6 @@ def test_inference_vi(
     output_classes = OutputClasses(protos=["A", "B"])
     model = VILModel(
         loss_fn,
-        task_description="Test task description",
         output_classes=output_classes,
         num_h_samples=num_h_samples,
         num_p_samples=num_p_samples,
@@ -230,8 +226,8 @@ def test_inference_vi(
 @pytest.mark.parametrize(
     "train_p1, train_p2, expec_elbo, expec_best_p1, expec_best_p2, expec_loss_mean, expec_elbo1, expec_elbo2",
     [
-        (True, False, 0.39742681, 'prompt 2', 'Test task description', 0.5, 0.39742681, 0.0),  # Train p1
-        (False, True, 0.49596743, 'Test task description', 'prompt 2', 0.5, 0.0, 0.49596743),  # Train p2
+        (True, False, 0.39742681, 'prompt 2', '', 0.5, 0.39742681, 0.0),  # Train p1
+        (False, True, 0.49596743, '', 'prompt 2', 0.5, 0.0, 0.49596743),  # Train p2
         (True, True, 0.89339424, 'prompt 2', 'prompt 2', 0.5, 0.39742681, 0.49596743),  # Train e2e
     ],
 )
@@ -256,7 +252,6 @@ def test_forward_two_layers(
     output_classes = OutputClasses(protos=["A", "B"])
     model = VILModel(
         loss_fn,
-        task_description="Test task description",
         output_classes=output_classes,
         num_h_samples=num_h_samples,
         num_p_samples=num_p_samples,
@@ -299,7 +294,6 @@ def test_forward_one_layer(
     output_classes = OutputClasses(protos=["A", "B"])
     model = VILModel(
         loss_fn,
-        task_description="Test task description",
         output_classes=output_classes,
         num_h_samples=num_h_samples,
         num_p_samples=num_p_samples,
@@ -352,7 +346,6 @@ def test_forward_inference(
     output_classes = OutputClasses(protos=["A", "B"])
     model = VILModel(
         loss_fn,
-        task_description="Test task description",
         output_classes=output_classes,
         num_h_samples=num_h_samples,
         num_p_samples=num_p_samples,
@@ -373,7 +366,7 @@ def test_forward_inference(
 
 
 def test_strip_options(loss_fn):
-    model = VILModel(loss_fn, task_description="Test task description")
+    model = VILModel(loss_fn)
     input_data = np.array(
         [
             "This is a test\nOptions:\n(A)\n(B)",
@@ -387,7 +380,7 @@ def test_strip_options(loss_fn):
 
 
 def test_strip_answer(loss_fn):
-    model = VILModel(loss_fn, task_description="Test task description")
+    model = VILModel(loss_fn)
     input_data = np.array(
         ["This is a test\nAnswer: A", "No answer here", "Another testAnswer:"]
     )
@@ -398,7 +391,7 @@ def test_strip_answer(loss_fn):
 
 def test_strip_prefix(loss_fn):
     model = VILModel(
-        loss_fn, "Test task description", strip_prefix_for_hidden="PREFIX:"
+        loss_fn, strip_prefix_for_hidden="PREFIX:"
     )
     input_data = np.array(
         ["PREFIX: This is a test", "No prefix here", "PREFIX: Another test"]
