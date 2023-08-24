@@ -76,8 +76,13 @@ def load_data(log_file, dataset):
         pd.DataFrame(flattened_examples),
     )
 
+def load_dataset_names(log_file):
+    with open(log_file) as f:
+        logs = json.load(f)
+    return [(x, x) for x in list(logs.keys())]
 
 def main(args):
+    datasets = load_dataset_names(args.logfile) if args.logfile else DATASETS
     app = dash.Dash()
     app.layout = html.Div(
         [
@@ -90,9 +95,9 @@ def main(args):
             dcc.Dropdown(
                 id="dataset_dropdown",
                 options=[
-                    {"label": f"{title}", "value": id_} for id_, title in DATASETS
+                    {"label": f"{title}", "value": id_} for id_, title in datasets
                 ],
-                value="subj",
+                value=datasets[0][0],
                 multi=False,
                 style={
                     "backgroundColor": "rgb(229, 236, 246)",
