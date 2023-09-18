@@ -68,7 +68,9 @@ class LanguageLayer(NetworkNode, ABC):
     def scoring_lm(self):
         # forward lm is the default scoring lm
         if not self._scoring_lm:
-            return self.forward_lm
+            from ops import LanguageLayerOps
+
+            self._backward_lm = LanguageLayerOps().scoring_lm
         return self._scoring_lm
 
     @abstractmethod

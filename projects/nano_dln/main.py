@@ -113,6 +113,14 @@ def train(args, writer):
         stop=None,
     )
 
+    if args.sco_model:
+        LanguageLayerOps().instantiate_scoring_lm(
+            args.sco_model,
+            temperature=args.bwd_temp,
+            max_tokens=args.bwd_max_tokens,
+            stop=None,
+        )
+
     dataset = Dataset(
         args.data_path,
         args.dataset,
