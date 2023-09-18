@@ -1,0 +1,10 @@
+v1.0:
+  template: |-
+    {{ prompt }}
+
+    {{ input }}
+
+    Given that the answer is:
+    {{ y }}
+
+    Thoughts:

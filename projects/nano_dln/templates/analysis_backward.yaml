@@ -1,0 +1,19 @@
+v1.0:
+  template: |-
+    This is useful context to solve the problem:
+    {{ next_prompt }}
+
+    This is the input:
+    {{ input }}
+
+    This was your analysis about the input:
+    {{ h }}
+
+    Given that this is the correct answer:
+    {{ y }}
+
+    {{ message }}
+    Brief analysis:
+  message_alternatives:
+    - "Reflect and refine your analysis. What would be useful to add given the context and the correct answer? Be concise."
+    - "Improve your analysis about the input to make it clearer and such that it reflects the correct answer and the context."

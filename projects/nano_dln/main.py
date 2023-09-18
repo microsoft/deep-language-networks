@@ -2,22 +2,21 @@ import json
 import os
 import sys
 
-from dln.loss import ZeroOneLoss
-from dln.score import OutputClasses
-
 sys.path.append("../..")  # Adds higher directory to python modules path.
 
 import logging
-
 import tqdm
 import numpy as np
 from argparse import ArgumentParser
 from torch.utils.tensorboard import SummaryWriter
 
-from layers import ForwardLayer, ResidualLayer, StepLayer
-from dln.operator import forward_instantiate, backward_instantiate
-from dln.postprocessing import postprocess_prediction
-from dln.dataset import Dataset
+from layers import ResidualLayer
+from backward import MultiActionPromptSampler, PriorHiddenSampler
+from score import OutputClasses, LogProbsScorer
+from ops import forward_instantiate, backward_instantiate
+from loss import ZeroOneLoss
+from postprocessing import postprocess_prediction
+from dataset import Dataset
 from utils import dumps_config, fix_seed, get_start_time, load_config, setup_logging
 
 
@@ -26,12 +25,14 @@ class PromptNet:
         self,
         num_layers,
         num_prompts,
+        num_hiddens,
         layers_initialization,
         residual_net=False,
     ):
         super().__init__()
         self.num_layers = num_layers
         self.num_prompts = num_prompts
+        self.num_hiddens = num_hiddens
         self.residual_net = residual_net
         self.layers = self.initialize_layers(
             num_layers,
@@ -42,20 +43,14 @@ class PromptNet:
         return self.forward(*args)
 
     def forward(self, x):
-        output = x
-        residual = None
-        for layer in self.layers:
-            output_res = output
-            output = layer(output, residual=residual)
-            residual = output_res
-        return output
+        return self.layers[0].forward_graph(x)
 
     def backward(self, y, loss):
         bwd = y
         weights = None
         for layer in reversed(self.layers):
             bwd, weights = layer.backward(
-                bwd, weights, loss, self.num_prompts, self.num_prompts
+                bwd, weights, loss, self.num_prompts, self.num_hiddens
             )
         return bwd
 
@@ -66,22 +61,40 @@ class PromptNet:
     ):
         override = {
             initialization["layer_index"]: (
+                initialization.get("template_type"),
                 initialization.get("initial_instruction"),
-                initialization.get("output_formating_instruction"),
+                initialization.get("output_formatting_instruction"),
                 initialization.get("output_classes"),
             )
             for initialization in layers_initialization
         }
-        layers = []
 
+        layers = []
         for i in range(num_layers):
-            initial_instruction, output_formating_instruction, classes = override.get(i)
-            layer = ResidualLayer(
-                init=initial_instruction,
-                output_formating_instruction=output_formating_instruction,
-                output_classes=OutputClasses(protos=classes) if classes else None,
+            (
+                template_type,
+                initial_instruction,
+                output_formatting_instruction,
+                classes,
+            ) = override.get(i)
+            layer = (
+                ResidualLayer(
+                    template_type=template_type,
+                    init=initial_instruction,
+                    output_formatting_instruction=output_formatting_instruction,
+                    output_classes=OutputClasses(protos=classes) if classes else None,
+                )
+                .with_samplers(
+                    prompt_sampler=MultiActionPromptSampler(),
+                    hidden_sampler=PriorHiddenSampler(),
+                )
+                .with_scorer(
+                    scorer=LogProbsScorer(),
+                )
             )
             layers.append(layer)
+            if i > 0:
+                layers[i - 1].connect_to(layer)
 
         layers[0].requires_input = False
         return layers
@@ -102,13 +115,17 @@ def train(args, writer):
         stop=None,
     )
 
-    dataset = Dataset(args.data_path, args.dataset, args.seed)
-
+    dataset = Dataset(
+        args.data_path,
+        args.dataset,
+        args.seed,
+        num_train_examples=args.num_train_examples,
+    )
     loss_fn = ZeroOneLoss(postproc=postprocess_prediction)
-
     model = PromptNet(
         num_layers=args.num_layers,
         num_prompts=args.num_prompts,
+        num_hiddens=args.num_hiddens,
         layers_initialization=args.layers_initialization,
     )
 
@@ -119,13 +136,21 @@ def train(args, writer):
 
     best_weights = [layer.weight for layer in model.layers]
     if not args.skip_first_test_accuracy:
-        best_dev_accuracy = test(
+        dev_accuracy_before_training = best_dev_accuracy = test(
             dataset, model, loss_fn, batch_size, split="dev"
         )
+        test_accuracy_before_training = test(
+            dataset, model, loss_fn, batch_size, split="test"
+        )
         logging.info("Dec Accuracy before training: %.2f", best_dev_accuracy)
+        logging.info(
+            "Test Accuracy before training: %.2f", test_accuracy_before_training
+        )
         writer.add_scalar(f"Accuracy/dev", best_dev_accuracy, 0)
+        writer.add_scalar(f"Accuracy/test", test_accuracy_before_training, 0)
     else:
         best_dev_accuracy = 0
+        test_accuracy_before_training = 0
 
     if do_train:  # exhaust all test data, batch by batch
         for epoch in range(num_epochs):
@@ -172,7 +197,8 @@ def train(args, writer):
             layer.weight = init
 
     test_accuracy = test(dataset, model, loss_fn, batch_size, split="test")
-    logging.info(f"Test Accuracy before training: {test_accuracy_before_train}")
+
+    logging.info(f"Test Accuracy before training: {test_accuracy_before_training}")
     logging.info(f"Test Accuracy after training: {test_accuracy}")
 
     writer.add_scalar(f"Accuracy/test", test_accuracy, 1)
@@ -219,7 +245,6 @@ if __name__ == "__main__":
     parser.add_argument("--do_train", action="store_true")
     parser.add_argument("--num_layers", type=int, default=1)
     parser.add_argument("--num_prompts", type=int, default=5)
-    parser.add_argument("--score_method", type=str, default="rank_over_examples")
     parser.add_argument("--dataset", type=str, default="subj")
     parser.add_argument("--fwd_model", type=str, default="gpt3/text-davinci-003")
     parser.add_argument("--bwd_model", type=str, default="gpt3/text-davinci-003")
@@ -251,15 +276,12 @@ if __name__ == "__main__":
         help="Initial instruction to use if not specified in layers_initialization.",
     )
     parser.add_argument(
-        "--default_output_formating_instruction",
+        "--default_output_formatting_instruction",
         type=str,
         default=None,
         help="Output formating instruction to use if not specified in layers_initialization.",
     )
     parser.add_argument("--layers_initialization", type=json.loads, default={})
-    parser.add_argument(
-        "--residual_net", action="store_true", default=False
-    )  # this could also goes into layers_initialization
 
     args = parser.parse_args()
 
@@ -272,7 +294,7 @@ if __name__ == "__main__":
     config_txt = [args.experiment_name]
     config_txt += [
         f"{key}_{config_vars[key]}"
-        for key in ("num_layers", "num_prompts", "score_method", "batch_size")
+        for key in ("num_layers", "num_prompts", "batch_size")
     ]
     config_dir = "_".join(config_txt)
     start_time_dir = get_start_time()
