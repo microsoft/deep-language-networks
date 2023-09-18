@@ -6,8 +6,9 @@ do_train: true
 num_prompts: 5
 num_hiddens: 5
 num_epochs: 25
-num_train_examples: 32
-batch_size: 5
+bwd_temp: 1.0
+num_train_examples: 10
+batch_size: 10
 eval_freq: 2
 fwd_max_tokens: 512
 bwd_max_tokens: 512
