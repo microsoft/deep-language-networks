@@ -152,7 +152,7 @@ class LogProbsScorer(Scorer):
             requests,
             self.base_layer.output_classes,
             agg="sum",
-        ).lps.reshape(
+        ).logp_targets.reshape(
             batch_size,
             num_samples,
         )
