@@ -84,6 +84,12 @@ class HiddenSampler(ABC):
         pass
 
 
+@dataclass
+class InputsRewrites:
+    inputs: np.array
+    inputs_logps: np.array = None
+
+
 class BackpropHiddenSampler(HiddenSampler):
     @classmethod
     def get_backwards_inputs_template(cls):
@@ -130,7 +136,9 @@ Write an improved version of the input so that that the student will generate th
             repeated_inputs,
             n=1,
         )
-        return np.asarray(new_inputs).reshape(-1, num_samples)
+        return InputsRewrites(
+            inputs=np.asarray(new_inputs).reshape(-1, num_samples),
+        )
 
 
 class MultiActionPromptSampler(PromptSampler):
@@ -235,5 +243,12 @@ class PriorHiddenSampler(HiddenSampler):
             repeated_inputs,
             n=1,
             stop=previous_node.forward_template.stop_tokens,
+            return_logprobs=True,
         )
-        return np.asarray(new_inputs).reshape(-1, num_samples)
+        new_inputs, new_logps, new_lengths = zip(*new_inputs)
+        return InputsRewrites(
+            inputs=np.asarray(new_inputs).reshape(-1, num_samples),
+            inputs_logps=(np.asarray(new_logps) / np.asarray(new_lengths)).reshape(
+                -1, num_samples
+            ),
+        )

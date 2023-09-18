@@ -251,64 +251,6 @@ class BaseLayer(LanguageLayer):
         self.outputs_cache = np.asarray(outputs)
         return self.outputs_cache
 
-    def backward(
-        self,
-        y: np.array,
-        y_weights: np.ndarray = None,
-        losses: np.ndarray = None,
-        num_p_samples: int = 1,
-        num_h_samples: int = 1,
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Returns a matrix of size (batch_size, num_outputs), and their corresponding scores.
-
-        Args:
-            y_weights: (batch_size, num_outputs)
-        """
-        if type(y) == list:
-            y = np.asarray(y)
-        if y.ndim == 1:
-            y = y[:, None]
-        if y_weights is None:
-            y_weights = np.ones((y.shape[0], 1))
-        if y_weights.ndim == 1:
-            y_weights = y_weights[:, None]
-
-        y_best_ind = np.argmax(y_weights, axis=1)
-        y_best = np.asarray([y[i, y_ind] for i, y_ind in enumerate(y_best_ind)])
-
-        candidate_prompts = self.prompt_sampler.rewrite_prompts(
-            y_best, losses=losses, num_samples=num_p_samples
-        )
-        candidate_prompts_scores = self.scorer.score_prompts(
-            candidate_prompts, y, y_weights
-        )
-        best_prompt = candidate_prompts[candidate_prompts_scores.argmax()]
-
-        logging.info("Candidate prompts:")
-        for prompt, weight in zip(candidate_prompts, candidate_prompts_scores):
-            logging.info("Prompt ({:.2f}) --> {}".format(weight, prompt))
-
-        logging.info(
-            "Best Prompt ({:.2f}) --> {}".format(
-                candidate_prompts_scores.max(), best_prompt
-            )
-        )
-
-        if self.requires_input:
-            candidate_inputs = self.hidden_sampler.rewrite_inputs(y_best, num_h_samples)
-            candidate_inputs_scores = self.scorer.score_inputs(candidate_inputs, y_best)
-        else:
-            candidate_inputs, candidate_inputs_scores = None, None
-
-        self.weight = best_prompt
-        self.candidate_prompts = candidate_prompts
-        self.candidate_prompts_scores = candidate_prompts_scores
-        return candidate_inputs, candidate_inputs_scores
-
-
-class ForwardLayer(BaseLayer):
-    pass
-
 
 class ResidualLayer(BaseLayer):
     residual_template = DLNTemplate(
@@ -393,9 +335,11 @@ Your thoughts were:
         )
 
         if self.requires_input:
-            candidate_inputs = self.hidden_sampler.rewrite_inputs(
+            candidate_inputs_struct = self.hidden_sampler.rewrite_inputs(
                 y_best, num_samples=num_h_samples
             )
+            candidate_inputs = candidate_inputs_struct.inputs
+
             # Now evaluate the probability of each sample to give the correct answer
             # the evaluation must be done with the residual layer
             candidate_inputs_residual = []
@@ -405,7 +349,7 @@ Your thoughts were:
                 )
             candidate_inputs_residual = np.stack(candidate_inputs_residual, axis=1)
             candidate_inputs_scores = self.scorer.score_inputs(
-                candidate_inputs_residual, y_best
+                candidate_inputs_residual, y_best, candidate_inputs_struct.inputs_logps
             )
         else:
             candidate_inputs, candidate_inputs_scores = None, None

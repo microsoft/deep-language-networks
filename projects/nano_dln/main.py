@@ -12,7 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from layers import ResidualLayer
 from backward import MultiActionPromptSampler, PriorHiddenSampler
-from scorer import LogProbsScorer, OutputClasses
+from scorer import LogProbsScorer, OutputClasses, VIScorer
 from ops import LanguageLayerOps
 from loss import ZeroOneLoss
 from postprocessing import postprocess_prediction
@@ -88,7 +88,7 @@ class PromptNet:
                     hidden_sampler=PriorHiddenSampler(),
                 )
                 .with_scoring_strategy(
-                    scorer=LogProbsScorer(),
+                    scorer=VIScorer(),
                 )
             )
             layers.append(layer)
