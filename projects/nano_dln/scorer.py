@@ -142,10 +142,9 @@ class LogProbsScorer(Scorer):
 
     def score_inputs(self, candidate_inputs, y, candidate_inputs_logps=None):
         args = prepare_inputs_scoring_args(candidate_inputs, y, self.base_layer.weight)
-        requests = []
 
         batch_size, num_samples = candidate_inputs.shape
-
+        requests = []
         for input, target, prompt in zip(*args):
             input = self.base_layer.instantiate_template([input], prompt=prompt)[0]
             requests.append(ScoreRequest(input, target, payload=target))

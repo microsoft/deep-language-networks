@@ -88,7 +88,7 @@ class PromptNet:
                     hidden_sampler=PriorHiddenSampler(),
                 )
                 .with_scoring_strategy(
-                    scorer=VIScorer(),
+                    scorer=LogProbsScorer(),
                 )
             )
             layers.append(layer)
