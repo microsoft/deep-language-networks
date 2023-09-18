@@ -70,7 +70,7 @@ class LanguageLayer(NetworkNode, ABC):
         if not self._scoring_lm:
             from ops import LanguageLayerOps
 
-            self._backward_lm = LanguageLayerOps().scoring_lm
+            self._scoring_lm = LanguageLayerOps().scoring_lm
         return self._scoring_lm
 
     @abstractmethod
