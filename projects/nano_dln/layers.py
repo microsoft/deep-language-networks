@@ -5,20 +5,17 @@ from abc import ABC, abstractmethod
 import numpy as np
 
 import ops
-from ops import forward_evaluate
-from projects.nano_dln.scorer import LogProbsScore, ScoreRequest
 from template import DLNTemplate
 from network import NetworkNode
 
 
 class LanguageLayer(NetworkNode, ABC):
     def __init__(self):
-        from ops import LanguageLayerOps
+        super().__init__()
 
-        self._forward_lm = LanguageLayerOps.default_forward_lm
-        self._backward_lm = LanguageLayerOps.default_backward_lm
-        self._scoring_lm = LanguageLayerOps.default_scoring_lm
-
+        self._forward_lm = None
+        self._backward_lm = None
+        self._scoring_lm = None
         self._prompt_sampler = None
         self._hidden_sampler = None
 
@@ -54,17 +51,17 @@ class LanguageLayer(NetworkNode, ABC):
     @property
     def forward_lm(self):
         if not self._forward_lm:
-            from ops import LanguageModelOps
+            from ops import LanguageLayerOps
 
-            self._forward_lm = LanguageModelOps().default_forward_lm
+            self._forward_lm = LanguageLayerOps().forward_lm
         return self._forward_lm
 
     @property
     def backward_lm(self):
         if not self._backward_lm:
-            from ops import LanguageModelOps
+            from ops import LanguageLayerOps
 
-            self._backward_lm = LanguageModelOps().default_backward_lm
+            self._backward_lm = LanguageLayerOps().backward_lm
         return self._backward_lm
 
     @property
@@ -99,8 +96,6 @@ class LanguageLayer(NetworkNode, ABC):
     def with_sampling_strategy(self, prompt_sampler, hidden_sampler):
         self._prompt_sampler = prompt_sampler
         self._hidden_sampler = hidden_sampler
-        self._prompt_sampler.base_layer = self
-        self._hidden_sampler.base_layer = self
         self._prompt_sampler.register_base_layer(self)
         self._hidden_sampler.register_base_layer(self)
         return self
@@ -206,12 +201,15 @@ class BaseLayer(LanguageLayer):
             )
         else:
             if self.forward_lm.has_log_probs:
+                from scorer import ScoreRequest
+
                 # compute log p of each output class, second return value is the p(class)
                 targets = [self.output_classes.prototype(0) for _ in inputs]
                 # build up a set of score requests
                 requests = []
                 for input, target in zip(tpl_inputs, targets):
                     requests.append(ScoreRequest(input, target, payload=target))
+
                 lps = self.forward_lm.compute_log_p(
                     requests,
                     output_classes=self.output_classes,

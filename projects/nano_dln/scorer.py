@@ -118,8 +118,8 @@ class LogProbsScorer(Scorer):
     def score_prompts(
         self, candidate_prompts: np.array, y: np.array, y_weights: np.ndarray
     ):
-        batch_size, num_samples = candidate_prompts.shape
-        num_targets = y.shape[1]
+        num_samples, = candidate_prompts.shape
+        batch_size, num_targets = y.shape
 
         # build up a set of score requests
         requests = []
@@ -163,8 +163,8 @@ class AccuracyScorer(Scorer):
     def score_prompts(self, candidate_prompts, y, y_weights):
         from postprocessing import postprocess_prediction
 
-        batch_size, num_samples = candidate_prompts.shape
-        num_targets = y.shape[1]
+        num_samples, = candidate_prompts.shape
+        batch_size, num_targets = y.shape
 
         args = prepare_prompts_scoring_args(
             self.base_layer.inputs_cache, y, candidate_prompts

@@ -83,11 +83,11 @@ class PromptNet:
                     output_formatting_instruction=output_formatting_instruction,
                     output_classes=OutputClasses(protos=classes) if classes else None,
                 )
-                .with_samplers(
+                .with_sampling_strategy(
                     prompt_sampler=MultiActionPromptSampler(),
                     hidden_sampler=PriorHiddenSampler(),
                 )
-                .with_scorer(
+                .with_scoring_strategy(
                     scorer=LogProbsScorer(),
                 )
             )
@@ -100,7 +100,7 @@ class PromptNet:
 
 
 def train(args, writer):
-    LanguageLayerOps().instantiates_forward_lm(
+    LanguageLayerOps().instantiate_forward_lm(
         args.fwd_model,
         temperature=args.fwd_temp,
         max_tokens=args.fwd_max_tokens,

@@ -470,8 +470,7 @@ class LanguageLayerOps(object):
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(LanguageLayerOps, cls).__new__(cls)
-            # Put any initialization here.
-            cls._instance._default_backward_lm = None
+            cls._instance._default_forward_lm = None
             cls._instance._default_scoring_lm = None
             cls._instance._default_backward_lm = None
         return cls._instance
@@ -499,7 +498,7 @@ class LanguageLayerOps(object):
         return self._default_forward_lm
 
     def instantiate_backward_lm(self, model_name, **generation_options):
-        if self._default_bacwkard_lm is None:
+        if self._default_backward_lm is None:
             self._default_backward_lm = GPT.create_lm(model_name, **generation_options)
 
         return self._default_backward_lm
