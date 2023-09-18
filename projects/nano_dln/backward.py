@@ -243,12 +243,17 @@ class PriorHiddenSampler(HiddenSampler):
             repeated_inputs,
             n=1,
             stop=previous_node.forward_template.stop_tokens,
-            return_logprobs=True,
+            return_logprobs=self.backward_lm.has_log_probs,
         )
-        new_inputs, new_logps, new_lengths = zip(*new_inputs)
+        if self.backward_lm.has_log_probs:
+            new_inputs, new_logps, new_lengths = zip(*new_inputs)
+            input_logps = (np.asarray(new_logps) / np.asarray(new_lengths)).reshape(
+                -1, num_samples
+            )
+        else:
+            input_logps = None
+
         return InputsRewrites(
             inputs=np.asarray(new_inputs).reshape(-1, num_samples),
-            inputs_logps=(np.asarray(new_logps) / np.asarray(new_lengths)).reshape(
-                -1, num_samples
-            ),
+            inputs_logps=input_logps,
         )
