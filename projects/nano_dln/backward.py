@@ -239,12 +239,14 @@ class PriorHiddenSampler(HiddenSampler):
             input for input in previous_node.inputs_cache for _ in range(num_samples)
         ]
         repeated_inputs = previous_node.instantiate_template(repeated_inputs)
+
         new_inputs = self.backward_lm.generate(
             repeated_inputs,
             n=1,
             stop=previous_node.forward_template.stop_tokens,
             return_logprobs=self.backward_lm.has_log_probs,
         )
+
         if self.backward_lm.has_log_probs:
             new_inputs, new_logps, new_lengths = zip(*new_inputs)
             input_logps = (np.asarray(new_logps) / np.asarray(new_lengths)).reshape(
