@@ -19,8 +19,8 @@ num_layers: 2
 layers_initialization:
   - layer_index: 0
     template_type: suffix
-    initial_instruction: "Let's think step by step."
-    output_formatting_instruction: ""
+    initial_instruction: ""
+    output_formatting_instruction: "Let's think step by step."
   - layer_index: 1
     template_type: prefix
     initial_instruction: Read the following sentence, choose whether you return to the starting point.
