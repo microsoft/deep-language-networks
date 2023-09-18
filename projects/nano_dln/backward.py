@@ -6,8 +6,8 @@ import logging
 from dataclasses import dataclass
 
 from network import NetworkNode
-from ops import backward_evaluate
 from template import load_template
+from layers import LanguageLayer
 
 
 @dataclass
@@ -21,7 +21,25 @@ class Info:
 class PromptSampler(ABC):
     def __init__(self):
         # dependency injection!
-        self.base_layer: NetworkNode = None
+        self._base_layer: NetworkNode = None
+
+    @property
+    def base_layer(self):
+        if self._base_layer is None:
+            raise ValueError("Base layer not registered.")
+        return self._base_layer
+
+    @property
+    def backward_lm(self):
+        return self.base_layer.backward_lm
+
+    def register_base_layer(self, base_layer: LanguageLayer):
+        """Register the base layer this sampler is attached to.
+
+        Args:
+            base_layer (LanguageLayer): The base layer this sampler is attached to.
+        """
+        self._base_layer = base_layer
 
     @abstractmethod
     def rewrite_prompts(
@@ -37,7 +55,25 @@ class PromptSampler(ABC):
 class HiddenSampler(ABC):
     def __init__(self):
         # dependency injection!
-        self.base_layer: NetworkNode = None
+        self._base_layer: NetworkNode = None
+
+    @property
+    def base_layer(self):
+        if self._base_layer is None:
+            raise ValueError("Base layer not registered.")
+        return self._base_layer
+
+    @property
+    def backward_lm(self):
+        return self.base_layer.backward_lm
+
+    def register_base_layer(self, base_layer: LanguageLayer):
+        """Register the base layer this sampler is attached to.
+
+        Args:
+            base_layer (LanguageLayer): The base layer this sampler is attached to.
+        """
+        self._base_layer = base_layer
 
     @abstractmethod
     def rewrite_inputs(
@@ -71,6 +107,11 @@ Write an improved version of the input so that that the student will generate th
 >"""
         )
 
+    def __init__(self):
+        super().__init__()
+
+        self.backwards_template = self.get_backwards_inputs_template()
+
     def rewrite_inputs(self, y: np.array, num_samples: int = 1):
         # now re-write the inputs
         repeated_inputs = [
@@ -78,14 +119,14 @@ Write an improved version of the input so that that the student will generate th
         ]
         repeated_targets = [target for target in y for _ in range(num_samples)]
         repeated_inputs = [
-            self.get_backwards_inputs_template().render(
+            self.get_backwards_template.render(
                 prompt=self.base_layer.weight,
                 input=input,
                 y=target,
             )
             for input, target in zip(repeated_inputs, repeated_targets)
         ]
-        new_inputs = backward_evaluate(
+        new_inputs = self.backward_lm.generate(
             repeated_inputs,
             n=1,
         )
@@ -94,16 +135,14 @@ Write an improved version of the input so that that the student will generate th
 
 class MultiActionPromptSampler(PromptSampler):
     def __init__(self, use_memory=True):
+        super().__init__()
+
         self.use_memory = use_memory
         if use_memory:
-            self._prompt_template = load_template("q_action_prompt_mem:v3.5")
+            self.prompt_template = load_template("q_action_prompt_mem:v3.5")
         else:
-            self._prompt_template = load_template("q_action_prompt:v3.5")
+            self.prompt_template = load_template("q_action_prompt:v3.5")
         self.memory = {}
-
-    @property
-    def prompt_template(self):
-        return self._prompt_template
 
     def rewrite_prompts(
         self,
@@ -133,6 +172,7 @@ class MultiActionPromptSampler(PromptSampler):
                 losses,
             )
         ]
+
         while True:
             try:
                 tpls = []
@@ -146,19 +186,24 @@ class MultiActionPromptSampler(PromptSampler):
                         ]
 
                     indices = np.random.permutation(np.arange(len(infos)))
+                    infos_ = [infos[i] for i in indices]
+
                     template_infos["message"] = message
-                    template_infos["backward_infos"] = infos
+                    template_infos["backward_infos"] = infos_
                     template_infos["prompt"] = self.base_layer.weight
                     template_infos["prompt_memories"] = prompt_memories
                     tpls.append(self.prompt_template.render(**template_infos))
 
                 logging.info(tpls[0])
                 logging.debug("Generating {} ~p proposals...".format(num_samples))
-                new_prompts = backward_evaluate(
+
+                new_prompts = self.backward_lm.generate(
                     tpls, stop=self.prompt_template.stop_tokens, n=1
                 )
-                prompts = np.array(list(new_prompts))
+
+                prompts = np.array([self.base_layer.weight] + list(new_prompts))
                 return prompts
+
             except KeyboardInterrupt:
                 break
             except Exception as e:
@@ -166,7 +211,6 @@ class MultiActionPromptSampler(PromptSampler):
 
                 if len(infos) > 1:
                     infos = infos[1:]
-                    logging.info("DROPPING A DATA POINT...")
                 else:
                     error_message = (
                         "Still exeeding context length after shrinking backward_infos."
@@ -187,9 +231,9 @@ class PriorHiddenSampler(HiddenSampler):
             input for input in previous_node.inputs_cache for _ in range(num_samples)
         ]
         repeated_inputs = previous_node.instantiate_template(repeated_inputs)
-        new_inputs = backward_evaluate(
+        new_inputs = self.backward_lm.generate(
             repeated_inputs,
             n=1,
-            stop=previous_node.get_forward_template().stop_tokens,
+            stop=previous_node.forward_template.stop_tokens,
         )
         return np.asarray(new_inputs).reshape(-1, num_samples)

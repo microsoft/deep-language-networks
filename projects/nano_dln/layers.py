@@ -1,18 +1,27 @@
-from typing import List, Tuple
-from abc import ABC, abstractclassmethod, abstractmethod
+import logging
+from typing import Iterable, List, Tuple
+from abc import ABC, abstractmethod
 
 import numpy as np
-from dln.loss import ZeroOneLoss
 
 import ops
 from ops import forward_evaluate
-from score import LogProbs, LogProbsScore, ScoreRequest
-from dln.template import DLNTemplate
-import logging
+from projects.nano_dln.scorer import LogProbsScore, ScoreRequest
+from template import DLNTemplate
 from network import NetworkNode
 
 
 class LanguageLayer(NetworkNode, ABC):
+    def __init__(self):
+        from ops import LanguageLayerOps
+
+        self._forward_lm = LanguageLayerOps.default_forward_lm
+        self._backward_lm = LanguageLayerOps.default_backward_lm
+        self._scoring_lm = LanguageLayerOps.default_scoring_lm
+
+        self._prompt_sampler = None
+        self._hidden_sampler = None
+
     @abstractmethod
     def backward(
         self,
@@ -26,11 +35,44 @@ class LanguageLayer(NetworkNode, ABC):
 
     @abstractmethod
     def get_forward_template(self):
+        """Get the forward template for this layer.
+        """
         pass
 
     @abstractmethod
-    def instantiate_template(self, inputs, **template_overrides) -> List[str]:
+    def instantiate_template(self, inputs: Iterable[str], **template_overrides) -> List[str]:
+        """Instantiate the template for this layer.
+
+        Args:
+            inputs: inputs to the template, will fill the field "input" in the template
+
+        Returns:
+            List[str]: instantiated templates
+        """
         pass
+
+    @property
+    def forward_lm(self):
+        if not self._forward_lm:
+            from ops import LanguageModelOps
+
+            self._forward_lm = LanguageModelOps().default_forward_lm
+        return self._forward_lm
+
+    @property
+    def backward_lm(self):
+        if not self._backward_lm:
+            from ops import LanguageModelOps
+
+            self._backward_lm = LanguageModelOps().default_backward_lm
+        return self._backward_lm
+
+    @property
+    def scoring_lm(self):
+        # forward lm is the default scoring lm
+        if not self._scoring_lm:
+            return self.forward_lm
+        return self._scoring_lm
 
     @abstractmethod
     def forward(self, inputs, **kwargs):
@@ -38,32 +80,46 @@ class LanguageLayer(NetworkNode, ABC):
 
     @property
     def prompt_sampler(self):
-        if not hasattr(self, "_prompt_sampler"):
+        if not self._prompt_sampler:
             raise ValueError("Did you set a prompt sampler for this layer?")
         return self._prompt_sampler
 
     @property
     def hidden_sampler(self):
-        if not hasattr(self, "_hidden_sampler"):
+        if not self._hidden_sampler:
             raise ValueError("Did you set a hidden sampler for this layer?")
         return self._hidden_sampler
 
     @property
     def scorer(self):
-        if not hasattr(self, "_scorer"):
+        if not self._scorer:
             raise ValueError("Did you set a scorer for this layer?")
         return self._scorer
 
-    def with_samplers(self, prompt_sampler, hidden_sampler):
+    def with_sampling_strategy(self, prompt_sampler, hidden_sampler):
         self._prompt_sampler = prompt_sampler
         self._hidden_sampler = hidden_sampler
         self._prompt_sampler.base_layer = self
         self._hidden_sampler.base_layer = self
+        self._prompt_sampler.register_base_layer(self)
+        self._hidden_sampler.register_base_layer(self)
         return self
 
-    def with_scorer(self, scorer):
+    def with_scoring_strategy(self, scorer):
         self._scorer = scorer
         scorer.register_base_layer(self)
+        return self
+
+    def with_forward_lm(self, forward_lm):
+        self._forward_lm = forward_lm
+        return self
+
+    def with_backward_lm(self, backward_lm):
+        self._backward_lm = backward_lm
+        return self
+    
+    def with_score_lm(self, scoring_lm):
+        self._scoring_lm = scoring_lm
         return self
 
 
@@ -142,31 +198,27 @@ class BaseLayer(LanguageLayer):
         tpl_inputs = self.instantiate_template(inputs)
 
         if self.output_classes is None:
-            outputs = forward_evaluate(
+            outputs = self.forward_lm.generate(
                 tpl_inputs,
                 stop=self.forward_template.stop_tokens,
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
         else:
-            if ops.forward_interpreter.has_log_probs:
+            if self.forward_lm.has_log_probs:
                 # compute log p of each output class, second return value is the p(class)
                 targets = [self.output_classes.prototype(0) for _ in inputs]
                 # build up a set of score requests
                 requests = []
                 for input, target in zip(tpl_inputs, targets):
                     requests.append(ScoreRequest(input, target, payload=target))
-                lp = (
-                    LogProbsScore()
-                    .score_requests(
-                        requests,
-                        self.output_classes,
-                        agg="sum",
-                    )
-                    .distribution
-                )
+                lps = self.forward_lm.compute_log_p(
+                    requests,
+                    output_classes=self.output_classes,
+                    agg="sum"
+                ).distribution
                 # best output class index
-                best_output_class_index = np.argmax(lp, axis=1)
+                best_output_class_index = np.argmax(lps, axis=1)
                 # get the best output class token
                 outputs = [
                     self.output_classes.prototype(idx)
@@ -177,14 +229,15 @@ class BaseLayer(LanguageLayer):
                 max_len = 0
 
                 for i in range(len(self.output_classes)):
-                    token_ids = ops.forward_interpreter.encode(
+                    token_ids = self.forward_lm.encode(
                         self.output_classes.prototype(i)
                     )
                     max_len = max(max_len, len(token_ids))
                     assert max_len == 1
+
                     logit_bias[token_ids[0]] = 100
 
-                outputs = forward_evaluate(
+                outputs = self.forward_lm.generate(
                     tpl_inputs,
                     stop=self.forward_template.stop_tokens,
                     temperature=temperature,
@@ -380,32 +433,3 @@ Your thoughts were:
                 self.residual_template.render(input=input, residual=residual)
             )
         return np.asarray(residual_inputs)
-
-
-class StepLayer(ResidualLayer):
-    @classmethod
-    def get_forward_template(cls, step_number=None):
-        return DLNTemplate(
-            template=f"""{{ input }}
-
-Step """
-            + str(step_number)
-            + """. {{ prompt }}
-
-{{ output_formatting_instruction }}
-""",
-        )
-
-    def __init__(
-        self,
-        init="",
-        output_formatting_instruction="",
-        output_classes=None,
-        step_number=1,
-    ):
-        super().__init__(
-            init=init,
-            output_formatting_instruction=output_formatting_instruction,
-            output_classes=output_classes,
-        )
-        self.forward_template = self.get_forward_template(step_number)

@@ -12,8 +12,8 @@ from torch.utils.tensorboard import SummaryWriter
 
 from layers import ResidualLayer
 from backward import MultiActionPromptSampler, PriorHiddenSampler
-from score import OutputClasses, LogProbsScorer
-from ops import forward_instantiate, backward_instantiate
+from scorer import LogProbsScorer, OutputClasses
+from ops import LanguageLayerOps
 from loss import ZeroOneLoss
 from postprocessing import postprocess_prediction
 from dataset import Dataset
@@ -27,13 +27,11 @@ class PromptNet:
         num_prompts,
         num_hiddens,
         layers_initialization,
-        residual_net=False,
     ):
         super().__init__()
         self.num_layers = num_layers
         self.num_prompts = num_prompts
         self.num_hiddens = num_hiddens
-        self.residual_net = residual_net
         self.layers = self.initialize_layers(
             num_layers,
             layers_initialization,
@@ -77,6 +75,7 @@ class PromptNet:
                 output_formatting_instruction,
                 classes,
             ) = override.get(i)
+
             layer = (
                 ResidualLayer(
                     template_type=template_type,
@@ -101,14 +100,13 @@ class PromptNet:
 
 
 def train(args, writer):
-    forward_instantiate(
+    LanguageLayerOps().instantiates_forward_lm(
         args.fwd_model,
         temperature=args.fwd_temp,
         max_tokens=args.fwd_max_tokens,
         stop=None,
     )
-
-    backward_instantiate(
+    LanguageLayerOps().instantiate_backward_lm(
         args.bwd_model,
         temperature=args.bwd_temp,
         max_tokens=args.bwd_max_tokens,

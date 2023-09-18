@@ -1,11 +1,12 @@
 # global interpreter
-from typing import List
 import asyncio
 import numpy as np
 import openai
 import logging
 import tiktoken
 import os
+from typing import List, Any
+from dataclasses import dataclass
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -13,13 +14,23 @@ from tenacity import (
     retry_if_exception_type,
 )
 
-forward_interpreter = None
-backward_interpreter = None
+
+default_forward_lm = None
+default_backward_lm = None
+default_scoring_lm = None
 
 
-def compute_cost(inputs):
-    assert forward_interpreter is not None
-    return np.sum(list([len(forward_interpreter.encode(input)) for input in inputs]))
+@dataclass
+class LogProbs:
+    logp_targets: np.ndarray
+    distribution: np.ndarray
+
+
+@dataclass
+class ScoreRequest:
+    context: str
+    target: str
+    payload: Any = None
 
 
 class GPT:
@@ -53,7 +64,7 @@ class GPT:
             self.encoder = tiktoken.encoding_for_model("text-davinci-003")
         else:
             self.encoder = tiktoken.encoding_for_model(self.engine)
-        openai.api_version = os.environ.get('OPENAI_API_VERSION')
+        openai.api_version = os.environ.get("OPENAI_API_VERSION")
 
     def encode(self, string):
         return self.encoder.encode(string)
@@ -61,10 +72,10 @@ class GPT:
     @property
     def has_log_probs(self):
         return not (
-            "gpt-3.5" in self.engine or
-            "gpt-4" in self.engine or
-            "gpt-35" in self.engine or
-            "gpt-4-0613" in self.engine
+            "gpt-3.5" in self.engine
+            or "gpt-4" in self.engine
+            or "gpt-35" in self.engine
+            or "gpt-4-0613" in self.engine
         )
 
     @retry(
@@ -202,7 +213,11 @@ class GPT:
                         response["choices"].append(
                             {
                                 "text": str(e),
-                                "logprobs": {"token_logprobs": [0], "top_logprobs": [{}], "tokens": {}},
+                                "logprobs": {
+                                    "token_logprobs": [0],
+                                    "top_logprobs": [{}],
+                                    "tokens": {},
+                                },
                             }
                         )
             else:
@@ -285,30 +300,212 @@ class GPT:
                 outputs = outputs + outputs_batch
         return outputs
 
+    def compute_cost(self, inputs):
+        return np.sum(list([len(self.encoder(input)) for input in inputs]))
 
-def forward_instantiate(model_name="text-davinci-003", **generation_options):
-    global forward_interpreter
+    def compute_log_p(
+        self, requests: List[ScoreRequest], output_classes=None, agg="sum"
+    ) -> LogProbs:
+        """Compute log probability given a list of ScoreRequest objects.
 
-    if forward_interpreter is None:
-        forward_interpreter = GPT(model_name, **generation_options)
-    else:
-        print("Forward interpreter already instantiated.")
-        pass
+        Args:
+            requests: List of ScoreRequest objects.
+            output_classes: If provided, compute the log probability of the target normalized across output classes.
+            agg (str, optional): How to aggregate scores of different verbalizers for the same class.
+
+        Returns:
+            LogProbs
+        """
+        if not self.has_log_probs:
+            raise ValueError(
+                "This model ({}) does not support log probabilities.".format(
+                    self.engine
+                )
+            )
+
+        if output_classes is not None:
+            return self._forward_logprobs_score_api_with_classes(
+                [b.context for b in requests],
+                [b.target for b in requests],
+                output_classes,
+                agg=agg,
+            )
+        return self._forward_logprobs_score_api(
+            [b.context for b in requests],
+            [b.target for b in requests],
+        )
+
+    def _forward_logprobs_score_api_with_classes(
+        self, contexts, targets, output_classes, agg="max"
+    ) -> LogProbs:
+        eval_kwargs = {
+            "temperature": 0.0,
+            "max_tokens": 1,
+            "echo": False,
+            "return_logprobs": True,
+            "raw_logprobs": False,
+            "top_logprobs": 100,
+        }
+
+        unique_contexts = list(set(contexts))
+        context_to_position = {context: i for i, context in enumerate(unique_contexts)}
+        to_eval = [f"{context}\n" for context in unique_contexts]
+
+        logging.debug("# Scoring requests = {}".format(len(contexts)))
+        logging.debug("# Scoring unique requests = {}".format(len(unique_contexts)))
+        eval_results = self.generate(
+            to_eval,
+            async_generation=True,
+            **eval_kwargs,
+        )
+
+        top_logprobs = []
+        for context in contexts:
+            position = context_to_position[context]
+            context_top_logprobs = eval_results[position][1][0]
+            top_logprobs.append(dict(context_top_logprobs))
+
+        output_logprobs = []
+        output_distribs = []
+        for context, target, context_top_logprobs in zip(
+            contexts, targets, top_logprobs
+        ):
+            position = context_to_position[context]
+
+            # make this fixed
+            if context_top_logprobs:
+                min_prob = np.exp(np.min(list(context_top_logprobs.values())))
+            else:
+                min_prob = 1e-6
+
+            output_classes_scores = np.asarray([min_prob for _ in output_classes])
+            # accumulate probability mass for each class verbalizer
+            # the class verbalizer can be either " a" or "a" (with or without space)
+            for i in range(len(output_classes)):
+                verbalizers = output_classes.verbalizers(i)
+                verbalizers.extend([f" {v}" for v in verbalizers])
+                verbalizers = set(verbalizers)
+                verbalizers_scores = [0.0]
+                for verbalizer in verbalizers:
+                    if verbalizer in context_top_logprobs:
+                        prob_orig = np.exp(context_top_logprobs[verbalizer])
+                    else:
+                        prob_orig = min_prob
+                    verbalizers_scores.append(prob_orig)
+                if agg == "max":
+                    output_classes_scores[i] += np.max(verbalizers_scores)
+                else:
+                    output_classes_scores[i] += np.sum(verbalizers_scores)
+            output_class_index = [
+                i
+                for i, output_class in enumerate(output_classes)
+                if target in output_class.split("|")
+            ]
+            assert (
+                len(output_class_index) == 1
+            ), "The target shouldn't appear in two output classes! {}".format(target)
+            # accuracy here
+            output_classes_scores = output_classes_scores / output_classes_scores.sum()
+            output_logprobs.append(np.log(output_classes_scores[output_class_index[0]]))
+            output_distribs.append(output_classes_scores)
+        return LogProbs(np.asarray(output_logprobs), np.asarray(output_distribs))
+
+    def _forward_logprobs_score_api(self, contexts, targets) -> LogProbs:
+        logging.debug("# Scoring requests = {}".format(len(contexts)))
+
+        eval_kwargs = {
+            "temperature": 0,
+            "max_tokens": 0,
+            "echo": True,
+            "return_logprobs": True,
+            "raw_logprobs": True,
+        }
+
+        eval_batch = []
+        for context, target in zip(contexts, targets):
+            to_eval = f"{context}\n{target}"
+            eval_batch.append(to_eval)
+
+        # there might be doubles in the eval_batch, so we need to
+        # only perform unique evals
+        unique_keys = list(set(eval_batch))
+        unique_keys_to_positions = {key: i for i, key in enumerate(unique_keys)}
+        unique_eval_results = self.generate(
+            unique_keys,
+            async_generation=True,
+            **eval_kwargs,
+        )
+        # get the results in the same order as the eval_batch
+        eval_results = []
+        for eval_key in eval_batch:
+            eval_results.append(unique_eval_results[unique_keys_to_positions[eval_key]])
+        # get the nll results
+        log_probs = [eval_result[1] for eval_result in eval_results]
+
+        # get the logprobs results
+        output_logprobs = []
+        context_logprobs = []
+
+        for context, token_log_probs in zip(contexts, log_probs):
+            num_tokens_prompt = len(self.encoder.encode(context))
+            target_log_probs = token_log_probs[num_tokens_prompt:]
+            context_log_probs = token_log_probs[1:num_tokens_prompt]
+            output_logprobs.append(
+                sum(target_log_probs) / (len(target_log_probs) + 1e-5)
+            )
+            context_logprobs.append(
+                sum(context_log_probs) / (len(context_log_probs) + 1e-5)
+            )
+        return LogProbs(np.asarray(output_logprobs), np.asarray(context_logprobs))
+
+    @classmethod
+    def create_lm(cls, model_name="text-davinci-003", **generation_options):
+        lm = cls(model_name, **generation_options)
+        return lm
 
 
-def backward_instantiate(model_name="text-davinci-003", **generation_options):
-    global backward_interpreter
+class LanguageLayerOps(object):
+    _instance = None
 
-    if backward_interpreter is None:
-        backward_interpreter = GPT(model_name, **generation_options)
-    else:
-        print("Backward interpreter already instantiated.")
-        pass
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(LanguageLayerOps, cls).__new__(cls)
+            # Put any initialization here.
+            cls._instance._default_backward_lm = None
+            cls._instance._default_scoring_lm = None
+            cls._instance._default_backward_lm = None
+        return cls._instance
 
+    @property
+    def forward_lm(self):
+        return self._default_forward_lm
 
-def forward_evaluate(input: List[str], **kwargs):
-    return forward_interpreter.generate(input, **kwargs)
+    @property
+    def backward_lm(self):
+        return self._default_backward_lm
 
+    @property
+    def scoring_lm(self):
+        return (
+            self._default_scoring_lm
+            if self._default_scoring_lm is not None
+            else self._default_forward_lm
+        )
 
-def backward_evaluate(input: List[str], **kwargs):
-    return backward_interpreter.generate(input, **kwargs)
+    def instantiate_forward_lm(self, model_name, **generation_options):
+        if self._default_forward_lm is None:
+            self._default_forward_lm = GPT.create_lm(model_name, **generation_options)
+
+        return self._default_forward_lm
+
+    def instantiate_backward_lm(self, model_name, **generation_options):
+        if self._default_bacwkard_lm is None:
+            self._default_backward_lm = GPT.create_lm(model_name, **generation_options)
+
+        return self._default_backward_lm
+
+    def instantiate_scoring_lm(self, model_name, **generation_options):
+        if self._default_scoring_lm is None:
+            self._default_scoring_lm = GPT.create_lm(model_name, **generation_options)
+
+        return self._default_scoring_lm
