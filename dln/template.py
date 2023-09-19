@@ -25,7 +25,6 @@ class DLNTemplate:
 
 
 class Templates:
-    _instance = None
 
     def __init__(self, template_directory=None):
         if template_directory is None:
@@ -55,10 +54,7 @@ class Templates:
         if not version:
             version = "latest"
 
-        if Templates._instance is None:
-            Templates._instance = Templates(template_directory)
-
-        templates = Templates._instance._data[template_name]
+        templates = Templates(template_directory)._data[template_name]
 
         if version == "latest":
             template = max(templates, key=lambda x: x.version)
