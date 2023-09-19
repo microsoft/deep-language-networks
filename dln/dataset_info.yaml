@@ -11,8 +11,6 @@ mpqa:
   # 1
   label_mapping: {'0': 'negative', '1': 'positive'}
   instruction: "Read the following review, then choose whether it is negative or positive."
-  eval_example_template: "{{ input }}\nThe answer is {{ label }}\n"
-  eval_template: "{{ input }}\nThe answer is "
   output_type: "single word"
 
 trec:
@@ -24,8 +22,6 @@ trec:
   # 3
   label_mapping: {'0': 'description', '1': 'entity', '2': 'expression', '3': 'human','4': 'location', '5': 'number'}
   instruction: "Read the following question, then choose whether it is about a description, entity, expression, human, location or number."
-  eval_example_template: "{{ input }}\nThe answer is {{ label }}\n"
-  eval_template: "{{ input }}\nThe answer is "
   output_type: "single word"
 
 subj:
@@ -38,9 +34,6 @@ subj:
   prefix: ""
   label_mapping: {'0': 'subjective', '1': 'objective'}
   instruction: "Read the following sentence, then choose whether it is subjective or objective."
-  eval_template: "{{ input }}\nThe above sentence is:"
-  eval_example_template: "{{ input }}\nThe answer is {{ label }}\n"
-  eval_template: "{{ input }}\nThe answer is "
   output_type: "single word"
 
 ###
@@ -54,8 +47,6 @@ date_understanding:
   # (A)
   prefix: "Infer the date from context."
   instruction: "Infer the date from context."
-  eval_example_template: "{{ input }}\nThe answer is {{ label }}\n"
-  eval_template: "{{ input }}\nThe answer is "
   output_type: "single word"
 
 hyperbaton:
@@ -65,8 +56,6 @@ hyperbaton:
   # (A)
   prefix: "Which sentence has the correct adjective order:\n"
   instruction: "Which sentence has the correct adjective order:"
-  eval_example_template: "{{ input }}\nThe answer is {{ label }}\n"
-  eval_template: "{{ input }}\nThe answer is "
   output_type: "single word"
 
 logical_deduction_seven_objects:
@@ -76,8 +65,6 @@ logical_deduction_seven_objects:
   # (A)
   prefix: "The following paragraphs each describe a set of seven objects arranged in a fixed order. The statements are logically consistent within each paragraph."
   instruction: "The following paragraphs each describe a set of seven objects arranged in a fixed order. The statements are logically consistent within each paragraph."
-  eval_example_template: "{{ input }}\nThe answer is {{ label }}\n"
-  eval_template: "{{ input }}\nThe answer is "
   output_type: "single word"
 
 navigate:
@@ -87,8 +74,6 @@ navigate:
   # Yes
   prefix: "If you follow these instructions, do you return to the starting point?"
   instruction: "If you follow these instructions, do you return to the starting point?"
-  eval_example_template: "{{ input }}\nThe answer is {{ label }}\n"
-  eval_template: "{{ input }}\nThe answer is "
   output_type: "single word"
 
 ###
@@ -104,8 +89,6 @@ disaster:
   # Not Relevant
   label_mapping: {'Not Relevant': 'no', 'Relevant': 'yes'}
   instruction: "Read the following sentence, then choose whether it is relevant to a disaster."
-  eval_example_template: "{{ input }}\nThe answer is {{ label }}\n"
-  eval_template: "{{ input }}\nThe answer is "
   output_type: "single word"
 
 airline:
@@ -119,6 +102,4 @@ airline:
   # neutral
   label_mapping: {'positive': 'positive', 'negative': 'negative', 'neutral': 'neutral'}
   instruction: "Read the following sentence, then choose whether it is positive, negative, or neutral."
-  eval_example_template: "{{ input }}\nThe answer is {{ label }}\n"
-  eval_template: "{{ input }}\nThe answer is "
   output_type: "single word"

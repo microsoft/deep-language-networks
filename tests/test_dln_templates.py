@@ -1,4 +1,5 @@
 import pytest
+import yaml
 
 from dln.template import DLNTemplate, Templates, load_template
 
@@ -29,3 +30,15 @@ def test_load_template():
     template = load_template("suffix_forward")
     rendered = template.render(input="input test", prompt="prompt test")
     assert rendered == ("""input test\n\nprompt test""")
+
+
+def test_custom_template_directory(tmp_path):
+    custom_template_dir = tmp_path / "templates"
+    custom_template_dir.mkdir()
+    template_file = custom_template_dir / "custom_template.yaml"
+    template_content = {"v1.0": {"template": "Custom template: {{ message }}"}}
+    with open(template_file, "w") as f:
+        f.write(yaml.dump(template_content))
+    template = load_template("custom_template", template_directory=custom_template_dir)
+    rendered = template.render(message="my message!")
+    assert rendered == "Custom template: my message!"
