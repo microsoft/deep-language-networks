@@ -3,10 +3,27 @@ from typing import Iterable, List, Tuple
 from abc import ABC, abstractmethod
 
 import numpy as np
+from contextlib import contextmanager
+from engine.template import DLNTemplate
+from engine.network import NetworkNode
+from engine.loss import LLoss
 
-import ops
-from template import DLNTemplate
-from network import NetworkNode
+
+cache_forward_pass = True
+
+
+def set_cache_enabled(enabled):
+    global cache_forward_pass
+
+    cache_forward_pass = enabled
+
+
+@contextmanager
+def cache_disable():
+    global cache_forward_pass
+    cache_forward_pass = False
+    yield
+    cache_forward_pass = True
 
 
 class LanguageLayer(NetworkNode, ABC):
@@ -51,7 +68,7 @@ class LanguageLayer(NetworkNode, ABC):
     @property
     def forward_lm(self):
         if not self._forward_lm:
-            from ops import LanguageLayerOps
+            from engine.ops import LanguageLayerOps
 
             self._forward_lm = LanguageLayerOps().forward_lm
         return self._forward_lm
@@ -59,7 +76,7 @@ class LanguageLayer(NetworkNode, ABC):
     @property
     def backward_lm(self):
         if not self._backward_lm:
-            from ops import LanguageLayerOps
+            from engine.ops import LanguageLayerOps
 
             self._backward_lm = LanguageLayerOps().backward_lm
         return self._backward_lm
@@ -68,7 +85,7 @@ class LanguageLayer(NetworkNode, ABC):
     def scoring_lm(self):
         # forward lm is the default scoring lm
         if not self._scoring_lm:
-            from ops import LanguageLayerOps
+            from engine.ops import LanguageLayerOps
 
             self._scoring_lm = LanguageLayerOps().scoring_lm
         return self._scoring_lm
@@ -85,8 +102,6 @@ class LanguageLayer(NetworkNode, ABC):
 
     @property
     def hidden_sampler(self):
-        if not self._hidden_sampler:
-            raise ValueError("Did you set a hidden sampler for this layer?")
         return self._hidden_sampler
 
     @property
@@ -95,11 +110,19 @@ class LanguageLayer(NetworkNode, ABC):
             raise ValueError("Did you set a scorer for this layer?")
         return self._scorer
 
-    def with_sampling_strategy(self, prompt_sampler, hidden_sampler):
+    def with_sampling_strategy(self, prompt_sampler, hidden_sampler=None):
         self._prompt_sampler = prompt_sampler
         self._hidden_sampler = hidden_sampler
         self._prompt_sampler.register_base_layer(self)
-        self._hidden_sampler.register_base_layer(self)
+        if self._hidden_sampler:
+            self._hidden_sampler.register_base_layer(self)
+        return self
+
+    def with_engine(self, engine_config):
+        self.with_sampling_strategy(
+            engine_config.prompt_sampler(), engine_config.hidden_sampler()
+        )
+        self.with_scoring_strategy(engine_config.scorer())
         return self
 
     def with_scoring_strategy(self, scorer):
@@ -203,7 +226,7 @@ class BaseLayer(LanguageLayer):
             )
         else:
             if self.forward_lm.has_log_probs:
-                from scorer import ScoreRequest
+                from engine.scorer import ScoreRequest
 
                 # compute log p of each output class, second return value is the p(class)
                 targets = [self.output_classes.prototype(0) for _ in inputs]
@@ -249,9 +272,11 @@ class BaseLayer(LanguageLayer):
         if strip_double_newlines:
             outputs = [o.replace("\n\n", "\n") for o in outputs]
 
-        self.inputs_cache = np.asarray(inputs)
-        self.outputs_cache = np.asarray(outputs)
-        return self.outputs_cache
+        if cache_forward_pass:
+            self.inputs_cache = np.asarray(inputs)
+            self.outputs_cache = np.asarray(outputs)
+
+        return np.array(outputs)
 
 
 class ResidualLayer(BaseLayer):
@@ -283,9 +308,11 @@ Your thoughts were:
             outputs = inputs
 
         outputs = super().forward(outputs)
-        self.inputs_cache = inputs
-        self.residual_cache = residual
-        self.outputs_cache = outputs
+
+        if cache_forward_pass:
+            self.inputs_cache = inputs
+            self.residual_cache = residual
+            self.outputs_cache = outputs
         return outputs
 
     def backward(
@@ -293,6 +320,7 @@ Your thoughts were:
         y: np.ndarray,
         y_weights: np.ndarray = None,
         losses: np.ndarray = None,
+        targets: np.array = None,
         num_p_samples: int = 1,
         num_h_samples: int = 1,
     ) -> Tuple[np.ndarray, np.ndarray]:
@@ -301,28 +329,31 @@ Your thoughts were:
         Args:
             y_weights: (batch_size, num_outputs)
         """
-        if type(y) == list:
-            y = np.asarray(y)
-        if y.ndim == 1:
-            y = y[:, None]
-        if y_weights is None:
-            y_weights = np.ones((y.shape[0], 1))
-        if y_weights.ndim == 1:
-            y_weights = y_weights[:, None]
+        if y is None:
+            y_best = self.outputs_cache
+        else:
+            if type(y) == list:
+                y = np.asarray(y)
+            if y.ndim == 1:
+                y = y[:, None]
+            if y_weights is None:
+                y_weights = np.ones((y.shape[0], 1))
+            if y_weights.ndim == 1:
+                y_weights = y_weights[:, None]
 
-        y_best_ind = np.argmax(y_weights, axis=1)
-        y_best = np.asarray([y[i, y_ind] for i, y_ind in enumerate(y_best_ind)])
+            y_best_ind = np.argmax(y_weights, axis=1)
+            y_best = np.asarray([y[i, y_ind] for i, y_ind in enumerate(y_best_ind)])
 
         candidate_prompts = self.prompt_sampler.rewrite_prompts(
             y_best,
             inputs=self._apply_residual(self.inputs_cache, self.residual_cache)
             if self.residual_cache is not None
-            else None,
+            else self.inputs_cache,
             losses=losses,
             num_samples=num_p_samples,
         )
         candidate_prompts_scores = self.scorer.score_prompts(
-            candidate_prompts, y, y_weights
+            candidate_prompts, y, y_weights, targets=targets,
         )
         best_prompt = candidate_prompts[candidate_prompts_scores.argmax()]
 
@@ -336,7 +367,7 @@ Your thoughts were:
             )
         )
 
-        if self.requires_input:
+        if self.requires_input and self.hidden_sampler is not None:
             candidate_inputs_struct = self.hidden_sampler.rewrite_inputs(
                 y_best, num_samples=num_h_samples
             )

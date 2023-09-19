@@ -5,9 +5,10 @@ import logging
 
 from dataclasses import dataclass
 
-from network import NetworkNode
-from template import load_template
-from layers import LanguageLayer
+from engine.network import NetworkNode
+from engine.scorer import VIScorer
+from engine.template import load_template
+from engine.layers import LanguageLayer
 
 
 @dataclass
@@ -259,3 +260,4 @@ class PriorHiddenSampler(HiddenSampler):
             inputs=np.asarray(new_inputs).reshape(-1, num_samples),
             inputs_logps=input_logps,
         )
+

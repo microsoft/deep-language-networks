@@ -1,4 +1,6 @@
 from abc import ABC
+from dataclasses import dataclass
+from typing import List
 
 import numpy as np
 
@@ -26,6 +28,7 @@ class ZeroOneLoss(LLoss):
         if self._postproc:
             input = [self.postproc(i) for i in input]
             target = [self.postproc(t) for t in target]
+
         losses = (np.array(input) != np.array(target)).astype("float32")
         return losses
 

@@ -5,9 +5,9 @@ from typing import List
 import numpy as np
 
 from abc import ABC, abstractmethod
-from ops import GPT, ScoreRequest
-from network import NetworkNode
-from layers import LanguageLayer
+from engine.ops import GPT, ScoreRequest
+from engine.network import NetworkNode
+from engine.layers import LanguageLayer
 
 
 def prepare_prompts_scoring_args(
@@ -108,17 +108,21 @@ class Scorer(ABC):
         return self._base_layer
 
     @abstractmethod
-    def score_prompts(self, candidate_prompts, y, weights):
+    def score_prompts(self, candidate_prompts, y, weights, targets=None):
         pass
 
     @abstractmethod
-    def score_inputs(self, candidate_inputs, y):
+    def score_inputs(self, candidate_inputs, y, candidate_inputs_logps=None):
         pass
 
 
 class LogProbsScorer(Scorer):
     def score_prompts(
-        self, candidate_prompts: np.array, y: np.array, y_weights: np.ndarray
+        self,
+        candidate_prompts: np.array,
+        y: np.array,
+        y_weights: np.ndarray,
+        targets=None,
     ):
         (num_samples,) = candidate_prompts.shape
         batch_size, num_targets = y.shape
@@ -134,7 +138,7 @@ class LogProbsScorer(Scorer):
 
         lps = self.scoring_lm.compute_log_p(
             requests,
-            self.base_layer.output_classes,
+            output_classes=self.base_layer.output_classes,
         ).logp_targets.reshape(batch_size, num_targets, num_samples)
 
         prompt_scores = (y_weights[:, :, None] * lps).sum(1).mean(0)
@@ -178,21 +182,23 @@ class VIScorer(LogProbsScorer):
             input = self.base_layer.instantiate_template([input], prompt=prompt)[0]
             requests.append(ScoreRequest(input, target, payload=target))
 
-        lps = self.scoring_lm.compute_log_p(
-            requests,
-            self.base_layer.output_classes,
-            agg="sum",
-        ).logp_targets.reshape(
-            batch_size,
-            num_samples,
-            num_output_targets,
-        ).squeeze()
+        lps = (
+            self.scoring_lm.compute_log_p(
+                requests,
+                self.base_layer.output_classes,
+                agg="sum",
+            )
+            .logp_targets.reshape(
+                batch_size,
+                num_samples,
+                num_output_targets,
+            )
+            .squeeze()
+        )
 
         parent_layer = self.base_layer.input_nodes[0]
         args = prepare_inputs_scoring_args(
-            parent_layer.inputs_cache,
-            candidate_inputs,
-            parent_layer.weight
+            parent_layer.inputs_cache, candidate_inputs, parent_layer.weight
         )
 
         requests = []
@@ -200,25 +206,30 @@ class VIScorer(LogProbsScorer):
             input = parent_layer.instantiate_template([input], prompt=prompt)[0]
             requests.append(ScoreRequest(input, target, payload=target))
 
-        prior_lps = self.scoring_lm.compute_log_p(
-            requests,
-            output_classes=parent_layer.output_classes,
-        ).logp_targets.reshape(
-            batch_size,
-            1,
-            num_samples,
-        ).squeeze()
+        prior_lps = (
+            self.scoring_lm.compute_log_p(
+                requests,
+                output_classes=parent_layer.output_classes,
+            )
+            .logp_targets.reshape(
+                batch_size,
+                1,
+                num_samples,
+            )
+            .squeeze()
+        )
 
         if candidate_inputs_logps is None:
-            candidate_inputs_logps = 0.
+            candidate_inputs_logps = 0.0
 
-        input_scores = np.exp(lps + prior_lps - candidate_inputs_logps) \
-            / np.exp(lps + prior_lps - candidate_inputs_logps).sum(1, keepdims=True)
+        input_scores = np.exp(lps + prior_lps - candidate_inputs_logps) / np.exp(
+            lps + prior_lps - candidate_inputs_logps
+        ).sum(1, keepdims=True)
         return input_scores
 
 
 class AccuracyScorer(Scorer):
-    def score_prompts(self, candidate_prompts, y, y_weights):
+    def score_prompts(self, candidate_prompts, y, y_weights, targets=None):
         from postprocessing import postprocess_prediction
 
         (num_samples,) = candidate_prompts.shape
@@ -250,3 +261,26 @@ class AccuracyScorer(Scorer):
 
     def score_inputs(self, *args, **kwargs):
         raise NotImplementedError("Cannot score inputs with accuracy!")
+
+
+class FullStackScorer(Scorer):
+    def score_prompts(self, candidate_prompts, y, y_weights, targets=None):
+        from layers import cache_disable
+        from postprocessing import postprocess_prediction
+
+        with cache_disable():
+            old_prompt = self.base_layer.weight
+            prompt_accs = []
+            for prompt in candidate_prompts:
+                self.base_layer.weight = prompt
+
+                outputs = self.base_layer.forward_graph(self.base_layer.inputs_cache)
+                outputs = [postprocess_prediction(o) for o in outputs]
+                targets = [postprocess_prediction(t) for t in targets]
+                prompt_acc = np.array([o == t for o, t in zip(outputs, targets)]).mean()
+                prompt_accs.append(prompt_acc)
+            self.base_layer.weight = old_prompt
+        return np.asarray(prompt_accs)
+
+    def score_inputs(self, *args, **kwargs):
+        return None

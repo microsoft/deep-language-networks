@@ -10,11 +10,12 @@ import numpy as np
 from argparse import ArgumentParser
 from torch.utils.tensorboard import SummaryWriter
 
-from layers import ResidualLayer
-from backward import MultiActionPromptSampler, PriorHiddenSampler
-from scorer import LogProbsScorer, OutputClasses, VIScorer
-from ops import LanguageLayerOps
-from loss import ZeroOneLoss
+from engine.layers import ResidualLayer
+from engine.sampler import MultiActionPromptSampler, PriorHiddenSampler
+from engine.scorer import FullStackScorer, LogProbsScorer, OutputClasses, VIScorer
+from engine.ops import LanguageLayerOps
+from engine.configs import vi_engine_configuration, full_stack_engine_configuration
+from engine.loss import ZeroOneLoss
 from postprocessing import postprocess_prediction
 from dataset import Dataset
 from utils import dumps_config, fix_seed, get_start_time, load_config, setup_logging
@@ -43,12 +44,17 @@ class PromptNet:
     def forward(self, x):
         return self.layers[0].forward_graph(x)
 
-    def backward(self, y, loss):
+    def backward(self, y, losses):
         bwd = y
         weights = None
         for layer in reversed(self.layers):
             bwd, weights = layer.backward(
-                bwd, weights, loss, self.num_prompts, self.num_hiddens
+                bwd,
+                weights,
+                losses,
+                targets=y,
+                num_p_samples=self.num_prompts,
+                num_h_samples=self.num_hiddens
             )
         return bwd
 
@@ -82,14 +88,7 @@ class PromptNet:
                     init=initial_instruction,
                     output_formatting_instruction=output_formatting_instruction,
                     output_classes=OutputClasses(protos=classes) if classes else None,
-                )
-                .with_sampling_strategy(
-                    prompt_sampler=MultiActionPromptSampler(),
-                    hidden_sampler=PriorHiddenSampler(),
-                )
-                .with_scoring_strategy(
-                    scorer=LogProbsScorer(),
-                )
+                ).with_engine(vi_engine_configuration)
             )
             layers.append(layer)
             if i > 0:
@@ -127,6 +126,7 @@ def train(args, writer):
         args.seed,
         num_train_examples=args.num_train_examples,
     )
+
     loss_fn = ZeroOneLoss(postproc=postprocess_prediction)
     model = PromptNet(
         num_layers=args.num_layers,
@@ -170,14 +170,14 @@ def train(args, writer):
                 train_targets = np.asarray(train_targets)
 
                 outputs = model(train_sentences)
-                loss = loss_fn(outputs, train_targets)
-                model.backward(train_targets, loss)
+                losses = loss_fn(outputs, train_targets)
+                model.backward(train_targets, losses)
 
                 logging.info("Current prompts:")
                 for layer in model.layers:
                     logging.info("Layer: " + layer.weight)
 
-                batch_loss = sum([l for l in loss]) / batch_size
+                batch_loss = sum([l for l in losses]) / batch_size
                 epoch_loss += batch_loss
 
                 logging.info("Batch Loss: %.2f", batch_loss)

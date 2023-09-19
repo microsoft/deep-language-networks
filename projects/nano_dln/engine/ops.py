@@ -54,6 +54,9 @@ class GPT:
                 f"model_name should be one of: {','.join(self.AVAILABLE_MODELS)}"
             )
 
+        # when computing logp, use 10% of the target tokens as burn-in
+        # to eval the log-likelihood of the full sentence
+        self.logp_target_burnin = 0.1
         self.generation_options = generation_options
         self.engine = model_name
 
@@ -279,7 +282,7 @@ class GPT:
             if async_generation is True:
                 # async call api, devide to mini batches to avoid call rate limit
                 outputs = []
-                for input_batch in self._mini_batch(inputs, batch_size=10):
+                for input_batch in self._mini_batch(inputs, batch_size=batch_size):
                     outputs_batch = asyncio.run(
                         self.gather_chat_response(input_batch, **generation_options)
                     )
@@ -450,9 +453,14 @@ class GPT:
             num_tokens_prompt = len(self.encoder.encode(context))
             target_log_probs = token_log_probs[num_tokens_prompt:]
             context_log_probs = token_log_probs[1:num_tokens_prompt]
-            output_logprobs.append(
-                sum(target_log_probs) / (len(target_log_probs) + 1e-5)
-            )
+
+            if len(target_log_probs) == 0:
+                output_logprobs.append(-np.inf)
+            else:
+                output_logprobs.append(
+                    sum(target_log_probs) / (len(target_log_probs) + 1e-5)
+                )
+
             context_logprobs.append(
                 sum(context_log_probs) / (len(context_log_probs) + 1e-5)
             )
