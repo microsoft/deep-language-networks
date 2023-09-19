@@ -143,11 +143,11 @@ Write an improved version of the input so that that the student will generate th
 
 
 class MultiActionPromptSampler(PromptSampler):
-    def __init__(self, use_memory=True):
+    def __init__(self, memory_size=0):
         super().__init__()
 
-        self.use_memory = use_memory
-        if use_memory:
+        self.memory_size = memory_size
+        if memory_size > 0:
             self.prompt_template = load_template("q_action_prompt_mem:v3.5")
         else:
             self.prompt_template = load_template("q_action_prompt:v3.5")
@@ -160,16 +160,16 @@ class MultiActionPromptSampler(PromptSampler):
         losses: np.ndarray = None,
         num_samples: int = 1,
     ):
-        if self.use_memory:
+        if self.memory_size > 0:
             prompts = getattr(self.base_layer, "candidate_prompts", [])
             prompt_weights = getattr(self.base_layer, "candidate_prompts_scores", [])
             self.memory.update({p: w for p, w in zip(prompts, prompt_weights)})
 
-        if len(self.memory) == 0:
+        if len(self.memory) == 0 or self.memory == 0:
             prompt_memories = [(self.base_layer.weight, 1.0)]
         else:
             prompt_memories = sorted(list(self.memory.items()), key=lambda x: -x[1])[
-                :10
+                :self.memory_size
             ][::-1]
 
         infos = [

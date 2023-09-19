@@ -11,10 +11,9 @@ from argparse import ArgumentParser
 from torch.utils.tensorboard import SummaryWriter
 
 from engine.layers import ResidualLayer
-from engine.sampler import MultiActionPromptSampler, PriorHiddenSampler
-from engine.scorer import FullStackScorer, LogProbsScorer, OutputClasses, VIScorer
+from engine.scorer import OutputClasses
 from engine.ops import LanguageLayerOps
-from engine.configs import vi_engine_configuration, full_stack_engine_configuration
+from engine.configs import VIBackwardEngine
 from engine.loss import ZeroOneLoss
 from postprocessing import postprocess_prediction
 from dataset import Dataset
@@ -88,7 +87,7 @@ class PromptNet:
                     init=initial_instruction,
                     output_formatting_instruction=output_formatting_instruction,
                     output_classes=OutputClasses(protos=classes) if classes else None,
-                ).with_engine(vi_engine_configuration)
+                ).with_engine(VIBackwardEngine())
             )
             layers.append(layer)
             if i > 0:

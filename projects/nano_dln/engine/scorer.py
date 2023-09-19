@@ -123,6 +123,7 @@ class LogProbsScorer(Scorer):
         y: np.array,
         y_weights: np.ndarray,
         targets=None,
+        losses=None,
     ):
         (num_samples,) = candidate_prompts.shape
         batch_size, num_targets = y.shape
@@ -167,6 +168,37 @@ class LogProbsScorer(Scorer):
 
 
 class VIScorer(LogProbsScorer):
+    def __init__(self, logp_penalty = 0.):
+        self.logp_penalty = logp_penalty
+
+    def score_prompts(self, candidate_prompts: np.array, y: np.array, y_weights: np.ndarray, targets=None, losses=None):
+        logp_prompts = super().score_prompts(candidate_prompts, y, y_weights, targets, losses)
+
+        # compute the logp of the layer's own outputs for the logp_penalty
+        if self.logp_penalty > 0.:
+            (num_samples,) = candidate_prompts.shape
+            batch_size, = self.base_layer.outputs_cache.shape
+
+            # build up a set of score requests
+            requests = []
+            args = prepare_prompts_scoring_args(
+                self.base_layer.inputs_cache, self.base_layer.outputs_cache, candidate_prompts
+            )
+            for input, target, prompt in zip(*args):
+                input = self.base_layer.instantiate_template([input], prompt=prompt)[0]
+                requests.append(ScoreRequest(input, target, payload=target))
+
+            lps = self.scoring_lm.compute_log_p(
+                requests,
+                output_classes=self.base_layer.output_classes,
+            ).logp_targets.reshape(batch_size, num_samples)
+
+            error_indices = np.where(losses > 0)[0]
+            lp_penalty = lps[error_indices].sum(0) / len(error_indices)
+            return logp_prompts - self.logp_penalty * lp_penalty
+        else:
+            return logp_prompts
+
     def score_inputs(self, candidate_inputs, y, candidate_inputs_logps=None):
         args = prepare_inputs_scoring_args(candidate_inputs, y, self.base_layer.weight)
         requests = []
@@ -229,7 +261,7 @@ class VIScorer(LogProbsScorer):
 
 
 class AccuracyScorer(Scorer):
-    def score_prompts(self, candidate_prompts, y, y_weights, targets=None):
+    def score_prompts(self, candidate_prompts, y, y_weights, targets=None, losses=None):
         from postprocessing import postprocess_prediction
 
         (num_samples,) = candidate_prompts.shape
@@ -264,7 +296,7 @@ class AccuracyScorer(Scorer):
 
 
 class FullStackScorer(Scorer):
-    def score_prompts(self, candidate_prompts, y, y_weights, targets=None):
+    def score_prompts(self, candidate_prompts, y, y_weights, targets=None, losses=None):
         from layers import cache_disable
         from postprocessing import postprocess_prediction
 

@@ -49,12 +49,13 @@ class LanguageLayer(NetworkNode, ABC):
 
     @abstractmethod
     def get_forward_template(self):
-        """Get the forward template for this layer.
-        """
+        """Get the forward template for this layer."""
         pass
 
     @abstractmethod
-    def instantiate_template(self, inputs: Iterable[str], **template_overrides) -> List[str]:
+    def instantiate_template(
+        self, inputs: Iterable[str], **template_overrides
+    ) -> List[str]:
         """Instantiate the template for this layer.
 
         Args:
@@ -120,9 +121,10 @@ class LanguageLayer(NetworkNode, ABC):
 
     def with_engine(self, engine_config):
         self.with_sampling_strategy(
-            engine_config.prompt_sampler(), engine_config.hidden_sampler()
+            engine_config.prompt_sampler,
+            engine_config.hidden_sampler
         )
-        self.with_scoring_strategy(engine_config.scorer())
+        self.with_scoring_strategy(engine_config.scorer)
         return self
 
     def with_scoring_strategy(self, scorer):
@@ -137,7 +139,7 @@ class LanguageLayer(NetworkNode, ABC):
     def with_backward_lm(self, backward_lm):
         self._backward_lm = backward_lm
         return self
-    
+
     def with_score_lm(self, scoring_lm):
         self._scoring_lm = scoring_lm
         return self
@@ -236,9 +238,7 @@ class BaseLayer(LanguageLayer):
                     requests.append(ScoreRequest(input, target, payload=target))
 
                 lps = self.forward_lm.compute_log_p(
-                    requests,
-                    output_classes=self.output_classes,
-                    agg="sum"
+                    requests, output_classes=self.output_classes, agg="sum"
                 ).distribution
                 # best output class index
                 best_output_class_index = np.argmax(lps, axis=1)
@@ -252,9 +252,7 @@ class BaseLayer(LanguageLayer):
                 max_len = 0
 
                 for i in range(len(self.output_classes)):
-                    token_ids = self.forward_lm.encode(
-                        self.output_classes.prototype(i)
-                    )
+                    token_ids = self.forward_lm.encode(self.output_classes.prototype(i))
                     max_len = max(max_len, len(token_ids))
                     assert max_len == 1
 
@@ -353,7 +351,11 @@ Your thoughts were:
             num_samples=num_p_samples,
         )
         candidate_prompts_scores = self.scorer.score_prompts(
-            candidate_prompts, y, y_weights, targets=targets,
+            candidate_prompts,
+            y,
+            y_weights,
+            targets=targets,
+            losses=losses,
         )
         best_prompt = candidate_prompts[candidate_prompts_scores.argmax()]
 
@@ -362,8 +364,10 @@ Your thoughts were:
             logging.info("Prompt ({:.2f}) --> {}".format(weight, prompt))
 
         logging.info(
-            "Best Prompt ({:.2f}) --> {}".format(
-                candidate_prompts_scores.max(), best_prompt
+            "Best Prompt [{}], ({:.2f}) --> {}".format(
+                candidate_prompts_scores.argmax(),
+                candidate_prompts_scores.max(),
+                best_prompt,
             )
         )
 
