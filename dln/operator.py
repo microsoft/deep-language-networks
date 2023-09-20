@@ -273,8 +273,19 @@ class VLLM:
         self.generation_options = generation_options
         self.engine = model_name
 
+    @retry(
+        reraise=True,
+        stop=stop_after_attempt(100),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=(
+            retry_if_exception_type(openai.error.Timeout)
+            | retry_if_exception_type(openai.error.APIError)
+            | retry_if_exception_type(openai.error.APIConnectionError)
+            | retry_if_exception_type(openai.error.RateLimitError)
+            | retry_if_exception_type(openai.error.ServiceUnavailableError)
+        ),
+    )
     async def aget_vllm_response(self, input, return_logprobs=False, raw_logprobs=False, top_logprobs=False, **kwargs):
-        # import ipdb; ipdb.set_trace()
         response = await openai.Completion.acreate(
             model=self.engine,
             prompt=input,
