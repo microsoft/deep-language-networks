@@ -321,6 +321,7 @@ if __name__ == "__main__":
         for key in (
             "num_prompts",
             "num_hiddens",
+            "num_epochs",
             "batch_size",
             "logp_penalty",
             "engine",
