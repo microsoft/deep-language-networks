@@ -167,8 +167,11 @@ class MultiActionPromptSampler(PromptSampler):
         if self.memory_size <= 0:
             self.memory.clear()
 
-        self.memory[self.base_layer.weight] = 1.0 - losses.mean()
-        prompt_memories = sorted(self.memory.items(), key=lambda x: x[1], reverse=True)
+        if self.base_layer.weight not in self.memory:
+            self.memory[self.base_layer.weight] = [1.0 - losses.mean()]
+        else:
+            self.memory[self.base_layer.weight].append(1.0 - losses.mean())
+        prompt_memories = sorted(self.memory.items(), key=lambda x: np.mean(x[1]), reverse=True)
         prompt_memories = prompt_memories[: self.memory_size][::-1]
 
         if inputs is None:
