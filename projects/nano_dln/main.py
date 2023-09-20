@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 from engine.layers import ResidualLayer
 from engine.scorer import OutputClasses
 from engine.ops import LanguageLayerOps
-from engine.configs import BackwardLogProbsEngine
+from engine.configs import BackpropLogProbsEngine, BackwardLogProbsEngine
 from engine.loss import ZeroOneLoss
 from postprocessing import postprocess_prediction
 from dataset import Dataset
@@ -85,6 +85,11 @@ class PromptNet:
 
             if self.engine == "backward_logprobs":
                 engine = BackwardLogProbsEngine(
+                    memory_size=self.memory_size,
+                    logp_penalty=self.logp_penalty
+                )
+            elif self.engine == "backprop_logprobs":
+                engine = BackpropLogProbsEngine(
                     memory_size=self.memory_size,
                     logp_penalty=self.logp_penalty
                 )

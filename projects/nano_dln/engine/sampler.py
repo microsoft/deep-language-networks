@@ -108,7 +108,7 @@ Your job is to transform the input to help the student generate the correct outp
 ## Correct Output:
 > {{ y }}
 
-Write an improved version of the input so that that the student will generate the correct output when following the instruction.
+Improve the input to account for the information given in the correct output.
 
 ## Improved Input:
 >"""
@@ -126,7 +126,7 @@ Write an improved version of the input so that that the student will generate th
         ]
         repeated_targets = [target for target in y for _ in range(num_samples)]
         repeated_inputs = [
-            self.get_backwards_template.render(
+            self.backwards_template.render(
                 prompt=self.base_layer.weight,
                 input=input,
                 y=target,
