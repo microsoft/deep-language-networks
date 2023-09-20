@@ -6,7 +6,6 @@ import logging
 from dataclasses import dataclass
 
 from engine.network import NetworkNode
-from engine.scorer import VIScorer
 from engine.template import load_template
 from engine.layers import LanguageLayer
 
@@ -80,6 +79,7 @@ class HiddenSampler(ABC):
     def rewrite_inputs(
         self,
         y: np.array,
+        inputs: np.array = None,
         num_samples: int = 1,
     ):
         pass
@@ -119,10 +119,14 @@ Improve the input to account for the information given in the correct output.
 
         self.backwards_template = self.get_backwards_inputs_template()
 
-    def rewrite_inputs(self, y: np.array, num_samples: int = 1):
+    def rewrite_inputs(
+        self, y: np.array, inputs: np.array = None, num_samples: int = 1
+    ):
         # now re-write the inputs
+        if inputs is None:
+            inputs = self.base_layer.inputs_cache
         repeated_inputs = [
-            input for input in self.base_layer.inputs_cache for _ in range(num_samples)
+            input for input in inputs for _ in range(num_samples)
         ]
         repeated_targets = [target for target in y for _ in range(num_samples)]
         repeated_inputs = [
@@ -160,24 +164,29 @@ class MultiActionPromptSampler(PromptSampler):
         losses: np.ndarray = None,
         num_samples: int = 1,
     ):
-        if self.memory_size > 0:
-            # memories are updated
-            self.memory.update({
-                self.base_layer.weight: 1.0 - losses.mean()
-            })
-            prompt_memories = sorted(list(self.memory.items()), key=lambda x: -x[1])[
-                :self.memory_size
-            ][::-1]
-        else:
-            # memories are only the last prompt used
-            prompt_memories = [(self.base_layer.weight, 1.0 - losses.mean())]
+        if self.memory_size <= 0:
+            self.memory.clear()
+
+        self.memory[self.base_layer.weight] = 1.0 - losses.mean()
+        prompt_memories = sorted(self.memory.items(), key=lambda x: x[1], reverse=True)
+        prompt_memories = prompt_memories[: self.memory_size][::-1]
+
+        if inputs is None:
+            inputs = self.base_layer.inputs_cache
+        outputs = self.base_layer.outputs_cache
+        targets = y
+
+        # we strip the trailing spaces so that prompt proposal is nicer
+        preprocessed_inputs = np.array([input.strip() for input in inputs])
+        preprocessed_outputs = np.array([output.strip() for output in outputs])
+        preprocessed_targets = np.array([target.strip() for target in targets])
 
         infos = [
             Info(input=input_i, output=y_hat_i, target=y_i, loss=loss)
-            for input_i, y_i, y_hat_i, loss in zip(
-                inputs if inputs is not None else self.base_layer.inputs_cache,
-                y,
-                self.base_layer.outputs_cache,
+            for input_i, y_hat_i, y_i, loss in zip(
+                preprocessed_inputs,
+                preprocessed_outputs,
+                preprocessed_targets,
                 losses,
             )
         ]
@@ -232,6 +241,7 @@ class PriorHiddenSampler(HiddenSampler):
     def rewrite_inputs(
         self,
         y: np.array,
+        inputs: np.array = None,
         num_samples: int = 1,
     ):
         # now re-write the inputs
@@ -260,4 +270,3 @@ class PriorHiddenSampler(HiddenSampler):
             inputs=np.asarray(new_inputs).reshape(-1, num_samples),
             inputs_logps=input_logps,
         )
-

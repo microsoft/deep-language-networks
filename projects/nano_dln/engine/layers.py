@@ -202,8 +202,6 @@ class BaseLayer(LanguageLayer):
         self,
         inputs=None,
         temperature=0.0,
-        strip_double_newlines=True,
-        max_tokens=256,
     ) -> np.array:
         """Forward pass throught this layer.
 
@@ -224,7 +222,6 @@ class BaseLayer(LanguageLayer):
                 tpl_inputs,
                 stop=self.forward_template.stop_tokens,
                 temperature=temperature,
-                max_tokens=max_tokens,
             )
         else:
             if self.forward_lm.has_log_probs:
@@ -266,14 +263,9 @@ class BaseLayer(LanguageLayer):
                     logit_bias=logit_bias,
                 )
 
-        # strip any "\n\n" that might have been added
-        if strip_double_newlines:
-            outputs = [o.replace("\n\n", "\n") for o in outputs]
-
         if cache_forward_pass:
             self.inputs_cache = np.asarray(inputs)
             self.outputs_cache = np.asarray(outputs)
-
         return np.array(outputs)
 
 
@@ -300,15 +292,16 @@ Your thoughts were:
 
         if len(self.input_nodes):
             residual = self.input_nodes[0].inputs_cache
-            outputs = self._apply_residual(inputs, residual)
+            inputs_plus_residual = self._apply_residual(inputs, residual)
         else:
             residual = None
-            outputs = inputs
+            inputs_plus_residual = inputs
 
-        outputs = super().forward(outputs)
+        outputs = super().forward(inputs_plus_residual)
 
         if cache_forward_pass:
-            self.inputs_cache = inputs
+            self.inputs_cache_original = inputs
+            self.inputs_cache = inputs_plus_residual
             self.residual_cache = residual
             self.outputs_cache = outputs
         return outputs
@@ -344,9 +337,6 @@ Your thoughts were:
 
         candidate_prompts = self.prompt_sampler.rewrite_prompts(
             y_best,
-            inputs=self._apply_residual(self.inputs_cache, self.residual_cache)
-            if self.residual_cache is not None
-            else self.inputs_cache,
             losses=losses,
             num_samples=num_p_samples,
         )
@@ -373,7 +363,7 @@ Your thoughts were:
 
         if self.requires_input and self.hidden_sampler is not None:
             candidate_inputs_struct = self.hidden_sampler.rewrite_inputs(
-                y_best, num_samples=num_h_samples
+                y_best, inputs=self.inputs_cache_original, num_samples=num_h_samples
             )
             candidate_inputs = candidate_inputs_struct.inputs
 
@@ -406,9 +396,11 @@ Your thoughts were:
             return inputs
 
         residual_inputs = []
-
         for input, residual in zip(inputs, residual):
             residual_inputs.append(
-                self.residual_template.render(input=input, residual=residual)
+                self.residual_template.render(
+                    input=input,
+                    residual=residual
+                )
             )
         return np.asarray(residual_inputs)
