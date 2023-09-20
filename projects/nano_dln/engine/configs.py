@@ -1,6 +1,5 @@
-from dataclasses import dataclass
-from .scorer import FullStackScorer, VIScorer, Scorer
-from .sampler import MultiActionPromptSampler, PriorHiddenSampler, PromptSampler, HiddenSampler
+from .scorer import LogProbsScorer
+from .sampler import MultiActionPromptSampler, PriorHiddenSampler
 
 
 class BackwardEngineConfiguration:
@@ -8,12 +7,12 @@ class BackwardEngineConfiguration:
         pass
 
 
-class VIBackwardEngine(BackwardEngineConfiguration):
+class BackwardLogProbsEngine(BackwardEngineConfiguration):
     def __init__(
         self,
-        memory_size: int = 0,
+        memory_size: int = 5,
         logp_penalty: float = 1.0,
     ):
-        self.prompt_sampler = MultiActionPromptSampler(memory_size)
+        self.prompt_sampler = MultiActionPromptSampler(memory_size=memory_size)
         self.hidden_sampler = PriorHiddenSampler()
-        self.scorer = VIScorer(logp_penalty=logp_penalty)
+        self.scorer = LogProbsScorer(logp_penalty=logp_penalty)

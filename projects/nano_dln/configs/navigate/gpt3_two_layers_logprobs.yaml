@@ -1,6 +1,6 @@
 experiment_name: gpt3_two_layers_logprobs
-
 fwd_model: text-davinci-003
+sco_model: text-davinci-003
 bwd_model: text-davinci-003
 do_train: true
 num_prompts: 5
@@ -15,7 +15,6 @@ bwd_max_tokens: 512
 skip_first_test_accuracy: True
 dataset: navigate
 data_path: ../../data/bbh
-num_layers: 2
 layers_initialization:
   - layer_index: 0
     template_type: suffix

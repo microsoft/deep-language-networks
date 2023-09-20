@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 from engine.layers import ResidualLayer
 from engine.scorer import OutputClasses
 from engine.ops import LanguageLayerOps
-from engine.configs import VIBackwardEngine
+from engine.configs import BackwardLogProbsEngine
 from engine.loss import ZeroOneLoss
 from postprocessing import postprocess_prediction
 from dataset import Dataset
@@ -23,17 +23,20 @@ from utils import dumps_config, fix_seed, get_start_time, load_config, setup_log
 class PromptNet:
     def __init__(
         self,
-        num_layers,
         num_prompts,
         num_hiddens,
         layers_initialization,
+        logp_penalty=1.0,
+        memory_size=5,
+        engine="backward_logprobs",
     ):
         super().__init__()
-        self.num_layers = num_layers
         self.num_prompts = num_prompts
         self.num_hiddens = num_hiddens
+        self.logp_penalty = logp_penalty
+        self.memory_size = memory_size
+        self.engine = engine
         self.layers = self.initialize_layers(
-            num_layers,
             layers_initialization,
         )
 
@@ -59,7 +62,6 @@ class PromptNet:
 
     def initialize_layers(
         self,
-        num_layers,
         layers_initialization,
     ):
         override = {
@@ -73,7 +75,7 @@ class PromptNet:
         }
 
         layers = []
-        for i in range(num_layers):
+        for i in range(len(layers_initialization)):
             (
                 template_type,
                 initial_instruction,
@@ -81,18 +83,25 @@ class PromptNet:
                 classes,
             ) = override.get(i)
 
+            if self.engine == "backward_logprobs":
+                engine = BackwardLogProbsEngine(
+                    memory_size=self.memory_size,
+                    logp_penalty=self.logp_penalty
+                )
+            else:
+                raise ValueError(f"Unknown engine: {self.engine}")
+
             layer = (
                 ResidualLayer(
                     template_type=template_type,
                     init=initial_instruction,
                     output_formatting_instruction=output_formatting_instruction,
                     output_classes=OutputClasses(protos=classes) if classes else None,
-                ).with_engine(VIBackwardEngine())
+                ).with_engine(engine)
             )
             layers.append(layer)
             if i > 0:
                 layers[i - 1].connect_to(layer)
-
         layers[0].requires_input = False
         return layers
 
@@ -110,7 +119,6 @@ def train(args, writer):
         max_tokens=args.bwd_max_tokens,
         stop=None,
     )
-
     if args.sco_model:
         LanguageLayerOps().instantiate_scoring_lm(
             args.sco_model,
@@ -128,10 +136,12 @@ def train(args, writer):
 
     loss_fn = ZeroOneLoss(postproc=postprocess_prediction)
     model = PromptNet(
-        num_layers=args.num_layers,
         num_prompts=args.num_prompts,
         num_hiddens=args.num_hiddens,
         layers_initialization=args.layers_initialization,
+        logp_penalty=args.logp_penalty,
+        memory_size=args.memory_size,
+        engine=args.engine,
     )
 
     batch_size = args.batch_size
@@ -192,6 +202,7 @@ def train(args, writer):
             if dev_accuracy > best_dev_accuracy:
                 best_dev_accuracy = dev_accuracy
                 best_weights = [layer.weight for layer in model.layers]
+                logging.info("Best Dev Accuracy: %.2f", best_dev_accuracy)
                 logging.info("Saving best weights...")
 
             writer.add_scalar(f"Loss/train", epoch_loss, epoch)
@@ -205,7 +216,6 @@ def train(args, writer):
 
     logging.info(f"Test Accuracy before training: {test_accuracy_before_training}")
     logging.info(f"Test Accuracy after training: {test_accuracy}")
-
     writer.add_scalar(f"Accuracy/test", test_accuracy, 1)
     writer.close()
 
@@ -248,7 +258,9 @@ if __name__ == "__main__":
     parser.add_argument("--num_epochs", type=int, default=3)
     parser.add_argument("--eval_freq", type=int, default=20)
     parser.add_argument("--do_train", action="store_true")
-    parser.add_argument("--num_layers", type=int, default=1)
+    parser.add_argument("--logp_penalty", type=float, default=1.)
+    parser.add_argument("--memory_size", type=int, default=5)
+    parser.add_argument("--engine", type=str, default="backward_logprobs")
     parser.add_argument("--num_prompts", type=int, default=5)
     parser.add_argument("--dataset", type=str, default="subj")
     parser.add_argument("--fwd_model", type=str, default="gpt3/text-davinci-003")
@@ -289,7 +301,6 @@ if __name__ == "__main__":
     parser.add_argument("--layers_initialization", type=json.loads, default={})
 
     args = parser.parse_args()
-
     if args.config is not None:
         config = load_config(args.config)
         parser.set_defaults(**config)
@@ -298,10 +309,19 @@ if __name__ == "__main__":
     config_vars = vars(args)
     config_txt = [args.experiment_name]
     config_txt += [
-        f"{key}_{config_vars[key]}"
-        for key in ("num_layers", "num_prompts", "batch_size")
+        f"{key}={config_vars[key]}"
+        for key in (
+            "num_prompts",
+            "num_hiddens",
+            "batch_size",
+            "seed",
+            "logp_penalty",
+            "engine",
+            "memory_size",
+        )
     ]
     config_dir = "_".join(config_txt)
+
     start_time_dir = get_start_time()
     setup_logging(
         args.log_level, f"{args.log_dir}/{args.dataset}/{config_dir}/{start_time_dir}"
@@ -317,4 +337,5 @@ if __name__ == "__main__":
 
     logging.info(args)
     fix_seed(args.seed)
+
     train(args, writer)
