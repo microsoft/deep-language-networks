@@ -39,7 +39,7 @@ class GPT:
     def __init__(self, model_name="text-davinci-003", **generation_options):
         if model_name not in self.AVAILABLE_MODELS:
             raise ValueError(
-                f"model_name should be one of: {','.join(self.AVAILABLE_MODELS)}"
+                f"GPT model_name should be one of: {','.join(self.AVAILABLE_MODELS)}"
             )
         self.generation_options = generation_options
         self.engine = model_name
@@ -275,7 +275,7 @@ class VLLM:
 
     async def aget_vllm_response(self, input, return_logprobs=False, raw_logprobs=False, top_logprobs=False, **kwargs):
         # import ipdb; ipdb.set_trace()
-        response = openai.Completion.create(
+        response = await openai.Completion.acreate(
             model=self.engine,
             prompt=input,
             logprobs=top_logprobs or 1,

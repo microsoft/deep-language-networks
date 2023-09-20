@@ -1,14 +1,14 @@
 set -x  # print commands to terminal
 dataset=navigate
 p_class_tpl="classify_forward:3.0"
-iters=2
-batch_size=2
-num_p_samples=2
+iters=10
+batch_size=5
+num_p_samples=10
 bwd_temp=0.7
 held_out_prompt_ranking=True
 use_memory=2
 tolerance=2
-num_h_samples=2
+num_h_samples=5
 q_prompt_tpl="q_action_prompt:v3.5"
 logp_penalty=2.
 posterior_temp=1.
@@ -16,7 +16,7 @@ trust_factor=5.
 p_hidden_tpl="suffix_forward_tbs"
 q_hidden_tpl="suffix_forward_tbs_y|suffix_forward_tbs"
 # model_type="/llama/7Bf"
-model_type="/data/llama2/13B"
+model_type="/data/llama2/70B"
 
 dir=log/{model_type}/two_layers_e2e/${dataset}
 # /bin/rm -rf ${dir}
@@ -24,6 +24,7 @@ dir=log/{model_type}/two_layers_e2e/${dataset}
 
 for seed in 42; do
     python vi_main.py \
+        --do_first_eval \
         --balance_batch \
         --model_type ${model_type} \
         --num_p_samples ${num_p_samples} \
@@ -50,3 +51,5 @@ for seed in 42; do
         --strip_options_for_hidden True \
         --strip_prefix_for_hidden False
 done
+
+# export TOKENIZER_PATH="/data/models/llama2/70Bf"

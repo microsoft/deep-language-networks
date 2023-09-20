@@ -76,7 +76,10 @@ class PromptSampler:
                 log_message("Generating {} ~p proposals...".format(num_samples))
 
                 prompts = self.evaluate_func(
-                    tpls, stop=self.prompt_template.stop_tokens, n=1,
+                    tpls,
+                    stop=self.prompt_template.stop_tokens,
+                    n=1,
+                    async_generation=True,
                 )
                 log_message("DONE...")
 
@@ -175,6 +178,7 @@ class PosteriorSampler:
             stop=self.stop_tokens,
             n=1,
             max_tokens=max_tokens,
+            async_generation=True,
         )
 
         # strip any "\n\n" that might have been added

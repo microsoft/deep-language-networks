@@ -46,6 +46,7 @@ class PriorLayer:
                 stop=self.forward_template.stop_tokens,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                async_generation=True,
             )
         else:
             # compute constrained forward pass on the output classes
