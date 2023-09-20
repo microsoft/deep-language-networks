@@ -273,11 +273,9 @@ class Dataset:
             if sum(map(len, example_pools.values())) == 0:
                 raise ValueError("Not enough examples to cut dataset to size.")
 
-            if len(example_pools[current_key]) == 0:
-                continue
-
-            indices.append(example_pools[current_key][0])
-            example_pools[current_key] = example_pools[current_key][1:]
+            if len(example_pools[current_key]) > 0:
+                indices.append(example_pools[current_key][0])
+                example_pools[current_key] = example_pools[current_key][1:]
             i += 1
 
         self.dataset[split]["sentence"] = [self.dataset[split]["sentence"][i] for i in indices]
