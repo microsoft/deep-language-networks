@@ -163,7 +163,7 @@ def train(args, writer):
         test_accuracy_before_training = test(
             dataset, model, loss_fn, batch_size, split="test"
         )
-        logging.info("Dec Accuracy before training: %.2f", best_dev_accuracy)
+        logging.info("Dev Accuracy before training: %.2f", best_dev_accuracy)
         logging.info(
             "Test Accuracy before training: %.2f", test_accuracy_before_training
         )
@@ -322,10 +322,11 @@ if __name__ == "__main__":
             "num_prompts",
             "num_hiddens",
             "batch_size",
-            "seed",
             "logp_penalty",
             "engine",
             "memory_size",
+            "num_train_examples",
+            "num_dev_examples",
         )
     ]
     config_dir = "-".join(config_txt)
@@ -340,10 +341,10 @@ if __name__ == "__main__":
         )
     )
     dumps_config(
-        config_vars, os.path.join(args.log_dir, args.dataset, "tensorboard", config_dir)
+        config_vars, os.path.join(args.log_dir, args.dataset, config_dir, start_time_dir)
     )
 
     logging.info(args)
-    fix_seed(args.seed)
 
+    fix_seed(args.seed)
     train(args, writer)
