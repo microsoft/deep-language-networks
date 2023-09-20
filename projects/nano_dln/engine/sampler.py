@@ -125,9 +125,7 @@ Improve the input to account for the information given in the correct output.
         # now re-write the inputs
         if inputs is None:
             inputs = self.base_layer.inputs_cache
-        repeated_inputs = [
-            input for input in inputs for _ in range(num_samples)
-        ]
+        repeated_inputs = [input for input in inputs for _ in range(num_samples)]
         repeated_targets = [target for target in y for _ in range(num_samples)]
         repeated_inputs = [
             self.backwards_template.render(
@@ -171,7 +169,9 @@ class MultiActionPromptSampler(PromptSampler):
             self.memory[self.base_layer.weight] = [1.0 - losses.mean()]
         else:
             self.memory[self.base_layer.weight].append(1.0 - losses.mean())
-        prompt_memories = sorted(self.memory.items(), key=lambda x: np.mean(x[1]), reverse=True)
+
+        prompt_memories = [(p, np.mean(s)) for p, s in self.memory.items()]
+        prompt_memories = sorted(prompt_memories, key=lambda x: x[1], reverse=True)
         prompt_memories = prompt_memories[: self.memory_size][::-1]
 
         if inputs is None:
@@ -249,6 +249,7 @@ class PriorHiddenSampler(HiddenSampler):
     ):
         # now re-write the inputs
         previous_node = self.base_layer.input_nodes[0]
+
         repeated_inputs = [
             input for input in previous_node.inputs_cache for _ in range(num_samples)
         ]
@@ -263,13 +264,13 @@ class PriorHiddenSampler(HiddenSampler):
 
         if self.backward_lm.has_log_probs:
             new_inputs, new_logps, new_lengths = zip(*new_inputs)
-            input_logps = (np.asarray(new_logps) / np.asarray(new_lengths)).reshape(
-                -1, num_samples
-            )
+            input_logps = np.asarray(new_logps) / np.asarray(new_lengths)
         else:
             input_logps = None
 
         return InputsRewrites(
             inputs=np.asarray(new_inputs).reshape(-1, num_samples),
-            inputs_logps=input_logps,
+            inputs_logps=input_logps.reshape(-1, num_samples)
+            if input_logps is not None
+            else None,
         )
