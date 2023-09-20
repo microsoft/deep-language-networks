@@ -181,6 +181,8 @@ def train(args, writer):
 
                 outputs = model(train_sentences)
                 losses = loss_fn(outputs, train_targets)
+
+                train_targets = np.array([loss_fn.postproc(t) for t in train_targets])
                 model.backward(train_targets, losses)
 
                 logging.info("Current prompts:")

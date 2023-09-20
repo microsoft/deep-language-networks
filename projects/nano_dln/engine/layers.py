@@ -230,7 +230,7 @@ class BaseLayer(LanguageLayer):
             if self.forward_lm.has_log_probs:
                 from engine.scorer import ScoreRequest
 
-                # compute log p of each output class, second return value is the p(class)
+                # dummy targets
                 targets = [self.output_classes.prototype(0) for _ in inputs]
                 # build up a set of score requests
                 requests = []

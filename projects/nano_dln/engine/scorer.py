@@ -155,7 +155,9 @@ class LogProbsScorer(Scorer):
             # build up a set of score requests
             requests = []
             args = prepare_prompts_scoring_args(
-                self.base_layer.inputs_cache, self.base_layer.outputs_cache, candidate_prompts
+                self.base_layer.inputs_cache,
+                self.base_layer.outputs_cache,
+                candidate_prompts
             )
             for input, target, prompt in zip(*args):
                 input = self.base_layer.instantiate_template([input], prompt=prompt)[0]
