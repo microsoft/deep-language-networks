@@ -132,6 +132,7 @@ def train(args, writer):
         args.dataset,
         args.seed,
         num_train_examples=args.num_train_examples,
+        num_dev_examples=args.num_dev_examples,
     )
 
     loss_fn = ZeroOneLoss(postproc=postprocess_prediction)
@@ -320,7 +321,7 @@ if __name__ == "__main__":
             "memory_size",
         )
     ]
-    config_dir = "_".join(config_txt)
+    config_dir = "-".join(config_txt)
 
     start_time_dir = get_start_time()
     setup_logging(

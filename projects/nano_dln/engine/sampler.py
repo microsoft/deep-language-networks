@@ -161,16 +161,16 @@ class MultiActionPromptSampler(PromptSampler):
         num_samples: int = 1,
     ):
         if self.memory_size > 0:
-            prompts = getattr(self.base_layer, "candidate_prompts", [])
-            prompt_weights = getattr(self.base_layer, "candidate_prompts_scores", [])
-            self.memory.update({p: w for p, w in zip(prompts, prompt_weights)})
-
-        if len(self.memory) == 0 or self.memory == 0:
-            prompt_memories = [(self.base_layer.weight, 1.0)]
-        else:
+            # memories are updated
+            self.memory.update({
+                self.base_layer.weight: 1.0 - losses.mean()
+            })
             prompt_memories = sorted(list(self.memory.items()), key=lambda x: -x[1])[
                 :self.memory_size
             ][::-1]
+        else:
+            # memories are only the last prompt used
+            prompt_memories = [(self.base_layer.weight, 1.0 - losses.mean())]
 
         infos = [
             Info(input=input_i, output=y_hat_i, target=y_i, loss=loss)

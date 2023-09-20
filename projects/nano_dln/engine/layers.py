@@ -327,9 +327,6 @@ Your thoughts were:
         Args:
             y_weights: (batch_size, num_outputs)
         """
-        self.candidate_prompts = [self.weight]
-        self.candidate_prompts_scores = [(1 - losses).mean()]
-
         if y is None:
             y_best = self.outputs_cache
         else:

@@ -20,22 +20,25 @@ class Dataset:
         append_options=True,
         n_few_shots=-1,
         num_train_examples=-1,
+        num_dev_examples=-1,
     ):
         self.dataset_name = dataset
         self.data_path = dataset_path
         self.random_seed = seed
         self.num_train_examples = num_train_examples
+        self.num_dev_examples = num_dev_examples
         self.n_few_shots = n_few_shots
         self.dataset_info = self._load_config(
             pjoin(os.path.dirname(os.path.abspath(__file__)), "dataset_info.yaml")
         )
+
         self.label_mapping = self.dataset_info[self.dataset_name].get(
             "label_mapping", {}
         )
+
         self.use_label_mapping = use_label_mapping and self.label_mapping
         self.append_options = append_options
         self.instruction = self.dataset_info[self.dataset_name]["instruction"]
-
         self.rng = np.random.RandomState(self.random_seed)
         self.few_shot_rng = np.random.RandomState(self.random_seed)
 
@@ -242,32 +245,48 @@ class Dataset:
             train_per_class[label].append(index)
         self.dataset["train_per_class"] = train_per_class
 
+        dev_per_class = defaultdict(list)
+        for index, label in enumerate(self.dataset["dev"]["label"]):
+            dev_per_class[label].append(index)
+        self.dataset["dev_per_class"] = dev_per_class
+
         if self.num_train_examples > 0:
-            log_message(f"Cutting dataset to {self.num_train_examples} examples.")
-            indices = []
-            pick_order = self.rng.choice(
-                list(self.dataset["train_per_class"].keys()),
-                len(self.dataset["train_per_class"].keys()),
-                replace=False,
+            self.resize_dataset("train", self.num_train_examples)
+        if self.num_dev_examples > 0:
+            self.resize_dataset("dev", self.num_dev_examples)
+
+    def resize_dataset(self, split, size):
+        log_message(f"Cutting split {split} to {size} examples.")
+        indices = []
+
+        example_pools = {}
+        for key in self.dataset[f"{split}_per_class"].keys():
+            example_pools[key] = self.rng.permutation(
+                self.dataset[f"{split}_per_class"][key]
             )
 
-            i = 0
-            while len(indices) < self.num_train_examples:
-                indices += self.rng.choice(
-                    self.dataset["train_per_class"][
-                        pick_order[i % len(pick_order)]
-                    ],
-                    1,
-                ).tolist()
-                i += 1
+        i = 0
+        pick_order = self.rng.permutation(list(self.dataset[f"{split}_per_class"].keys()))
+        while len(indices) < size:
+            current_key = pick_order[i % len(pick_order)]
 
-            self.dataset["train"]["sentence"] = [self.dataset["train"]["sentence"][i] for i in indices]
-            self.dataset["train"]["label"] = [self.dataset["train"]["label"][i] for i in indices]
+            if sum(map(len, example_pools.values())) == 0:
+                raise ValueError("Not enough examples to cut dataset to size.")
 
-            train_per_class = defaultdict(list)
-            for index, label in enumerate(self.dataset["train"]["label"]):
-                train_per_class[label].append(index)
-            self.dataset["train_per_class"] = train_per_class
+            if len(example_pools[current_key]) == 0:
+                continue
+
+            indices.append(example_pools[current_key][0])
+            example_pools[current_key] = example_pools[current_key][1:]
+            i += 1
+
+        self.dataset[split]["sentence"] = [self.dataset[split]["sentence"][i] for i in indices]
+        self.dataset[split]["label"] = [self.dataset[split]["label"][i] for i in indices]
+
+        per_class = defaultdict(list)
+        for index, label in enumerate(self.dataset[split]["label"]):
+            per_class[label].append(index)
+        self.dataset[f"{split}_per_class"] = per_class
 
     def reset_pointer(self, split):
         if split == "train":
