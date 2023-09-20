@@ -168,7 +168,10 @@ class LogProbsScorer(Scorer):
 
             # assume loss is 1 or 0
             error_indices = np.where(losses > 0)[0]
-            lp_penalty = lps[error_indices].sum(0) / len(error_indices)
+            if len(error_indices) == 0:
+                lp_penalty = 0.
+            else:
+                lp_penalty = lps[error_indices].sum(0) / len(error_indices)
             return logp_prompts - self.logp_penalty * lp_penalty
         else:
             return logp_prompts
