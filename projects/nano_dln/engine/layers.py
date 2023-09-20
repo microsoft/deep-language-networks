@@ -202,6 +202,7 @@ class BaseLayer(LanguageLayer):
         self,
         inputs=None,
         temperature=0.0,
+        **template_kwargs,
     ) -> np.array:
         """Forward pass throught this layer.
 
@@ -215,7 +216,7 @@ class BaseLayer(LanguageLayer):
         if inputs is None:
             inputs = self.input_nodes[0].outputs_cache
 
-        tpl_inputs = self.instantiate_template(inputs)
+        tpl_inputs = self.instantiate_template(inputs, **template_kwargs)
 
         if self.output_classes is None:
             outputs = self.forward_lm.generate(
@@ -283,27 +284,27 @@ Your thoughts were:
             "Residual template:\n" + f"{repr(self.residual_template.template)}"
         )
 
-    def forward(self, inputs=None) -> np.array:
+    def forward(self, inputs=None, **template_kwargs) -> np.array:
         if len(self.input_nodes) > 1:
             raise ValueError("ResidualLayer only implemented for 1 input node.")
 
         if inputs is None:
             inputs = self.input_nodes[0].outputs_cache
 
-        if len(self.input_nodes):
+        if len(self.input_nodes) == 1:
             residual = self.input_nodes[0].inputs_cache
-            inputs_plus_residual = self._apply_residual(inputs, residual)
+        elif len(self.input_nodes) > 1:
+            raise ValueError("ResidualLayer only implemented for 1 input node.")
         else:
             residual = None
-            inputs_plus_residual = inputs
 
-        outputs = super().forward(inputs_plus_residual)
+        template_kwargs['residual'] = residual
+        outputs = super().forward(inputs, **template_kwargs)
 
         if cache_forward_pass:
-            self.inputs_cache_original = inputs
-            self.inputs_cache = inputs_plus_residual
+            # store the inputs as inputs + residual
+            self.inputs_cache_with_residual = self._apply_residual(inputs, residual)
             self.residual_cache = residual
-            self.outputs_cache = outputs
         return outputs
 
     def backward(
@@ -338,6 +339,7 @@ Your thoughts were:
         candidate_prompts = self.prompt_sampler.rewrite_prompts(
             y_best,
             losses=losses,
+            inputs=self.inputs_cache_with_residual,
             num_samples=num_p_samples,
         )
         candidate_prompts_scores = self.scorer.score_prompts(
@@ -363,20 +365,11 @@ Your thoughts were:
 
         if self.requires_input and self.hidden_sampler is not None:
             candidate_inputs_struct = self.hidden_sampler.rewrite_inputs(
-                y_best, inputs=self.inputs_cache_original, num_samples=num_h_samples
+                y_best, inputs=self.inputs_cache, num_samples=num_h_samples
             )
             candidate_inputs = candidate_inputs_struct.inputs
-
-            # Now evaluate the probability of each sample to give the correct answer
-            # the evaluation must be done with the residual layer
-            candidate_inputs_residual = []
-            for k in range(candidate_inputs.shape[1]):
-                candidate_inputs_residual.append(
-                    self._apply_residual(candidate_inputs[:, k], self.residual_cache)
-                )
-            candidate_inputs_residual = np.stack(candidate_inputs_residual, axis=1)
             candidate_inputs_scores = self.scorer.score_inputs(
-                candidate_inputs_residual, y_best, candidate_inputs_struct.inputs_logps
+                candidate_inputs, y_best, candidate_inputs_struct.inputs_logps
             )
         else:
             candidate_inputs, candidate_inputs_scores = None, None
@@ -385,6 +378,16 @@ Your thoughts were:
         self.candidate_prompts = candidate_prompts
         self.candidate_prompts_scores = candidate_prompts_scores
         return candidate_inputs, candidate_inputs_scores
+
+    def instantiate_template(self, inputs, **template_kwargs) -> List[str]:
+        residual = template_kwargs.pop("residual", None)
+
+        if residual is None and getattr(self, "residual_cache", None) is not None:
+            residual = self.residual_cache
+            assert inputs.shape[0] == self.residual_cache.shape[0]
+
+        inputs_plus_residual = self._apply_residual(inputs, residual)
+        return super().instantiate_template(inputs_plus_residual, **template_kwargs)
 
     def _apply_residual(
         self,

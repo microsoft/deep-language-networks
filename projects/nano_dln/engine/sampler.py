@@ -249,11 +249,16 @@ class PriorHiddenSampler(HiddenSampler):
     ):
         # now re-write the inputs
         previous_node = self.base_layer.input_nodes[0]
+        if inputs is None:
+            inputs = previous_node.inputs_cache
 
-        repeated_inputs = [
-            input for input in previous_node.inputs_cache for _ in range(num_samples)
-        ]
-        repeated_inputs = previous_node.instantiate_template(repeated_inputs)
+        repeated_inputs = []
+        for _ in range(num_samples):
+            repeated_inputs.append(previous_node.instantiate_template(inputs))
+
+        repeated_inputs = np.concatenate(repeated_inputs, axis=0)
+        repeated_inputs = repeated_inputs.reshape(num_samples, -1).transpose(1, 0)
+        repeated_inputs = repeated_inputs.flatten().tolist()
 
         new_inputs = self.backward_lm.generate(
             repeated_inputs,

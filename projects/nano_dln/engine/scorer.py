@@ -1,5 +1,3 @@
-import logging
-
 from dataclasses import dataclass
 from typing import List
 import numpy as np
@@ -9,9 +7,14 @@ from engine.ops import GPT, ScoreRequest
 from engine.network import NetworkNode
 from engine.layers import LanguageLayer
 
+import logging
+
 
 def prepare_prompts_scoring_args(
-    inputs: np.ndarray, outputs: np.ndarray, prompts: np.ndarray
+    base_layer: LanguageLayer,
+    inputs: np.ndarray,
+    outputs: np.ndarray,
+    prompts: np.ndarray,
 ):
     """
     Args:
@@ -27,21 +30,34 @@ def prepare_prompts_scoring_args(
     if outputs.ndim == 1:
         outputs = outputs[:, None]
 
+    # now instantiate the forward template for each of the prompt candidates
+    instantiated_inputs = []
+    for k in range(prompts.shape[0]):
+        instantiated_inputs.append(
+            base_layer.instantiate_template(inputs, prompt=prompts[k])
+        )
+
+    instantiated_inputs = np.concatenate(instantiated_inputs, axis=0)
+    instantiated_inputs = instantiated_inputs.reshape(prompts.shape[0], inputs.shape[0])
+    instantiated_inputs = np.transpose(instantiated_inputs, (1, 0))
+
     evals = []
     for i in range(inputs.shape[0]):
         for j in range(outputs.shape[1]):
             for k in range(prompts.shape[0]):
                 evals.append(
-                    (
-                        inputs[i],
-                        outputs[i, j],
-                        prompts[k],
+                    ScoreRequest(
+                        context=instantiated_inputs[i, k],
+                        target=outputs[i, j],
+                        payload=outputs[i, j],
                     )
                 )
-    return list(zip(*evals))
+    return evals
 
 
-def prepare_inputs_scoring_args(inputs: np.ndarray, outputs: np.ndarray, prompt: str):
+def prepare_inputs_scoring_args(
+    base_layer: LanguageLayer, inputs: np.ndarray, outputs: np.ndarray, prompt: str
+):
     """
     Args:
         inputs: (batch_size, num_inputs)
@@ -58,18 +74,28 @@ def prepare_inputs_scoring_args(inputs: np.ndarray, outputs: np.ndarray, prompt:
     if inputs.ndim == 1:
         inputs = inputs[:, None]
 
+    # now instantiate the forward template for each of the input candidates
+    instantiated_inputs = []
+    for j in range(inputs.shape[1]):
+        instantiated_inputs.append(
+            base_layer.instantiate_template(inputs[:, j].squeeze(), prompt=prompt)
+        )
+    instantiated_inputs = np.concatenate(instantiated_inputs, axis=0)
+    instantiated_inputs = instantiated_inputs.reshape(inputs.shape[1], inputs.shape[0])
+    instantiated_inputs = np.transpose(instantiated_inputs, (1, 0))
+
     evals = []
     for i in range(inputs.shape[0]):
         for j in range(inputs.shape[1]):
             for k in range(outputs.shape[1]):
                 evals.append(
-                    (
-                        inputs[i, j],
-                        outputs[i, k],
-                        prompt,
+                    ScoreRequest(
+                        context=instantiated_inputs[i, j],
+                        target=outputs[i, k],
+                        payload=outputs[i, k],
                     )
                 )
-    return list(zip(*evals))
+    return evals
 
 
 @dataclass
@@ -117,7 +143,7 @@ class Scorer(ABC):
 
 
 class LogProbsScorer(Scorer):
-    def __init__(self, logp_penalty = 0.):
+    def __init__(self, logp_penalty=0.0):
         self.logp_penalty = logp_penalty
 
     def score_prompts(
@@ -132,14 +158,12 @@ class LogProbsScorer(Scorer):
         batch_size, num_targets = y.shape
 
         # build up a set of score requests
-        requests = []
-        args = prepare_prompts_scoring_args(
-            self.base_layer.inputs_cache, y, candidate_prompts
+        requests = prepare_prompts_scoring_args(
+            self.base_layer,
+            self.base_layer.inputs_cache,
+            y,
+            candidate_prompts
         )
-        for input, target, prompt in zip(*args):
-            input = self.base_layer.instantiate_template([input], prompt=prompt)[0]
-            requests.append(ScoreRequest(input, target, payload=target))
-
         lps = self.scoring_lm.compute_log_p(
             requests,
             output_classes=self.base_layer.output_classes,
@@ -148,21 +172,17 @@ class LogProbsScorer(Scorer):
         logp_prompts = (y_weights[:, :, None] * lps).sum(1).mean(0)
 
         # compute the logp of the layer's own outputs for the logp_penalty
-        if self.logp_penalty > 0.:
+        if self.logp_penalty > 0.0:
             (num_samples,) = candidate_prompts.shape
-            batch_size, = self.base_layer.outputs_cache.shape
+            (batch_size,) = self.base_layer.outputs_cache.shape
 
             # build up a set of score requests
-            requests = []
-            args = prepare_prompts_scoring_args(
+            requests = prepare_prompts_scoring_args(
+                self.base_layer,
                 self.base_layer.inputs_cache,
                 self.base_layer.outputs_cache,
-                candidate_prompts
+                candidate_prompts,
             )
-            for input, target, prompt in zip(*args):
-                input = self.base_layer.instantiate_template([input], prompt=prompt)[0]
-                requests.append(ScoreRequest(input, target, payload=target))
-
             lps = self.scoring_lm.compute_log_p(
                 requests,
                 output_classes=self.base_layer.output_classes,
@@ -171,7 +191,7 @@ class LogProbsScorer(Scorer):
             # assume loss is 1 or 0
             error_indices = np.where(losses > 0)[0]
             if len(error_indices) == 0:
-                lp_penalty = 0.
+                lp_penalty = 0.0
             else:
                 lp_penalty = lps[error_indices].sum(0) / len(error_indices)
             return logp_prompts - self.logp_penalty * lp_penalty
@@ -179,18 +199,17 @@ class LogProbsScorer(Scorer):
             return logp_prompts
 
     def score_inputs(self, candidate_inputs, y, candidate_inputs_logps=None):
-        args = prepare_inputs_scoring_args(candidate_inputs, y, self.base_layer.weight)
-
         batch_size, num_samples = candidate_inputs.shape
-        requests = []
-        for input, target, prompt in zip(*args):
-            input = self.base_layer.instantiate_template([input], prompt=prompt)[0]
-            requests.append(ScoreRequest(input, target, payload=target))
+        requests = prepare_inputs_scoring_args(
+            self.base_layer,
+            candidate_inputs,
+            y,
+            self.base_layer.weight
+        )
 
         lps = self.scoring_lm.compute_log_p(
             requests,
             self.base_layer.output_classes,
-            agg="sum",
         ).logp_targets.reshape(
             batch_size,
             num_samples,
@@ -202,20 +221,19 @@ class LogProbsScorer(Scorer):
 
 class VIScorer(LogProbsScorer):
     def score_inputs(self, candidate_inputs, y, candidate_inputs_logps=None):
-        args = prepare_inputs_scoring_args(candidate_inputs, y, self.base_layer.weight)
-        requests = []
-
-        batch_size, num_samples = candidate_inputs.shape
+        batch_size, num_samples = candidate_inputs.shape        
         if y.ndim == 1:
             y = y[:, None]
 
         num_output_targets = y.shape[1]
         assert num_output_targets == 1
 
-        for input, target, prompt in zip(*args):
-            input = self.base_layer.instantiate_template([input], prompt=prompt)[0]
-            requests.append(ScoreRequest(input, target, payload=target))
-
+        requests = prepare_inputs_scoring_args(
+            self.base_layer,
+            candidate_inputs,
+            y,
+            self.base_layer.weight
+        )
         lps = (
             self.scoring_lm.compute_log_p(
                 requests,
@@ -231,15 +249,12 @@ class VIScorer(LogProbsScorer):
         )
 
         parent_layer = self.base_layer.input_nodes[0]
-        args = prepare_inputs_scoring_args(
-            parent_layer.inputs_cache, candidate_inputs, parent_layer.weight
+        requests = prepare_inputs_scoring_args(
+            parent_layer,
+            parent_layer.inputs_cache,
+            candidate_inputs,
+            parent_layer.weight
         )
-
-        requests = []
-        for input, target, prompt in zip(*args):
-            input = parent_layer.instantiate_template([input], prompt=prompt)[0]
-            requests.append(ScoreRequest(input, target, payload=target))
-
         prior_lps = (
             self.scoring_lm.compute_log_p(
                 requests,
@@ -269,23 +284,18 @@ class AccuracyScorer(Scorer):
         (num_samples,) = candidate_prompts.shape
         batch_size, num_targets = y.shape
 
-        args = prepare_prompts_scoring_args(
-            self.base_layer.inputs_cache, y, candidate_prompts
+        requests = prepare_prompts_scoring_args(
+            self.base_layer,
+            self.base_layer.inputs_cache,
+            y,
+            candidate_prompts
         )
-        # build up a set of score requests
-        requests = []
-        for input, _, prompt in zip(*args):
-            requests.append(
-                self.base_layer.instantiate_template(input=input, prompt=prompt)
-            )
-
         outputs = self.scoring_lm.generate(
             requests,
             stop=["\n\n"],
             temperature=0.0,
             max_tokens=10,
         )
-
         targets = np.array([postprocess_prediction(t) for t in targets])
         outputs = np.array([postprocess_prediction(yi) for yi in y])
         accuracy = np.array([t == y for t, y in zip(targets, outputs)])
