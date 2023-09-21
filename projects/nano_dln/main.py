@@ -179,8 +179,9 @@ def train(args, writer):
 
             for n in tqdm.tqdm(range(eval_freq)):
                 train_sentences, train_targets = dataset.get_batch(
-                    "train", batch_size, random_sample=True
+                    "train", batch_size, random_sample=True, balance=True
                 )[:2]
+
                 train_sentences = np.asarray(train_sentences)
                 train_targets = np.asarray(train_targets)
 
