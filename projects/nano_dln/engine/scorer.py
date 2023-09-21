@@ -6,15 +6,14 @@ from abc import ABC, abstractmethod
 from engine.ops import GPT, ScoreRequest
 from engine.network import NetworkNode
 from engine.layers import LanguageLayer
-
 import logging
 
 
 def prepare_prompts_scoring_args(
     base_layer: LanguageLayer,
-    inputs: np.ndarray,
-    outputs: np.ndarray,
-    prompts: np.ndarray,
+    inputs: np.array,
+    outputs: np.array,
+    prompts: np.array,
 ):
     """
     Args:
@@ -29,22 +28,27 @@ def prepare_prompts_scoring_args(
     # add a dimension in case there is only 1 output
     if outputs.ndim == 1:
         outputs = outputs[:, None]
+    if inputs.ndim != 1:
+        inputs = inputs.squeeze()
+    if inputs.ndim != 1:
+        raise ValueError("Expected inputs to be 1D.")
+
+    num_prompts = prompts.shape[0]
+    batch_size = inputs.shape[0]
+    num_labels = outputs.shape[1]
 
     # now instantiate the forward template for each of the prompt candidates
-    instantiated_inputs = []
-    for k in range(prompts.shape[0]):
-        instantiated_inputs.append(
-            base_layer.instantiate_template(inputs, prompt=prompts[k])
+    # this proceeds by instantiating one candidate for each element in the batch
+    instantiated_inputs = np.empty((batch_size, num_prompts), dtype=object)
+    for i in range(num_prompts):
+        instantiated_inputs[:, i] = base_layer.instantiate_template(
+            inputs, prompt=prompts[i]
         )
 
-    instantiated_inputs = np.concatenate(instantiated_inputs, axis=0)
-    instantiated_inputs = instantiated_inputs.reshape(prompts.shape[0], inputs.shape[0])
-    instantiated_inputs = np.transpose(instantiated_inputs, (1, 0))
-
     evals = []
-    for i in range(inputs.shape[0]):
-        for j in range(outputs.shape[1]):
-            for k in range(prompts.shape[0]):
+    for i in range(batch_size):
+        for j in range(num_labels):
+            for k in range(num_prompts):
                 evals.append(
                     ScoreRequest(
                         context=instantiated_inputs[i, k],
@@ -56,13 +60,13 @@ def prepare_prompts_scoring_args(
 
 
 def prepare_inputs_scoring_args(
-    base_layer: LanguageLayer, inputs: np.ndarray, outputs: np.ndarray, prompt: str
+    base_layer: LanguageLayer, inputs: np.array, outputs: np.array, prompt: str
 ):
     """
     Args:
         inputs: (batch_size, num_inputs)
         outputs: (batch_size, 1) or (batch_size, num_outputs)
-        prompts: (num_prompts,)
+        prompt: str
 
     Returns
         (batch_size, num_inputs, num_outputs)
@@ -74,20 +78,22 @@ def prepare_inputs_scoring_args(
     if inputs.ndim == 1:
         inputs = inputs[:, None]
 
+    batch_size = inputs.shape[0]
+    num_inputs = inputs.shape[1]
+    num_labels = outputs.shape[1]
+
     # now instantiate the forward template for each of the input candidates
-    instantiated_inputs = []
-    for j in range(inputs.shape[1]):
-        instantiated_inputs.append(
-            base_layer.instantiate_template(inputs[:, j].squeeze(), prompt=prompt)
+    # this proceeds by instantiating one candidate for each element in the batch
+    instantiated_inputs = np.empty((batch_size, num_inputs), dtype=object)
+    for i in range(num_inputs):
+        instantiated_inputs[:, i] = base_layer.instantiate_template(
+            inputs[:, i], prompt=prompt
         )
-    instantiated_inputs = np.concatenate(instantiated_inputs, axis=0)
-    instantiated_inputs = instantiated_inputs.reshape(inputs.shape[1], inputs.shape[0])
-    instantiated_inputs = np.transpose(instantiated_inputs, (1, 0))
 
     evals = []
-    for i in range(inputs.shape[0]):
-        for j in range(inputs.shape[1]):
-            for k in range(outputs.shape[1]):
+    for i in range(batch_size):
+        for j in range(num_inputs):
+            for k in range(num_labels):
                 evals.append(
                     ScoreRequest(
                         context=instantiated_inputs[i, j],
@@ -159,10 +165,7 @@ class LogProbsScorer(Scorer):
 
         # build up a set of score requests
         requests = prepare_prompts_scoring_args(
-            self.base_layer,
-            self.base_layer.inputs_cache,
-            y,
-            candidate_prompts
+            self.base_layer, self.base_layer.inputs_cache, y, candidate_prompts
         )
         lps = self.scoring_lm.compute_log_p(
             requests,
@@ -201,10 +204,7 @@ class LogProbsScorer(Scorer):
     def score_inputs(self, candidate_inputs, y, candidate_inputs_logps=None):
         batch_size, num_samples = candidate_inputs.shape
         requests = prepare_inputs_scoring_args(
-            self.base_layer,
-            candidate_inputs,
-            y,
-            self.base_layer.weight
+            self.base_layer, candidate_inputs, y, self.base_layer.weight
         )
 
         lps = self.scoring_lm.compute_log_p(
@@ -221,7 +221,7 @@ class LogProbsScorer(Scorer):
 
 class VIScorer(LogProbsScorer):
     def score_inputs(self, candidate_inputs, y, candidate_inputs_logps=None):
-        batch_size, num_samples = candidate_inputs.shape        
+        batch_size, num_samples = candidate_inputs.shape
         if y.ndim == 1:
             y = y[:, None]
 
@@ -229,10 +229,7 @@ class VIScorer(LogProbsScorer):
         assert num_output_targets == 1
 
         requests = prepare_inputs_scoring_args(
-            self.base_layer,
-            candidate_inputs,
-            y,
-            self.base_layer.weight
+            self.base_layer, candidate_inputs, y, self.base_layer.weight
         )
         lps = (
             self.scoring_lm.compute_log_p(
@@ -253,7 +250,7 @@ class VIScorer(LogProbsScorer):
             parent_layer,
             parent_layer.inputs_cache,
             candidate_inputs,
-            parent_layer.weight
+            parent_layer.weight,
         )
         prior_lps = (
             self.scoring_lm.compute_log_p(
@@ -285,10 +282,7 @@ class AccuracyScorer(Scorer):
         batch_size, num_targets = y.shape
 
         requests = prepare_prompts_scoring_args(
-            self.base_layer,
-            self.base_layer.inputs_cache,
-            y,
-            candidate_prompts
+            self.base_layer, self.base_layer.inputs_cache, y, candidate_prompts
         )
         outputs = self.scoring_lm.generate(
             requests,
