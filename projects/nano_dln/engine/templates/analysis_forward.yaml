@@ -1,7 +1,0 @@
-v1.0:
-  template: |-
-    {{ prompt }}
-
-    {{ input }}
-
-    Brief analysis:

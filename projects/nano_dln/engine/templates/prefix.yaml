@@ -4,4 +4,4 @@ v1.0:
 
     {{ input }}
 
-    Thoughts:
+    {{ output_formatting_instruction }}

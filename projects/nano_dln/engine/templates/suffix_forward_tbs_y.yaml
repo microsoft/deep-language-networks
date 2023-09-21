@@ -1,8 +1,0 @@
-v1.0:
-  template: |-
-    {{ input }}
-
-    Given that the answer is:
-    {{ y }}
-
-    {{ prompt }} Let's think step by step.

@@ -1,8 +1,0 @@
-v3.0:
-  template: |-
-    {{ prompt }}
-
-    {{ input }}
-
-    Answer:
-    {{ answer }}

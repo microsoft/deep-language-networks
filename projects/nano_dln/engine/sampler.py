@@ -150,9 +150,9 @@ class MultiActionPromptSampler(PromptSampler):
 
         self.memory_size = memory_size
         if memory_size > 0:
-            self.prompt_template = load_template("q_action_prompt_mem:v3.5")
+            self.prompt_template = load_template("back_prompt_mem")
         else:
-            self.prompt_template = load_template("q_action_prompt:v3.5")
+            self.prompt_template = load_template("back_prompt")
         self.memory = {}
 
     def rewrite_prompts(

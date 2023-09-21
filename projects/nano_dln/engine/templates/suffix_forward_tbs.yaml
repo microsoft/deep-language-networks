@@ -1,5 +1,0 @@
-v1.0:
-  template: |-
-    {{ input }}
-
-    {{ prompt }} Let's think step by step.

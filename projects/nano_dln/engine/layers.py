@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 from contextlib import contextmanager
-from engine.template import DLNTemplate
+from engine.template import DLNTemplate, load_template
 from engine.network import NetworkNode
 from engine.loss import LLoss
 
@@ -147,26 +147,7 @@ class LanguageLayer(NetworkNode, ABC):
 
 class BaseLayer(LanguageLayer):
     def get_forward_template(self):
-        if self.template_type == "prefix":
-            return DLNTemplate(
-                template="""{{ prompt }}
-
-{{ input }}
-
-{{ output_formatting_instruction }}
-"""
-            )
-        elif self.template_type == "suffix":
-            return DLNTemplate(
-                template="""{{ input }}
-
-{{ prompt }}
-
-{{ output_formatting_instruction }}
-"""
-            )
-        else:
-            raise ValueError("Template type should be either suffix or prefix.")
+        return load_template(self.template_type)
 
     def __init__(
         self,
@@ -271,18 +252,10 @@ class BaseLayer(LanguageLayer):
 
 
 class ResidualLayer(BaseLayer):
-    residual_template = DLNTemplate(
-        template="""{{ residual }}
-Your thoughts were:
-{{ input }}
-"""
-    )
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        logging.info(
-            "Residual template:\n" + f"{repr(self.residual_template.template)}"
-        )
+
+        self.residual_template = load_template("residual")
 
     def forward(self, inputs=None, **template_kwargs) -> np.array:
         if len(self.input_nodes) > 1:
@@ -302,8 +275,6 @@ Your thoughts were:
         outputs = super().forward(inputs, **template_kwargs)
 
         if cache_forward_pass:
-            # store the inputs as inputs + residual
-            self.inputs_cache_with_residual = self._apply_residual(inputs, residual)
             self.residual_cache = residual
         return outputs
 
@@ -336,12 +307,17 @@ Your thoughts were:
             y_best_ind = np.argmax(y_weights, axis=1)
             y_best = np.asarray([y[i, y_ind] for i, y_ind in enumerate(y_best_ind)])
 
+        # our inputs should be our original inputs + the residual from prompt sampling
+        # we could also make rewrite_prompts use instantiate template with a special flag
+        # that skips adding the prompt
         candidate_prompts = self.prompt_sampler.rewrite_prompts(
             y_best,
             losses=losses,
-            inputs=self.inputs_cache_with_residual,
+            inputs=self._apply_residual(self.inputs_cache, self.residual_cache),
             num_samples=num_p_samples,
         )
+        # let's score all these nice prompts now, the residual will be applied
+        # with the instantiate_template
         candidate_prompts_scores = self.scorer.score_prompts(
             candidate_prompts,
             y,

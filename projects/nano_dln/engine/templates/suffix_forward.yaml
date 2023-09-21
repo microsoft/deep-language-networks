@@ -1,6 +1,0 @@
-v1.0:
-  stop_tokens: ["##", "#"]
-  template: |-
-    {{ input }}
-
-    {{ prompt }}
