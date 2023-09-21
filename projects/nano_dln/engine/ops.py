@@ -399,6 +399,7 @@ class GPT:
                     output_classes_scores[i] += np.max(verbalizers_scores)
                 else:
                     output_classes_scores[i] += np.sum(verbalizers_scores)
+
             output_class_index = [
                 i
                 for i, output_class in enumerate(output_classes)

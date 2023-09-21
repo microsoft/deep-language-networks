@@ -156,7 +156,9 @@ class MultiActionPromptSampler(PromptSampler):
         self.memory = {}
 
     def strip_array(self, array):
-        return np.asarray(list(map(lambda x: x.strip(), array)))
+        array = list(map(lambda x: x.strip(), array))
+        array = list(map(lambda x: x.replace("\n\n", "\n"), array))
+        return np.asarray(array, dtype=object)
 
     def rewrite_prompts(
         self,

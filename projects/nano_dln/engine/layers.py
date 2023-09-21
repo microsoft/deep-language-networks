@@ -217,7 +217,7 @@ class BaseLayer(LanguageLayer):
                     requests.append(ScoreRequest(input, target, payload=target))
 
                 lps = self.forward_lm.compute_log_p(
-                    requests, output_classes=self.output_classes, agg="sum"
+                    requests, output_classes=self.output_classes,
                 ).distribution
                 # best output class index
                 best_output_class_index = np.argmax(lps, axis=1)
