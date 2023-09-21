@@ -294,7 +294,7 @@ class Dataset:
         elif split == "test":
             self.test_pointer = 0
 
-    def get_batch(self, split, batch_size, random_sample=False, balance=False):
+    def get_batch(self, split, batch_size, random_sample=False, balance=True):
         assert batch_size > 0
         assert split in ["train", "dev", "test"]
         if split == "train":
