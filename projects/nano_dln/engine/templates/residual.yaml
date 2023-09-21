@@ -1,5 +1,5 @@
 v1.0:
   template: |-
-    {{ input }}
+    {{ residual }}
     Your thoughts were:
-    {{ output }}
+    {{ input }}

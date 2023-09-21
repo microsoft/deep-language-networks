@@ -155,6 +155,9 @@ class MultiActionPromptSampler(PromptSampler):
             self.prompt_template = load_template("back_prompt")
         self.memory = {}
 
+    def strip_array(self, array):
+        return np.asarray(list(map(lambda x: x.strip(), array)))
+
     def rewrite_prompts(
         self,
         y: np.array,
@@ -174,24 +177,17 @@ class MultiActionPromptSampler(PromptSampler):
         prompt_memories = sorted(prompt_memories, key=lambda x: x[1], reverse=True)
         prompt_memories = prompt_memories[: self.memory_size][::-1]
 
-        if inputs is None:
-            inputs = self.base_layer.inputs_cache
-        outputs = self.base_layer.outputs_cache
-        targets = y
-
-        # we strip the trailing spaces so that prompt proposal is nicer
-        preprocessed_inputs = np.array([input.strip() for input in inputs])
-        preprocessed_outputs = np.array([output.strip() for output in outputs])
-        preprocessed_targets = np.array([target.strip() for target in targets])
-
+        # we strip the trailing spaces so that prompt proposal looks nicer
+        inputs = (
+            self.strip_array(self.base_layer.inputs_cache)
+            if inputs is None
+            else self.strip_array(inputs)
+        )
+        outputs = self.strip_array(self.base_layer.outputs_cache)
+        targets = self.strip_array(y)
         infos = [
-            Info(input=input_i, output=y_hat_i, target=y_i, loss=loss)
-            for input_i, y_hat_i, y_i, loss in zip(
-                preprocessed_inputs,
-                preprocessed_outputs,
-                preprocessed_targets,
-                losses,
-            )
+            Info(*args)
+            for args in zip(inputs, outputs, targets, losses)
         ]
 
         while True:
