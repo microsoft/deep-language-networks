@@ -176,9 +176,6 @@ class LogProbsScorer(Scorer):
 
         # compute the logp of the layer's own outputs for the logp_penalty
         if self.logp_penalty > 0.0:
-            (num_samples,) = candidate_prompts.shape
-            (batch_size,) = self.base_layer.outputs_cache.shape
-
             # build up a set of score requests
             requests = prepare_prompts_scoring_args(
                 self.base_layer,
@@ -203,6 +200,7 @@ class LogProbsScorer(Scorer):
 
     def score_inputs(self, candidate_inputs, y, candidate_inputs_logps=None):
         batch_size, num_samples = candidate_inputs.shape
+
         requests = prepare_inputs_scoring_args(
             self.base_layer, candidate_inputs, y, self.base_layer.weight
         )
