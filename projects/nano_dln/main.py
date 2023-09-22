@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 from engine.layers import ResidualLayer
 from engine.scorer import OutputClasses
 from engine.ops import LanguageLayerOps
-from engine.configs import BackpropLogProbsEngine, BackwardLogProbsEngine
+from engine.configs import BackpropLogProbsEngine, BackwardLogProbsEngine, FullStackEngine
 from engine.loss import ZeroOneLoss
 from postprocessing import postprocess_prediction
 from dataset import Dataset
@@ -93,6 +93,8 @@ class PromptNet:
                     memory_size=self.memory_size,
                     logp_penalty=self.logp_penalty
                 )
+            elif self.engine == "fullstack":
+                engine = FullStackEngine()
             else:
                 raise ValueError(f"Unknown engine: {self.engine}")
 

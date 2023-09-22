@@ -27,6 +27,12 @@ def cache_disable():
 
 
 class LanguageLayer(NetworkNode, ABC):
+    def eval(self):
+        self._training = False
+        
+    def train(self):
+        self._training = True
+
     def __init__(self):
         super().__init__()
 
@@ -163,6 +169,7 @@ class BaseLayer(LanguageLayer):
         self.output_formatting_instruction = output_formatting_instruction
         self.output_classes = output_classes
         self.requires_input = True
+        self._training = True
 
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
@@ -198,6 +205,10 @@ class BaseLayer(LanguageLayer):
             inputs = self.input_nodes[0].outputs_cache
 
         tpl_inputs = self.instantiate_template(inputs, **template_kwargs)
+
+        if cache_forward_pass:
+            logging.debug("Forwarding {} inputs".format(len(tpl_inputs)))
+            logging.debug(tpl_inputs[0])
 
         if self.output_classes is None:
             outputs = self.forward_lm.generate(

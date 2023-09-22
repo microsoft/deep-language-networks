@@ -104,17 +104,6 @@ class Dataset:
             y = [self.dataset["train"]["label"][i] for i in indices]
         return list(zip(x, y))
 
-    def resize(self, split, size):
-        indices = np.random.permutation(np.arange(len(self.dataset[split]["label"])))[
-            :size
-        ]
-        self.dataset[split]["label"] = [
-            self.dataset[split]["label"][i] for i in indices
-        ]
-        self.dataset[split]["sentence"] = [
-            self.dataset[split]["sentence"][i] for i in indices
-        ]
-
     def reset(self):
         self.train_pointer, self.dev_pointer, self.test_pointer = 0, 0, 0
 

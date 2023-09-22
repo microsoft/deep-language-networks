@@ -301,7 +301,7 @@ class AccuracyScorer(Scorer):
 
 class FullStackScorer(Scorer):
     def score_prompts(self, candidate_prompts, y, y_weights, targets=None, losses=None):
-        from layers import cache_disable
+        from engine.layers import cache_disable
         from postprocessing import postprocess_prediction
 
         with cache_disable():

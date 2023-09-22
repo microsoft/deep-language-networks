@@ -450,13 +450,14 @@ class GPT:
         output_logprobs = []
         context_logprobs = []
 
+        burn_in = 0
         for context, token_log_probs in zip(contexts, log_probs):
             num_tokens_prompt = len(self.encoder.encode(context))
-            target_log_probs = token_log_probs[num_tokens_prompt:]
+            target_log_probs = token_log_probs[num_tokens_prompt + burn_in:]
             context_log_probs = token_log_probs[1:num_tokens_prompt]
 
             if len(target_log_probs) == 0:
-                output_logprobs.append(-np.inf)
+                output_logprobs.append("empty")
             else:
                 output_logprobs.append(
                     sum(target_log_probs) / (len(target_log_probs) + 1e-5)
@@ -465,6 +466,13 @@ class GPT:
             context_logprobs.append(
                 sum(context_log_probs) / (len(context_log_probs) + 1e-5)
             )
+
+        non_empty = [o for o in output_logprobs if o != "empty"]
+        if len(non_empty) == 0:
+            min = 0
+        else:
+            min = np.min(non_empty)
+        output_logprobs = [o if o != "empty" else min for o in output_logprobs]
         return LogProbs(np.asarray(output_logprobs), np.asarray(context_logprobs))
 
     @classmethod
