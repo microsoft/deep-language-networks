@@ -134,12 +134,6 @@ def test(dataset, model, loss_fn, iteration, writer):
     help="Remove options from examples for the hidden layer.",
 )
 @click.option(
-    "--strip_prefix_for_hidden",
-    type=bool,
-    default=False,
-    help="Strip the prefix from the examples if it exists in some tasks, e.g. BBH.",
-)
-@click.option(
     "--strip_answer_for_hidden",
     type=bool,
     default=False,
@@ -225,6 +219,19 @@ def test(dataset, model, loss_fn, iteration, writer):
     "--model_type",
     type=str,
     default="text-davinci-003",
+    help="Model type for forward and backward models if not specified separately.",
+)
+@click.option(
+    "--fwd_model_type",
+    type=str,
+    default="",
+    help="Overrides model_type for forward. If not specified, use the same as model_type.",
+)
+@click.option(
+    "--bwd_model_type",
+    type=str,
+    default="",
+    help="Overrides model_type for backward. If not specified, use the same as model_type.",
 )
 @click.option(
     "--fwd_max_tokens",
@@ -237,6 +244,18 @@ def test(dataset, model, loss_fn, iteration, writer):
     type=int,
     default=512,
     help="Backward max tokens.",
+)
+@click.option(
+    "--p1_max_tokens",
+    type=int,
+    default=256,
+    help="P1 max tokens.",
+)
+@click.option(
+    "--p2_max_tokens",
+    type=int,
+    default=20,
+    help="P2 max tokens.",
 )
 @click.option(
     "--result_data_path",
@@ -279,7 +298,6 @@ def main(
     num_h_samples,
     strip_options_for_hidden,
     strip_answer_for_hidden,
-    strip_prefix_for_hidden,
     trust_factor,
     one_batch,
     use_memory,
@@ -294,8 +312,12 @@ def main(
     decay_logp_penalty,
     posterior_temp,
     model_type,
+    fwd_model_type,
+    bwd_model_type,
     fwd_max_tokens,
     bwd_max_tokens,
+    p1_max_tokens,
+    p2_max_tokens,
     result_data_path,
     result_exp_name,
     enable_wandb,
@@ -331,14 +353,16 @@ def main(
 
     dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir)
 
+    fwd_model_type = fwd_model_type or model_type
     forward_instantiate(
         model_type,
         temperature=0.0,
         max_tokens=fwd_max_tokens,
         stop=None,
     )
+    bwd_model_type = bwd_model_type or model_type
     backward_instantiate(
-        model_type,
+        bwd_model_type,
         temperature=bwd_temp,
         max_tokens=bwd_max_tokens,
         stop=None,
@@ -368,10 +392,9 @@ def main(
         train_p1=train_p1,
         train_p2=train_p2,
         logp_penalty=logp_penalty,
-        p1_max_tokens=256,
-        p2_max_tokens=20,
+        p1_max_tokens=p1_max_tokens,
+        p2_max_tokens=p2_max_tokens,
         posterior_temp=posterior_temp,
-        strip_prefix_for_hidden=dataset.prefix if strip_prefix_for_hidden else None,
     )
 
     running_acc = 0.0

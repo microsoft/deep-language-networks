@@ -38,9 +38,9 @@ you need to set the OPENAI_API_TYPE, OPENAI_API_BASE and OPENAI_API_VERSION.
 The OPENAI_API_TYPE must be set to 'azure' and the others correspond to the properties of your endpoint.
 
 
-### Setup self hosted models (vLLM)
+### Setup self-hosted models (vLLM)
 
-Export huggingface id or path to the tokenizer and openai env vars. Unset the OPENAI_API_TYPE and OPENAI_API_VERSION.
+Export huggingface id or path to the tokenizer and openai env vars. Unset `OPENAI_API_TYPE` and `OPENAI_API_VERSION`.
 
     export TOKENIZER_PATH=<PATH_TO_TOKENIZER>
     export OPENAI_API_KEY=EMPTY

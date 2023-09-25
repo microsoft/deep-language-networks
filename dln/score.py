@@ -52,7 +52,7 @@ class LogProbsScore:
                 else:
                     pretrained_path = forward_interpreter.engine
                 encoder = AutoTokenizer.from_pretrained(pretrained_path)
-            self.encoder = encoder
+        self.encoder = encoder
 
     def score_requests(self, requests, output_classes=None, agg="max") -> LogProbs:
         # create the batched inputs for the model

@@ -48,7 +48,6 @@ for seed in 13 42 25; do
         --logp_penalty ${logp_penalty} \
         --posterior_temp ${posterior_temp} \
         --strip_options_for_hidden True \
-        --strip_prefix_for_hidden False \
         --fwd_max_tokens ${fwd_max_tokens} \
         --bwd_max_tokens ${bwd_max_tokens}
 done

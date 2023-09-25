@@ -16,7 +16,11 @@ trust_factor=5.
 p_hidden_tpl="suffix_forward_tbs"
 q_hidden_tpl="suffix_forward_tbs_y|suffix_forward_tbs"
 # model_type="/llama/7Bf"
-model_type="/data/llama2/70B"
+model_type="/data/llama2/70Bf"
+fwd_max_tokens=512
+bwd_max_tokens=1024
+p1_max_tokens=512
+p2_max_tokens=512
 
 dir=log/{model_type}/two_layers_e2e/${dataset}
 # /bin/rm -rf ${dir}
@@ -48,8 +52,11 @@ for seed in 42; do
         --forward_use_classes True \
         --logp_penalty ${logp_penalty} \
         --posterior_temp ${posterior_temp} \
-        --strip_options_for_hidden True \
-        --strip_prefix_for_hidden False
+        --fwd_max_tokens ${fwd_max_tokens} \
+        --bwd_max_tokens ${bwd_max_tokens} \
+        --p1_max_tokens ${p1_max_tokens} \
+        --p2_max_tokens ${p2_max_tokens} \
+        --strip_options_for_hidden True
 done
 
 # export TOKENIZER_PATH="/data/models/llama2/70Bf"
