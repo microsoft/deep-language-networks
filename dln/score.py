@@ -112,9 +112,13 @@ class LogProbsScore:
             output_classes_scores = np.asarray([min_prob for _ in output_classes])
             # accumulate probability mass for each class verbalizer
             # the class verbalizer can be either " a" or "a" (with or without space)
+            extenders = [
+                " ",  # gpt case, regular space
+                "▁",  # llama case, this is not an underscore ord("_") -> 95, but a special character ord("▁") -> 9601
+            ]
             for i in range(len(output_classes)):
                 verbalizers = output_classes.verbalizers(i)
-                verbalizers.extend([f" {v}" for v in verbalizers])
+                verbalizers.extend([f"{e}{v}" for v in verbalizers for e in extenders])
                 verbalizers = set(verbalizers)
                 verbalizers_scores = [0.]
                 for verbalizer in verbalizers:
@@ -141,7 +145,7 @@ class LogProbsScore:
         logging.info("# Scoring requests = {}".format(len(contexts)))
         eval_kwargs = {
             "temperature": 0,
-            "max_tokens": 1,  # vllm requires at least 1 token to be generated
+            "max_tokens": 0,
             "echo": True,
             "return_logprobs": True,
             "raw_logprobs": True,
@@ -172,7 +176,7 @@ class LogProbsScore:
         context_logprobs = []
         for context, token_log_probs in zip(contexts, log_probs):
             num_tokens_prompt = len(self.encoder.encode(context))
-            target_log_probs = token_log_probs[num_tokens_prompt:-1]  # -1 to remove the generated token
+            target_log_probs = token_log_probs[num_tokens_prompt:]
             context_log_probs = token_log_probs[1:num_tokens_prompt]
             output_logprobs.append(sum(target_log_probs) / (len(target_log_probs) + 1e-5))
             context_logprobs.append(sum(context_log_probs) / (len(context_log_probs) + 1e-5))
