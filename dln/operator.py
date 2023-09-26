@@ -14,6 +14,7 @@ from tenacity import (
 forward_interpreter = None
 backward_interpreter = None
 
+openai.util.logger.setLevel(logging.WARNING)
 
 class GPT:
 
@@ -276,7 +277,7 @@ class VLLM:
     @retry(
         reraise=True,
         stop=stop_after_attempt(100),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
+        wait=wait_exponential(multiplier=1, min=1, max=1),
         retry=(
             retry_if_exception_type(openai.error.Timeout)
             | retry_if_exception_type(openai.error.APIError)
@@ -288,7 +289,8 @@ class VLLM:
     async def aget_vllm_response(self, input, return_logprobs=False, raw_logprobs=False, top_logprobs=False, **kwargs):
         response = await openai.Completion.acreate(
             model=self.engine,
-            prompt=input,
+            # prompt=input,
+            prompt = f"<s>[INST] {input} [/INST]",
             logprobs=top_logprobs or 1,
             **kwargs,
         )
