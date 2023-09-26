@@ -15,6 +15,7 @@ class PriorLayer:
         )
         log_message("Forward template:\n", f"{repr(self.forward_template.template)}")
         self.weight = init
+        self.logprobs_score = LogProbsScore()
 
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
@@ -86,7 +87,7 @@ class PriorLayer:
             requests.append(self.log_p_request(input, target, prompt=prompt))
 
         # build up a set of score requests
-        logprobs = LogProbsScore().score_requests(requests, output_classes, agg=agg)
+        logprobs = self.logprobs_score.score_requests(requests, output_classes, agg=agg)
         return logprobs
 
 
