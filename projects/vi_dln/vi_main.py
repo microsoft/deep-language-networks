@@ -471,10 +471,11 @@ def main(
         elbo, p1, p2, loss, elbo1, elbo2 = model.forward(
             np.array(x), np.array(y), temperature=fwd_temp
         )
-
         # Update prompts
         model.encoder_l1.weight = p1
         model.encoder_l2.weight = p2
+        log_message("Current L1 weights:", model.encoder_l1.weight)
+        log_message("Current L2 weights:", model.encoder_l2.weight)
         log_message("Patience: {}".format(patience))
 
         if iteration == 0:
