@@ -51,8 +51,8 @@ def load_data(log_file, dataset):
         for layer, candidates in enumerate(item["candidates"], 1):
             for idx, candidate in enumerate(candidates):
                 candidate_data = candidates_data.setdefault(idx, {"step": item["step"]})
-                candidate_data[f"layer_{layer}_candidate"] = candidate["layer"]
-                candidate_data[f"layer_{layer}_score"] = candidate["score"]
+                candidate_data[f"Layer {layer} candidate"] = candidate["layer"]
+                candidate_data[f"Layer {layer} score"] = candidate["score"]
         flattened_candidates += list(candidates_data.values())
 
     flattened_examples = []
