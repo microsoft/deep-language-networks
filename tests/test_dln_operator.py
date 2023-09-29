@@ -5,8 +5,6 @@ import pytest
 
 from dln.operator import (
     GPT,
-    backward_evaluate,
-    backward_instantiate,
     forward_evaluate,
     forward_instantiate,
 )
@@ -80,11 +78,4 @@ def test_forward_evaluate(mock_openai_api):
     forward_instantiate("text-davinci-003")
     prompt = "What is the largest city in Quebec?"
     response = forward_evaluate([prompt])
-    assert "Montreal" in response[0]
-
-
-def test_backward_evaluate(mock_openai_api):
-    backward_instantiate("text-davinci-003")
-    prompt = "What is the largest city in Quebec?"
-    response = backward_evaluate([prompt])
     assert "Montreal" in response[0]

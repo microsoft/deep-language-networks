@@ -13,7 +13,6 @@ from tenacity import (
 )
 
 forward_interpreter = None
-backward_interpreter = None
 
 openai.util.logger.setLevel(logging.WARNING)
 
@@ -365,22 +364,8 @@ def forward_instantiate(model_name="text-davinci-003", **generation_options):
         pass
 
 
-def backward_instantiate(model_name="text-davinci-003", **generation_options):
-    global backward_interpreter
-
-    if backward_interpreter is None:
-        backward_interpreter = instantiate_model(model_name, **generation_options)
-    else:
-        print("Backward interpreter already instantiated.")
-        pass
-
-
 def forward_evaluate(input: List[str], **kwargs):
     return forward_interpreter.generate(input, **kwargs)
-
-
-def backward_evaluate(input: List[str], **kwargs):
-    return backward_interpreter.generate(input, **kwargs)
 
 
 def instantiate_tokenizer(model_name: str):

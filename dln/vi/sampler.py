@@ -17,13 +17,13 @@ class Info:
 
 
 class PromptSampler:
-    def __init__(self, backward_evaluate: LLM, p_template: str = "q_action_prompt:v3.5"):
+    def __init__(self, evaluate_func: LLM, p_template: str = "q_action_prompt:v3.5"):
         self.prompt_template = load_template(p_template)
         log_message("Prompt template:\n", f"{repr(self.prompt_template.template)}")
         log_message(
             "Message alternatives:\n", f"{self.prompt_template.message_alternatives}"
         )
-        self.evaluate_func = backward_evaluate
+        self.evaluate_func = evaluate_func
 
     def sample_q_p(
         self,
@@ -100,14 +100,14 @@ class PromptSampler:
 
 
 class PosteriorSampler:
-    def __init__(self, backward_evaluate: LLM, q_template: str):
+    def __init__(self, evaluate_func: LLM, q_template: str):
         self.q_templates = []
         for q_template in q_template.split("|"):
             self.q_templates.append(load_template(q_template))
         for q_template in self.q_templates:
             log_message("Q template:", f"{repr(q_template.template)}")
         self.stop_tokens = self.q_templates[0].stop_tokens
-        self.evaluate_func = backward_evaluate
+        self.evaluate_func = evaluate_func
 
     def sample_q_h(
         self,
