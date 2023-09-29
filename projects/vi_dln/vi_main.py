@@ -12,7 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from dln.dataset import init_dataset
 from dln.loss import ZeroOneLoss
-from dln.operator import forward_instantiate, instantiate_model, instantiate_tokenizer
+from dln.operator import instantiate_model, instantiate_tokenizer
 from dln.postprocessing import postprocess_prediction
 from dln.score import LogProbsScore
 from dln.vi.model import VILModel, log_message
@@ -357,12 +357,6 @@ def main(
 
     fwd_model_type = fwd_model_type or model_type
     bwd_model_type = bwd_model_type or model_type
-    forward_instantiate(
-        model_type,
-        temperature=0.0,
-        max_tokens=fwd_max_tokens,
-        stop=None,
-    )
     fwd_model = instantiate_model(
         model_type,
         temperature=0.0,
@@ -387,6 +381,7 @@ def main(
         two_layers=not one_layer,
         num_p_samples=num_p_samples,
         num_h_samples=num_h_samples,
+        forward_evaluate=fwd_model,
         posterior_sampler=posterior_sampler,
         prompt_sampler=prompt_sampler,
         logprobs_score=logprobs_score,

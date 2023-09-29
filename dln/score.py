@@ -4,6 +4,8 @@ from typing import Any, List
 
 import numpy as np
 
+from dln.operator import LLM
+
 
 @dataclass
 class ScoreRequest:
@@ -36,7 +38,7 @@ class LogProbs:
 
 
 class LogProbsScore:
-    def __init__(self, tokenizer, forward_evaluate):
+    def __init__(self, tokenizer, forward_evaluate: LLM):
         self.tokenizer = tokenizer
         self.forward_evaluate = forward_evaluate
 

@@ -6,11 +6,12 @@ from dln.score import OutputClasses
 from dln.vi.layers import PriorLayer, ResidualPriorLayer
 
 
-def test_apply_residual_without_template(mock_logprobs_score):
+def test_apply_residual_without_template(mock_logprobs_score, mock_llm):
     inputs = np.array(["input1", "input2", "input3"])
     outputs = np.array(["output1", "output2", "output3"])
     residual_prior_layer = ResidualPriorLayer(
         logprobs_score=mock_logprobs_score,
+        forward_evaluate=mock_llm,
         forward_template="suffix_forward",
         init="A task description",
     )
@@ -25,11 +26,12 @@ def test_apply_residual_without_template(mock_logprobs_score):
     np.testing.assert_equal(result, expected_outputs)
 
 
-def test_apply_residual_with_template(mock_logprobs_score):
+def test_apply_residual_with_template(mock_logprobs_score, mock_llm):
     inputs = np.array(["input1", "input2", "input3"])
     outputs = np.array(["output1", "output2", "output3"])
     residual_prior_layer = ResidualPriorLayer(
         logprobs_score=mock_logprobs_score,
+        forward_evaluate=mock_llm,
         forward_template="suffix_forward",
         init="A task description",
     )
@@ -44,13 +46,14 @@ def test_apply_residual_with_template(mock_logprobs_score):
     np.testing.assert_equal(result, expected_outputs)
 
 
-def test_log_p_with_output_classes(top_logprobs, mock_logprobs_score):
+def test_log_p_with_output_classes(top_logprobs, mock_logprobs_score, mock_llm):
     mock_logprobs_score.forward_evaluate = top_logprobs
     inputs = ["1 + 1", "1 * 1"]
     outputs = ["B", "A"]
     output_classes = OutputClasses(protos=["a|A", "b|B"])
     prior_layer = PriorLayer(
         logprobs_score=mock_logprobs_score,
+        forward_evaluate=mock_llm,
         forward_template="suffix_forward",
         init="",
     )
@@ -67,12 +70,13 @@ def test_log_p_with_output_classes(top_logprobs, mock_logprobs_score):
     )
 
 
-def test_log_p_without_output_classes(raw_logprobs, score_requests, mock_logprobs_score):
+def test_log_p_without_output_classes(raw_logprobs, score_requests, mock_logprobs_score, mock_llm):
     mock_logprobs_score.forward_evaluate = raw_logprobs
     inputs = [s.context for s in score_requests]
     outputs = ["B", "A"]
     prior_layer = PriorLayer(
         logprobs_score=mock_logprobs_score,
+        forward_evaluate=mock_llm,
         forward_template="suffix_forward",
         init="",
     )
@@ -80,12 +84,13 @@ def test_log_p_without_output_classes(raw_logprobs, score_requests, mock_logprob
     np.testing.assert_almost_equal(logp.targets, [-1.48348267, -1.47351816])
 
 
-def test_forward_with_output_class(top_logprobs, mock_logprobs_score):
+def test_forward_with_output_class(top_logprobs, mock_logprobs_score, mock_llm):
     mock_logprobs_score.forward_evaluate = top_logprobs
     inputs = ["1 + 1", "1 * 1"]
     output_classes = OutputClasses(protos=["A|a", "B|b"])
     prior_layer = PriorLayer(
         logprobs_score=mock_logprobs_score,
+        forward_evaluate=mock_llm,
         forward_template="suffix_forward",
         init="",
     )
@@ -93,26 +98,28 @@ def test_forward_with_output_class(top_logprobs, mock_logprobs_score):
     np.testing.assert_equal(result, ["A", "A"])
 
 
-def test_forward_without_output_class(text_outputs, mock_logprobs_score):
+def test_forward_without_output_class(text_outputs, mock_logprobs_score, mock_llm):
+    mock_llm.generate = text_outputs
     inputs = ["1 + 1", "1 * 1"]
     prior_layer = PriorLayer(
         logprobs_score=mock_logprobs_score,
+        forward_evaluate=mock_llm,
         forward_template="suffix_forward",
         init="",
     )
-    with patch("dln.vi.layers.forward_evaluate", text_outputs):
-        result = prior_layer.forward(inputs)
+    result = prior_layer.forward(inputs)
     np.testing.assert_equal(result, ["A", "A"])
 
 
-def test_forward_strip_double_newlines(mock_logprobs_score):
+def test_forward_strip_double_newlines(mock_logprobs_score, mock_llm):
+    text_output = lambda *args, **kwargs: ["A\n\n"]
+    mock_llm.generate = text_output
     inputs = ["1 + 1"]
     prior_layer = PriorLayer(
         logprobs_score=mock_logprobs_score,
+        forward_evaluate=mock_llm,
         forward_template="suffix_forward",
         init="",
     )
-    text_output = lambda *args, **kwargs: ["A\n\n"]
-    with patch("dln.vi.layers.forward_evaluate", text_output):
-        result = prior_layer.forward(inputs, strip_double_newlines=True)
+    result = prior_layer.forward(inputs, strip_double_newlines=True)
     np.testing.assert_equal(result, ["A\n"])

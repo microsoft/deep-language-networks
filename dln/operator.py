@@ -12,10 +12,8 @@ from tenacity import (
     retry_if_exception_type,
 )
 
-forward_interpreter = None
 
 openai.util.logger.setLevel(logging.WARNING)
-
 
 
 class LLM(ABC):
@@ -348,24 +346,10 @@ class VLLM(LLM):
         return outputs
 
 
-def instantiate_model(model_name, **generation_options):
+def instantiate_model(model_name, **generation_options) -> LLM:
     if model_name in GPT.AVAILABLE_MODELS:
         return GPT(model_name, **generation_options)
     return VLLM(model_name, **generation_options)
-
-
-def forward_instantiate(model_name="text-davinci-003", **generation_options):
-    global forward_interpreter
-
-    if forward_interpreter is None:
-        forward_interpreter = instantiate_model(model_name, **generation_options)
-    else:
-        print("Forward interpreter already instantiated.")
-        pass
-
-
-def forward_evaluate(input: List[str], **kwargs):
-    return forward_interpreter.generate(input, **kwargs)
 
 
 def instantiate_tokenizer(model_name: str):

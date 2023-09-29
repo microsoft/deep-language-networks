@@ -2,20 +2,27 @@ from typing import List
 
 import numpy as np
 
-from dln.operator import forward_evaluate
+from dln.operator import LLM
 from dln.score import LogProbs, LogProbsScore, OutputClasses, ScoreRequest
 from dln.template import load_template
 from dln.vi.utils import log_message
 
 
 class PriorLayer:
-    def __init__(self, logprobs_score: LogProbsScore, forward_template: str, init: str = None):
+    def __init__(
+        self,
+        logprobs_score: LogProbsScore,
+        forward_evaluate: LLM,
+        forward_template: str,
+        init: str = None
+    ):
         self.forward_template = load_template(
             forward_template
         )
         log_message("Forward template:\n", f"{repr(self.forward_template.template)}")
         self.weight = init
         self.logprobs_score = logprobs_score
+        self.forward_evaluate = forward_evaluate
 
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
@@ -42,7 +49,7 @@ class PriorLayer:
                 self.forward_template.render(input=input, prompt=self.weight)
                 for input in inputs
             ]
-            outputs = forward_evaluate(
+            outputs = self.forward_evaluate(
                 tpl_inputs,
                 stop=self.forward_template.stop_tokens,
                 temperature=temperature,
@@ -93,8 +100,15 @@ class PriorLayer:
 
 class ResidualPriorLayer(PriorLayer):
 
-    def __init__(self, logprobs_score: LogProbsScore, forward_template, init=None, residual_template="classify_residual"):
-        super().__init__(logprobs_score, forward_template, init=init)
+    def __init__(
+        self,
+        logprobs_score: LogProbsScore,
+        forward_evaluate: LLM,
+        forward_template,
+        init=None,
+        residual_template="classify_residual"
+    ):
+        super().__init__(logprobs_score, forward_evaluate, forward_template, init=init)
         self.residual_template = load_template(
             residual_template
         )

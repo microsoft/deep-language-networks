@@ -3,11 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import openai
 import pytest
 
-from dln.operator import (
-    GPT,
-    forward_evaluate,
-    forward_instantiate,
-)
+from dln.operator import GPT
 
 
 @pytest.fixture
@@ -71,11 +67,4 @@ def test_get_completion_response(mock_openai_api):
     gpt = GPT("text-davinci-003")
     prompt = "What is the largest city in Quebec?"
     response = gpt.get_completion_response([prompt])
-    assert "Montreal" in response[0]
-
-
-def test_forward_evaluate(mock_openai_api):
-    forward_instantiate("text-davinci-003")
-    prompt = "What is the largest city in Quebec?"
-    response = forward_evaluate([prompt])
     assert "Montreal" in response[0]

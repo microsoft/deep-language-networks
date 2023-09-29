@@ -4,6 +4,7 @@ import numpy as np
 from termcolor import colored
 
 from dln.loss import LLoss
+from dln.operator import LLM
 from dln.score import LogProbsScore, OutputClasses
 from dln.vi.layers import PriorLayer, ResidualPriorLayer
 from dln.vi.sampler import PosteriorSampler, PromptSampler
@@ -21,6 +22,7 @@ class VILModel:
         use_h_argmax: bool = False,
         init_p1: str = None,
         init_p2: str = None,
+        forward_evaluate: LLM = None,
         prompt_sampler: PromptSampler = None,
         posterior_sampler : PosteriorSampler = None,
         logprobs_score: LogProbsScore = None,
@@ -73,11 +75,13 @@ class VILModel:
 
         self.encoder_l1 = ResidualPriorLayer(
             logprobs_score=logprobs_score,
+            forward_evaluate=forward_evaluate,
             forward_template=p_hidden,
             init=init_p1 if init_p1 is not None else task_description,
         )
         self.encoder_l2 = PriorLayer(
             logprobs_score=logprobs_score,
+            forward_evaluate=forward_evaluate,
             forward_template=p_class,
             init=init_p2 if init_p2 is not None else task_description,
         )
