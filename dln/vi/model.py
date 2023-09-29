@@ -4,7 +4,7 @@ import numpy as np
 from termcolor import colored
 
 from dln.loss import LLoss
-from dln.score import OutputClasses
+from dln.score import LogProbsScore, OutputClasses
 from dln.vi.layers import PriorLayer, ResidualPriorLayer
 from dln.vi.sampler import PosteriorSampler, PromptSampler
 from dln.vi.utils import compute_pairwise_kl, log_message, ResultLogEntry
@@ -21,8 +21,9 @@ class VILModel:
         use_h_argmax: bool = False,
         init_p1: str = None,
         init_p2: str = None,
-        q_prompt: str = "q_action_prompt:latest",
-        q_hidden: str = "suffix_forward_tbs:latest",
+        prompt_sampler: PromptSampler = None,
+        posterior_sampler : PosteriorSampler = None,
+        logprobs_score: LogProbsScore = None,
         p_hidden: str = "suffix_forward_tbs:latest",
         p_class: str = "classify_forward:latest",
         output_classes: OutputClasses = None,
@@ -71,18 +72,20 @@ class VILModel:
             )
 
         self.encoder_l1 = ResidualPriorLayer(
+            logprobs_score=logprobs_score,
             forward_template=p_hidden,
             init=init_p1 if init_p1 is not None else task_description,
         )
         self.encoder_l2 = PriorLayer(
+            logprobs_score=logprobs_score,
             forward_template=p_class,
             init=init_p2 if init_p2 is not None else task_description,
         )
         if not two_layers:
             self.encoder_l1.weight = None
 
-        self.prompt_sampler = PromptSampler(q_prompt)
-        self.q_sampler = PosteriorSampler(q_hidden)
+        self.prompt_sampler = prompt_sampler
+        self.q_sampler = posterior_sampler
 
         self.trust_factor = trust_factor
         self.strip_answer_for_hidden = strip_answer_for_hidden

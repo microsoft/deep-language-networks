@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass
 
 import numpy as np
-from dln.operator import backward_evaluate
+from dln.operator import LLM
 from dln.template import load_template
 
 from dln.vi.utils import log_message
@@ -17,7 +17,7 @@ class Info:
 
 
 class PromptSampler:
-    def __init__(self, p_template="q_action_prompt:v3.5"):
+    def __init__(self, backward_evaluate: LLM, p_template: str = "q_action_prompt:v3.5"):
         self.prompt_template = load_template(p_template)
         log_message("Prompt template:\n", f"{repr(self.prompt_template.template)}")
         log_message(
@@ -100,7 +100,7 @@ class PromptSampler:
 
 
 class PosteriorSampler:
-    def __init__(self, q_template):
+    def __init__(self, backward_evaluate: LLM, q_template: str):
         self.q_templates = []
         for q_template in q_template.split("|"):
             self.q_templates.append(load_template(q_template))

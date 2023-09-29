@@ -12,9 +12,11 @@ from torch.utils.tensorboard import SummaryWriter
 
 from dln.dataset import init_dataset
 from dln.loss import ZeroOneLoss
-from dln.operator import backward_instantiate, forward_instantiate
+from dln.operator import backward_instantiate, forward_instantiate, instantiate_model, instantiate_tokenizer
 from dln.postprocessing import postprocess_prediction
+from dln.score import LogProbsScore
 from dln.vi.model import VILModel, log_message
+from dln.vi.sampler import PosteriorSampler, PromptSampler
 from dln.vi.utils import ResultLogWriter
 
 try:
@@ -354,14 +356,26 @@ def main(
     dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir)
 
     fwd_model_type = fwd_model_type or model_type
+    bwd_model_type = bwd_model_type or model_type
     forward_instantiate(
         model_type,
         temperature=0.0,
         max_tokens=fwd_max_tokens,
         stop=None,
     )
-    bwd_model_type = bwd_model_type or model_type
     backward_instantiate(
+        bwd_model_type,
+        temperature=bwd_temp,
+        max_tokens=bwd_max_tokens,
+        stop=None,
+    )
+    fwd_model = instantiate_model(
+        model_type,
+        temperature=0.0,
+        max_tokens=fwd_max_tokens,
+        stop=None,
+    )
+    bwd_model = instantiate_model(
         bwd_model_type,
         temperature=bwd_temp,
         max_tokens=bwd_max_tokens,
@@ -369,14 +383,19 @@ def main(
     )
 
     loss_fn = ZeroOneLoss(postproc=postprocess_prediction)
+    prompt_sampler = PromptSampler(bwd_model, q_prompt)
+    posterior_sampler = PosteriorSampler(bwd_model, q_hidden)
+    tokenizer = instantiate_tokenizer(fwd_model_type)
+    logprobs_score = LogProbsScore(tokenizer, fwd_model)
     model = VILModel(
         loss_fn,
         task_description=dataset.instruction,
         two_layers=not one_layer,
         num_p_samples=num_p_samples,
         num_h_samples=num_h_samples,
-        q_hidden=q_hidden,
-        q_prompt=q_prompt,
+        posterior_sampler=posterior_sampler,
+        prompt_sampler=prompt_sampler,
+        logprobs_score=logprobs_score,
         p_hidden=p_hidden,
         p_class=p_class,
         init_p1=init_p1,

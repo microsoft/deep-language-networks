@@ -4,8 +4,6 @@ from typing import Any, List
 
 import numpy as np
 
-from dln.operator import forward_evaluate
-
 
 @dataclass
 class ScoreRequest:
@@ -38,21 +36,9 @@ class LogProbs:
 
 
 class LogProbsScore:
-    def __init__(self, encoder=None):
-        if encoder is None:
-            from dln.operator import forward_interpreter, GPT
-            if forward_interpreter.engine in GPT.AVAILABLE_MODELS:
-                import tiktoken
-                encoder = tiktoken.encoding_for_model(forward_interpreter.engine)
-            else:
-                import os
-                from transformers import AutoTokenizer
-                if forward_interpreter.engine.startswith("/"):
-                    pretrained_path = os.getenv("TOKENIZER_PATH")
-                else:
-                    pretrained_path = forward_interpreter.engine
-                encoder = AutoTokenizer.from_pretrained(pretrained_path)
-        self.encoder = encoder
+    def __init__(self, tokenizer, forward_evaluate):
+        self.tokenizer = tokenizer
+        self.forward_evaluate = forward_evaluate
 
     def score_requests(self, requests, output_classes=None, agg="max") -> LogProbs:
         # create the batched inputs for the model
@@ -86,7 +72,7 @@ class LogProbsScore:
 
         print("# Scoring requests = {}".format(len(contexts)))
         print("# Scoring unique requests = {}".format(len(unique_contexts)))
-        eval_results = forward_evaluate(
+        eval_results = self.forward_evaluate(
             to_eval,
             async_generation=True,
             **eval_kwargs,
@@ -160,7 +146,7 @@ class LogProbsScore:
         # only perform unique evals
         unique_keys = list(set(eval_batch))
         unique_keys_to_positions = {key: i for i, key in enumerate(unique_keys)}
-        unique_eval_results = forward_evaluate(
+        unique_eval_results = self.forward_evaluate(
             unique_keys,
             async_generation=True,
             **eval_kwargs,
@@ -175,7 +161,7 @@ class LogProbsScore:
         output_logprobs = []
         context_logprobs = []
         for context, token_log_probs in zip(contexts, log_probs):
-            num_tokens_prompt = len(self.encoder.encode(context))
+            num_tokens_prompt = len(self.tokenizer.encode(context))
             target_log_probs = token_log_probs[num_tokens_prompt:]
             context_log_probs = token_log_probs[1:num_tokens_prompt]
             output_logprobs.append(sum(target_log_probs) / (len(target_log_probs) + 1e-5))

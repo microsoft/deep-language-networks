@@ -9,13 +9,13 @@ from dln.vi.utils import log_message
 
 
 class PriorLayer:
-    def __init__(self, forward_template, init=None):
+    def __init__(self, logprobs_score: LogProbsScore, forward_template: str, init: str = None):
         self.forward_template = load_template(
             forward_template
         )
         log_message("Forward template:\n", f"{repr(self.forward_template.template)}")
         self.weight = init
-        self.logprobs_score = LogProbsScore()
+        self.logprobs_score = logprobs_score
 
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
@@ -93,8 +93,8 @@ class PriorLayer:
 
 class ResidualPriorLayer(PriorLayer):
 
-    def __init__(self, forward_template, init=None, residual_template="classify_residual"):
-        super().__init__(forward_template, init=init)
+    def __init__(self, logprobs_score: LogProbsScore, forward_template, init=None, residual_template="classify_residual"):
+        super().__init__(logprobs_score, forward_template, init=init)
         self.residual_template = load_template(
             residual_template
         )

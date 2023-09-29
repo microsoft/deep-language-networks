@@ -1,4 +1,5 @@
 # global interpreter
+from abc import ABC, abstractmethod
 from typing import List
 import asyncio
 import numpy as np
@@ -16,7 +17,19 @@ backward_interpreter = None
 
 openai.util.logger.setLevel(logging.WARNING)
 
-class GPT:
+
+
+class LLM(ABC):
+
+    def __call__(self, inputs, **kwargs):
+        return self.generate(inputs, **kwargs)
+
+    @abstractmethod
+    def generate(self, inputs, **kwargs):
+        raise NotImplementedError
+
+
+class GPT(LLM):
 
     CHAT_COMPLETION_MODELS = [
         "gpt-35-turbo",  # azure
@@ -268,7 +281,7 @@ class GPT:
         return outputs
 
 
-class VLLM:
+class VLLM(LLM):
 
     def __init__(self, model_name, **generation_options):
         self.generation_options = generation_options
@@ -368,3 +381,18 @@ def forward_evaluate(input: List[str], **kwargs):
 
 def backward_evaluate(input: List[str], **kwargs):
     return backward_interpreter.generate(input, **kwargs)
+
+
+def instantiate_tokenizer(model_name: str):
+    if model_name in GPT.AVAILABLE_MODELS:
+        import tiktoken
+        encoder = tiktoken.encoding_for_model(model_name)
+    else:
+        import os
+        from transformers import AutoTokenizer
+        if model_name.startswith("/"):
+            pretrained_path = os.getenv("TOKENIZER_PATH")
+        else:
+            pretrained_path = model_name
+        encoder = AutoTokenizer.from_pretrained(pretrained_path)
+    return encoder
