@@ -1,7 +1,24 @@
+from typing import Any
 import numpy as np
 import pytest
+from dln.operator import LLM, instantiate_tokenizer
 
-from dln.score import ScoreRequest
+from dln.score import LogProbsScore, ScoreRequest
+
+
+@pytest.fixture
+def mock_llm():
+    class MockLLM(LLM):
+        def generate(self, inputs, **kwargs):
+            return inputs
+    return MockLLM()
+
+
+@pytest.fixture
+def mock_logprobs_score(mock_llm):
+    tokenizer = instantiate_tokenizer("text-davinci-003")
+    logprobs_score = LogProbsScore(tokenizer, mock_llm)
+    return logprobs_score
 
 
 @pytest.fixture
