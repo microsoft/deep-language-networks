@@ -7,8 +7,10 @@ num_prompts: 5
 num_hiddens: 5
 num_epochs: 50
 bwd_temp: 1.0
-num_train_examples: 10
-num_dev_examples: 10
+num_train_examples: 20
+num_dev_examples: 50
+engine: vi_logprobs
+logp_penalty: 0.
 batch_size: 10
 eval_freq: 2
 fwd_max_tokens: 512

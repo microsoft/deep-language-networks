@@ -1,0 +1,9 @@
+v1.0:
+  template: |-
+    {{ prompt }}
+
+    {{ input }}
+
+    You know that the answer is: {{ y }}.
+
+    {{ output_formatting_instruction }}

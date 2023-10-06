@@ -92,32 +92,9 @@ class InputsRewrites:
 
 
 class BackpropHiddenSampler(HiddenSampler):
-    @classmethod
-    def get_backwards_inputs_template(cls):
-        return DLNTemplate(
-            template="""A student is completing a task that requires producing a text output from a text input.
-In addition to the input, the student receives an instruction that explains the task.
-Your job is to transform the input to help the student generate the correct output.
-
-## Instruction:
-> {{ prompt }}
-
-## Input:
-> {{ input }}
-
-## Correct Output:
-> {{ y }}
-
-Improve the input to account for the information given in the correct output.
-
-## Improved Input:
->"""
-        )
-
     def __init__(self):
         super().__init__()
-
-        self.backwards_template = self.get_backwards_inputs_template()
+        self.backwards_template = load_template("rewrite_hidden")
 
     def rewrite_inputs(
         self, y: np.array, inputs: np.array = None, num_samples: int = 1
@@ -253,6 +230,55 @@ class PriorHiddenSampler(HiddenSampler):
         repeated_inputs = np.empty((batch_size, num_samples), dtype=object)
         for i in range(num_samples):
             repeated_inputs[:, i] = previous_node.instantiate_template(inputs)
+
+        new_inputs = self.backward_lm.generate(
+            repeated_inputs.flatten().tolist(),
+            n=1,
+            stop=previous_node.forward_template.stop_tokens,
+            return_logprobs=self.backward_lm.has_log_probs,
+        )
+
+        if self.backward_lm.has_log_probs:
+            new_inputs, new_logps, new_lengths = zip(*new_inputs)
+            input_logps = np.asarray(new_logps) / np.asarray(new_lengths)
+        else:
+            input_logps = None
+
+        return InputsRewrites(
+            inputs=np.asarray(new_inputs).reshape(-1, num_samples),
+            inputs_logps=input_logps.reshape(-1, num_samples)
+            if input_logps is not None
+            else None,
+        )
+
+
+class MixedPriorPosteriorHiddenSampler(HiddenSampler):
+    def __init__(self):
+        super().__init__()        
+        self.backward_template = None
+
+    def rewrite_inputs(
+        self,
+        y: np.array,
+        inputs: np.array = None,
+        num_samples: int = 1,
+    ):  
+        # now re-write the inputs
+        previous_node = self.base_layer.input_nodes[0]
+        if self.backward_template is None:
+            self.backward_template = load_template(f"{previous_node.template_type}_y")
+        inputs = previous_node.inputs_cache
+        batch_size = inputs.shape[0]
+
+        repeated_inputs = np.empty((batch_size, num_samples), dtype=object)
+        for i in range(num_samples // 2):
+            repeated_inputs[:, i] = previous_node.instantiate_template(inputs)
+        for i in range(num_samples // 2, num_samples):
+            repeated_inputs[:, i] = previous_node.instantiate_template(
+                inputs,
+                y=y,
+                template=self.backward_template
+            )
 
         new_inputs = self.backward_lm.generate(
             repeated_inputs.flatten().tolist(),

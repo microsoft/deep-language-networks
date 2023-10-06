@@ -1,0 +1,18 @@
+v1.0:
+    template: |-
+        A student is completing a task that requires producing an answer from a text input.
+        In addition to the input, the student receives an instruction that explains the task.
+        Your job is to write an improved version of the input such that the student can better guess the answer.
+
+        ## Instruction:
+        > {{ prompt }}
+
+        ## Input:
+        > {{ input }}
+
+        ## Answer:
+        > {{ y }}
+
+        Rewrite the input to correct the errors and improve the student's chances of guessing the answer.
+        ## Improved Input:
+        >

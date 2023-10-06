@@ -175,7 +175,8 @@ class LogProbsScorer(Scorer):
         logp_prompts = (y_weights[:, :, None] * lps).sum(1).mean(0)
 
         # compute the logp of the layer's own outputs for the logp_penalty
-        if self.logp_penalty > 0.0:
+        is_output_layer = len(self.base_layer.output_nodes) == 0
+        if self.logp_penalty > 0.0 and not is_output_layer:
             # build up a set of score requests
             requests = prepare_prompts_scoring_args(
                 self.base_layer,

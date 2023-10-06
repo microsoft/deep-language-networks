@@ -7,6 +7,9 @@ from contextlib import contextmanager
 from engine.template import DLNTemplate, load_template
 from engine.network import NetworkNode
 from engine.loss import LLoss
+from collections import OrderedDict
+from typing import Dict, Optional
+from abc import ABC, abstractmethod
 
 
 cache_forward_pass = True
@@ -174,15 +177,16 @@ class BaseLayer(LanguageLayer):
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
 
-    def instantiate_template(self, inputs, **template_kwargs) -> List[str]:
+    def instantiate_template(self, inputs, template=None, **template_kwargs) -> List[str]:
         if "prompt" not in template_kwargs:
             template_kwargs["prompt"] = self.weight
         if "output_formatting_instruction" not in template_kwargs:
             template_kwargs[
                 "output_formatting_instruction"
             ] = self.output_formatting_instruction
+        template = template or self.forward_template
         return [
-            self.forward_template.render(input=input, **template_kwargs)
+            template.render(input=input, **template_kwargs)
             for input in inputs
         ]
 

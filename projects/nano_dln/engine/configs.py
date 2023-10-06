@@ -1,5 +1,5 @@
 from .scorer import FullStackScorer, LogProbsScorer
-from .sampler import BackpropHiddenSampler, MultiActionPromptSampler, PriorHiddenSampler
+from .sampler import BackpropHiddenSampler, MixedPriorPosteriorHiddenSampler, MultiActionPromptSampler, PriorHiddenSampler
 
 
 class BackwardEngineConfiguration:
@@ -14,7 +14,7 @@ class BackwardLogProbsEngine(BackwardEngineConfiguration):
         logp_penalty: float = 1.0,
     ):
         self.prompt_sampler = MultiActionPromptSampler(memory_size=memory_size)
-        self.hidden_sampler = PriorHiddenSampler()
+        self.hidden_sampler = MixedPriorPosteriorHiddenSampler()
         self.scorer = LogProbsScorer(logp_penalty=logp_penalty)
 
 

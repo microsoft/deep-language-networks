@@ -83,7 +83,7 @@ class PromptNet:
                 classes,
             ) = override.get(i)
 
-            if self.engine == "backward_logprobs":
+            if self.engine == "vi_logprobs":
                 engine = BackwardLogProbsEngine(
                     memory_size=self.memory_size,
                     logp_penalty=self.logp_penalty
