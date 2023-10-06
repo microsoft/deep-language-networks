@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 from engine.layers import ResidualLayer
 from engine.scorer import OutputClasses
 from engine.ops import LanguageLayerOps
-from engine.configs import BackpropLogProbsEngine, BackwardLogProbsEngine, FullStackEngine
+from engine.configs import AutoEngine
 from engine.loss import ZeroOneLoss
 from postprocessing import postprocess_prediction
 from dataset import Dataset
@@ -82,29 +82,19 @@ class PromptNet:
                 output_formatting_instruction,
                 classes,
             ) = override.get(i)
-
-            if self.engine == "vi_logprobs":
-                engine = BackwardLogProbsEngine(
-                    memory_size=self.memory_size,
-                    logp_penalty=self.logp_penalty
-                )
-            elif self.engine == "backprop_logprobs":
-                engine = BackpropLogProbsEngine(
-                    memory_size=self.memory_size,
-                    logp_penalty=self.logp_penalty
-                )
-            elif self.engine == "fullstack":
-                engine = FullStackEngine()
-            else:
-                raise ValueError(f"Unknown engine: {self.engine}")
-
             layer = (
                 ResidualLayer(
                     template_type=template_type,
                     init=initial_instruction,
                     output_formatting_instruction=output_formatting_instruction,
                     output_classes=OutputClasses(protos=classes) if classes else None,
-                ).with_engine(engine)
+                ).with_engine(
+                    AutoEngine.from_config(
+                        args.engine,
+                        memory_size=args.memory_size,
+                        logp_penalty=args.logp_penalty
+                    )
+                )
             )
             layers.append(layer)
             if i > 0:
