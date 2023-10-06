@@ -218,6 +218,38 @@ class LogProbsScorer(Scorer):
         return input_scores
 
 
+class NCEScorer(LogProbsScorer):
+    def __init__(self, logp_penalty=0.0):
+        self.logp_penalty = logp_penalty
+
+    def score_prompts(
+        self,
+        candidate_prompts: np.array,
+        y: np.array,
+        y_weights: np.ndarray,
+        targets=None,
+        losses=None,
+    ):
+        (num_samples,) = candidate_prompts.shape
+        batch_size, num_targets = y.shape
+
+        # build up a set of score requests
+        requests = prepare_prompts_scoring_args(
+            self.base_layer, self.base_layer.inputs_cache, y, candidate_prompts
+        )
+        lps = self.scoring_lm.compute_log_p(
+            requests,
+            output_classes=self.base_layer.output_classes,
+        ).logp_targets.reshape(batch_size, num_targets, num_samples)
+
+        if num_targets == 1:
+            ps = lps
+        else:
+            ps = lps - np.log(np.exp(lps).sum(1, keepdims=True) + 1e-12)
+        logp_prompts = (y_weights[:, :, None] * ps).sum(1).mean(0)
+        return logp_prompts
+
+
 class VIScorer(LogProbsScorer):
     def score_inputs(self, candidate_inputs, y, candidate_inputs_logps=None):
         batch_size, num_samples = candidate_inputs.shape

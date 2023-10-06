@@ -122,6 +122,8 @@ class BackpropHiddenSampler(HiddenSampler):
 
 
 class MultiActionPromptSampler(PromptSampler):
+    EMPTY_PROMPT = ""
+
     def __init__(self, memory_size=0):
         super().__init__()
 
@@ -148,7 +150,8 @@ class MultiActionPromptSampler(PromptSampler):
             self.memory.clear()
 
         if self.base_layer.weight not in self.memory:
-            self.memory[self.base_layer.weight] = [1.0 - losses.mean()]
+            if self.base_layer.weight:
+                self.memory[self.base_layer.weight] = [1.0 - losses.mean()]
         else:
             self.memory[self.base_layer.weight].append(1.0 - losses.mean())
 
@@ -197,7 +200,11 @@ class MultiActionPromptSampler(PromptSampler):
                     tpls, stop=self.prompt_template.stop_tokens, n=1
                 )
 
-                prompts = np.array([self.base_layer.weight] + list(new_prompts))
+                prompts = np.array(
+                    [self.EMPTY_PROMPT] +
+                    [self.base_layer.weight] +
+                    list(new_prompts)
+                )
                 return prompts
 
             except KeyboardInterrupt:
