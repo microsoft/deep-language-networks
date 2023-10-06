@@ -340,15 +340,16 @@ class ResidualLayer(BaseLayer):
             targets=targets,
             losses=losses,
         )
-        best_prompt = candidate_prompts[candidate_prompts_scores.argmax()]
+        best_prompt_idx = candidate_prompts_scores.argmax()
+        best_prompt = candidate_prompts[best_prompt_idx]
 
         logging.info("Candidate prompts:")
         for prompt, weight in zip(candidate_prompts, candidate_prompts_scores):
-            logging.info("Prompt ({:.2f}) --> {}".format(weight, prompt))
+            logging.info("Prompt ({:.4f}) --> {}".format(weight, prompt))
 
         logging.info(
-            "Best Prompt [{}], ({:.2f}) --> {}".format(
-                candidate_prompts_scores.argmax(),
+            "Best Prompt [{}], ({:.4f}) --> {}".format(
+                best_prompt_idx,
                 candidate_prompts_scores.max(),
                 best_prompt,
             )
