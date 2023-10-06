@@ -1,6 +1,5 @@
-# global interpreter
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Union
 import asyncio
 import numpy as np
 import openai
@@ -16,13 +15,63 @@ from tenacity import (
 openai.util.logger.setLevel(logging.WARNING)
 
 
+def _retry_request(min_wait=4, max_wait=10, max_attempts=100):
+    return retry(
+        reraise=True,
+        stop=stop_after_attempt(max_attempts),
+        wait=wait_exponential(multiplier=1, min=min_wait, max=max_wait),
+        retry=(
+            retry_if_exception_type(openai.error.Timeout)
+            | retry_if_exception_type(openai.error.APIError)
+            | retry_if_exception_type(openai.error.APIConnectionError)
+            | retry_if_exception_type(openai.error.RateLimitError)
+            | retry_if_exception_type(openai.error.ServiceUnavailableError)
+        ),
+    )
+
+
+def _parse_openai_response(
+    response,
+    return_logprobs=False,
+    raw_logprobs=False,
+    top_logprobs=False,
+    **kwargs,
+):
+    output = []
+    nlls = []
+    lengths = []
+    for response in response["choices"]:
+        output.append(response["text"].strip())
+        if raw_logprobs:
+            nlls.append(response["logprobs"]["token_logprobs"])
+            lengths.append(response["logprobs"]["tokens"])
+        elif top_logprobs:
+            nlls.append(response["logprobs"]["top_logprobs"])
+            lengths.append(response["logprobs"]["tokens"])
+        else:
+            if "token_logprobs" in response["logprobs"]:
+                nlls.append(sum(response["logprobs"]["token_logprobs"]))
+                lengths.append(len(response["logprobs"]["token_logprobs"]))
+            else:
+                nlls.append(-np.inf)
+                lengths.append(1)
+
+    if return_logprobs:
+        output = list(zip(output, nlls, lengths))
+    return output
+
+
 class LLM(ABC):
 
-    def __call__(self, inputs, **kwargs):
+    def __init__(self, model_name: str, **generation_options):
+        self.generation_options = generation_options
+        self.engine = model_name
+
+    def __call__(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
         return self.generate(inputs, **kwargs)
 
     @abstractmethod
-    def generate(self, inputs, **kwargs):
+    def generate(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
         raise NotImplementedError
 
 
@@ -52,22 +101,10 @@ class GPT(LLM):
             raise ValueError(
                 f"GPT model_name should be one of: {','.join(self.AVAILABLE_MODELS)}"
             )
-        self.generation_options = generation_options
-        self.engine = model_name
+        super().__init__(model_name, **generation_options)
 
-    @retry(
-        reraise=True,
-        stop=stop_after_attempt(100),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=(
-            retry_if_exception_type(openai.error.Timeout)
-            | retry_if_exception_type(openai.error.APIError)
-            | retry_if_exception_type(openai.error.APIConnectionError)
-            | retry_if_exception_type(openai.error.RateLimitError)
-            | retry_if_exception_type(openai.error.ServiceUnavailableError)
-        ),
-    )
-    async def aget_chat_completion_response(self, prompt, **kwargs):
+    @_retry_request(min_wait=4, max_wait=10, max_attempts=100)
+    async def _aget_chat_completion_response(self, prompt, **kwargs):
         """
         prompting chatgpt via openai api
         now batching only works for completion, not on chat
@@ -96,60 +133,8 @@ class GPT(LLM):
         output = response["choices"][0]["message"]["content"].strip()
         return output
 
-    @retry(
-        reraise=True,
-        stop=stop_after_attempt(100),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=(
-            retry_if_exception_type(openai.error.Timeout)
-            | retry_if_exception_type(openai.error.APIError)
-            | retry_if_exception_type(openai.error.APIConnectionError)
-            | retry_if_exception_type(openai.error.RateLimitError)
-            | retry_if_exception_type(openai.error.ServiceUnavailableError)
-        ),
-    )
-    def get_chat_completion_response(self, prompt, **kwargs):
-        """
-        prompting chatgpt via openai api
-        now batching only works for completion, not on chat
-        """
-        if openai.api_type == "azure":
-            try:
-                response = openai.ChatCompletion.create(
-                    deployment_id=self.engine,
-                    messages=[{"role": "user", "content": prompt}],
-                    **kwargs,
-                )
-            except openai.InvalidRequestError as e:
-                # Most likely a content filtering error from Azure.
-                logging.warn(str(e))
-                return str(e)
-        else:
-            response = openai.ChatCompletion.create(
-                model=self.engine,
-                messages=[{"role": "user", "content": prompt}],
-                **kwargs,
-            )
-
-        if "content" not in response["choices"][0]["message"]:
-            return ""
-
-        output = response["choices"][0]["message"]["content"].strip()
-        return output
-
-    @retry(
-        reraise=True,
-        stop=stop_after_attempt(100),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=(
-            retry_if_exception_type(openai.error.Timeout)
-            | retry_if_exception_type(openai.error.APIError)
-            | retry_if_exception_type(openai.error.APIConnectionError)
-            | retry_if_exception_type(openai.error.RateLimitError)
-            | retry_if_exception_type(openai.error.ServiceUnavailableError)
-        ),
-    )
-    def get_completion_response(
+    @_retry_request(min_wait=4, max_wait=10, max_attempts=100)
+    def _get_completion_response(
         self,
         prompt_batch,
         return_logprobs=False,
@@ -190,39 +175,22 @@ class GPT(LLM):
                         response["choices"].append(
                             {
                                 "text": str(e),
-                                "logprobs": {"token_logprobs": [0], "top_logprobs": [{}], "tokens": {}},
+                                "logprobs": {
+                                    "token_logprobs": [0],
+                                    "top_logprobs": [{}],
+                                    "tokens": {}
+                                },
                             }
                         )
             else:
                 raise e
 
-        output = []
-        nlls = []
-        lengths = []
-        for response in response["choices"]:
-            output.append(response["text"].strip())
-            if raw_logprobs:
-                nlls.append(response["logprobs"]["token_logprobs"])
-                lengths.append(response["logprobs"]["tokens"])
-            elif top_logprobs:
-                nlls.append(response["logprobs"]["top_logprobs"])
-                lengths.append(response["logprobs"]["tokens"])
-            else:
-                if "token_logprobs" in response["logprobs"]:
-                    nlls.append(sum(response["logprobs"]["token_logprobs"]))
-                    lengths.append(len(response["logprobs"]["token_logprobs"]))
-                else:
-                    nlls.append(-np.inf)
-                    lengths.append(1)
+        return _parse_openai_response(response, return_logprobs, raw_logprobs, top_logprobs)
 
-        if return_logprobs:
-            output = list(zip(output, nlls, lengths))
-        return output
-
-    async def gather_chat_response(self, inputs, **generation_options):
+    async def _gather_chat_response(self, inputs, **generation_options):
         outputs = await asyncio.gather(
             *[
-                self.aget_chat_completion_response(_input, **generation_options)
+                self._aget_chat_completion_response(_input, **generation_options)
                 for _input in inputs
             ]
         )
@@ -237,16 +205,23 @@ class GPT(LLM):
             input_batch = inputs[batch_size * i : batch_size * (i + 1)]
             yield input_batch
 
-    def generate(self, inputs, async_generation=True, batch_size=20, **kwargs):
-        if type(inputs) is not list:
+    def generate(
+        self,
+        inputs: Union[List[str], str],
+        async_generation: bool = True,
+        batch_size: int = 20,
+        **kwargs,
+    ) -> List[str]:
+        if not isinstance(inputs, list):
             inputs = [inputs]
-
-        kwargs.pop("output_space", None)
         generation_options = self.generation_options.copy()
         generation_options.update(**kwargs)
 
         if self.engine in self.CHAT_COMPLETION_MODELS:
             if "return_logprobs" in generation_options:
+                logging.warn(
+                    "return_logprobs is not supported for chat completion models"
+                )
                 del generation_options["return_logprobs"]
 
             if async_generation is True:
@@ -254,95 +229,71 @@ class GPT(LLM):
                 outputs = []
                 for input_batch in self._mini_batch(inputs, batch_size=10):
                     outputs_batch = asyncio.run(
-                        self.gather_chat_response(input_batch, **generation_options)
+                        self._gather_chat_response(input_batch, **generation_options)
                     )
                     outputs = outputs + outputs_batch
             else:
                 # call api one by one
                 outputs = [
-                    self.get_chat_completion_response(_input, **generation_options)
+                    asyncio.run(
+                        self._aget_chat_completion_response(_input, **generation_options)
+                    )
                     for _input in inputs
                 ]
-        elif self.engine in self.COMPLETION_MODELS:
-            # devide to mini batches (max batch size = 20 according to openai)
+        else:
+            # completion_models, devide to mini batches (max batch size = 20 according to openai)
             outputs = []
             for input_batch in self._mini_batch(inputs, batch_size=batch_size):
-                outputs_batch = self.get_completion_response(
+                outputs_batch = self._get_completion_response(
                     input_batch, **generation_options
                 )
                 outputs = outputs + outputs_batch
-        else:
-            outputs = asyncio.run(
-                self.gather_vllm_response(inputs, **generation_options)
-            )
         return outputs
 
 
 class VLLM(LLM):
 
-    def __init__(self, model_name, **generation_options):
-        self.generation_options = generation_options
-        self.engine = model_name
-
-    @retry(
-        reraise=True,
-        stop=stop_after_attempt(100),
-        wait=wait_exponential(multiplier=1, min=1, max=1),
-        retry=(
-            retry_if_exception_type(openai.error.Timeout)
-            | retry_if_exception_type(openai.error.APIError)
-            | retry_if_exception_type(openai.error.APIConnectionError)
-            | retry_if_exception_type(openai.error.RateLimitError)
-            | retry_if_exception_type(openai.error.ServiceUnavailableError)
-        ),
-    )
-    async def aget_vllm_response(self, input, return_logprobs=False, raw_logprobs=False, top_logprobs=False, **kwargs):
+    @_retry_request(min_wait=1, max_wait=1, max_attempts=100)
+    async def _aget_vllm_response(self, input, **kwargs):
         response = await openai.Completion.acreate(
             model=self.engine,
             # prompt=input,
             prompt = f"<s>[INST] {input} [/INST]",
-            logprobs=top_logprobs or 1,
+            logprobs=kwargs.get("top_logprobs") or 1,
             **kwargs,
         )
-        response = response["choices"][0]
-        output = response["text"].strip()
-        if raw_logprobs:
-            nlls = response["logprobs"]["token_logprobs"]
-            lengths = response["logprobs"]["tokens"]
-        elif top_logprobs:
-            nlls = response["logprobs"]["top_logprobs"]
-            lengths = response["logprobs"]["tokens"]
-        else:
-            if "token_logprobs" in response["logprobs"]:
-                nlls = sum(response["logprobs"]["token_logprobs"])
-                lengths = len(response["logprobs"]["token_logprobs"])
-            else:
-                nlls = -np.inf
-                lengths = 1
+        return _parse_openai_response(response, **kwargs)
 
-        if return_logprobs:
-            return output, nlls, lengths
-        return output
-
-    async def gather_vllm_response(self, inputs, return_logprobs=False, raw_logprobs=False, top_logprobs=False, **kwargs):
+    async def _gather_vllm_response(self, inputs, **kwargs):
         outputs = await asyncio.gather(
             *[
-                self.aget_vllm_response(p, return_logprobs, raw_logprobs, top_logprobs, **kwargs)
-                for p in inputs
+                self._aget_vllm_response(_input, **kwargs)
+                for _input in inputs
             ]
         )
         return outputs
 
-    def generate(self, inputs, async_generation=True, **kwargs):
-        if type(inputs) is not list:
+    def generate(
+        self,
+        inputs: Union[List[str], str],
+        async_generation: bool = True,
+        **kwargs
+    ) -> List[str]:
+        if not isinstance(inputs, list):
             inputs = [inputs]
-
-        kwargs.pop("output_space", None)
         generation_options = self.generation_options.copy()
         generation_options.update(**kwargs)
-        outputs = asyncio.run(
-            self.gather_vllm_response(inputs, **generation_options)
-        )
+        if async_generation:
+            outputs = asyncio.run(
+                self._gather_vllm_response(inputs, **generation_options)
+            )
+        else:
+            outputs = [
+                asyncio.run(
+                    self._aget_vllm_response(_input, **generation_options)
+                )
+                for _input in inputs
+            ]
         return outputs
 
 

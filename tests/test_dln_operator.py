@@ -24,18 +24,10 @@ def mock_data():
 def mock_openai_api(monkeypatch, mock_data):
     chat_completion_data, completion_data = mock_data
     mock_api = MagicMock()
-    mock_api.ChatCompletion.create.return_value = chat_completion_data
+    mock_api.ChatCompletion.acreate = AsyncMock(return_value=chat_completion_data)
     mock_api.Completion.create.return_value = completion_data
     monkeypatch.setattr(openai, "ChatCompletion", mock_api.ChatCompletion)
     monkeypatch.setattr(openai, "Completion", mock_api.Completion)
-
-
-@pytest.fixture
-def mock_openai_api_async(monkeypatch, mock_data):
-    chat_completion_data, completion_data = mock_data
-    mock_api = MagicMock()
-    mock_api.ChatCompletion.acreate = AsyncMock(return_value=chat_completion_data)
-    monkeypatch.setattr(openai, "ChatCompletion", mock_api.ChatCompletion)
 
 
 def test_invalid_model_name():
@@ -49,22 +41,27 @@ def test_valid_model_name():
 
 
 @pytest.mark.asyncio
-async def test_aget_chat_completion_response(mock_openai_api_async):
+async def test_aget_chat_completion_response(mock_openai_api):
     gpt = GPT("text-davinci-003")
     prompt = "What is the largest city in Quebec?"
-    response = await gpt.aget_chat_completion_response(prompt)
-    assert "Montreal" in response
-
-
-def test_get_chat_completion_response(mock_openai_api):
-    gpt = GPT("text-davinci-003")
-    prompt = "What is the largest city in Quebec?"
-    response = gpt.get_chat_completion_response(prompt)
+    response = await gpt._aget_chat_completion_response(prompt)
     assert "Montreal" in response
 
 
 def test_get_completion_response(mock_openai_api):
     gpt = GPT("text-davinci-003")
     prompt = "What is the largest city in Quebec?"
-    response = gpt.get_completion_response([prompt])
+    response = gpt._get_completion_response([prompt])
     assert "Montreal" in response[0]
+
+
+@pytest.mark.parametrize("async_generation", [True, False])
+def test_generate(mock_openai_api, async_generation):
+    gpt = GPT("text-davinci-003")
+    prompt = "What is the largest city in Quebec?"
+    response = gpt.generate(
+        inputs=[prompt, prompt],
+        batch_size=1,
+        async_generation=async_generation,
+    )
+    assert response == ["Montreal", "Montreal"]

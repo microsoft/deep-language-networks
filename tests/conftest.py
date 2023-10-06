@@ -11,7 +11,7 @@ def mock_llm():
     class MockLLM(LLM):
         def generate(self, inputs, **kwargs):
             return inputs
-    return MockLLM()
+    return MockLLM("MockLLM")
 
 
 @pytest.fixture
