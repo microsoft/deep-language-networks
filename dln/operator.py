@@ -31,6 +31,7 @@ class GPT:
         "text-babbage-001",
         "text-ada-001",
         "gpt-3.5-turbo",
+        "gpt-35-turbo",
         "gpt-4",
         "gpt-4-32k",
         "gpt-4-0613",
@@ -257,7 +258,7 @@ class GPT:
         generation_options = self.generation_options.copy()
         generation_options.update(**kwargs)
 
-        if self.engine in ("gpt-3.5-turbo", "gpt-4", "gpt-4-32k", "gpt-4-0613", "any"):
+        if self.engine in ("gpt-3.5-turbo", "gpt-35-turbo", "gpt-4", "gpt-4-32k", "gpt-4-0613", "any"):
             if "return_logprobs" in generation_options:
                 del generation_options["return_logprobs"]
 

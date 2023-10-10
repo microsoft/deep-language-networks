@@ -25,11 +25,11 @@ class DLNTemplate:
 
 
 class Templates:
-    _instance = None
 
-    def __init__(self):
+    def __init__(self, template_directory=None):
+        if template_directory is None:
+            template_directory = os.path.join(os.path.dirname(__file__), 'templates/')
         self._data = {}
-        template_directory = os.path.join(os.path.dirname(__file__), 'templates/')
         for filename in glob.glob(f"{template_directory}/*.yaml"):
             template_name = os.path.basename(filename).split(".")[0]
             template = yaml.safe_load(open(filename, "r"))
@@ -49,15 +49,12 @@ class Templates:
                 self._data[template_name].append(DLNTemplate(**ttemplate))
 
     @staticmethod
-    def get(template_name):
+    def get(template_name, template_directory=None):
         template_name, _, version = template_name.partition(":")
         if not version:
             version = "latest"
 
-        if Templates._instance is None:
-            Templates._instance = Templates()
-
-        templates = Templates._instance._data[template_name]
+        templates = Templates(template_directory)._data[template_name]
 
         if version == "latest":
             template = max(templates, key=lambda x: x.version)
@@ -70,5 +67,5 @@ class Templates:
         return template
 
 
-def load_template(template_name):
-    return Templates.get(template_name)
+def load_template(template_name, template_directory=None):
+    return Templates.get(template_name, template_directory)
