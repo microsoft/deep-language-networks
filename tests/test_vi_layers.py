@@ -1,5 +1,3 @@
-from unittest.mock import patch
-
 import numpy as np
 
 from dln.score import OutputClasses
@@ -60,9 +58,9 @@ def test_log_p_with_output_classes(top_logprobs, mock_logprobs_score, mock_llm):
     logp = prior_layer.log_p(
         inputs, outputs, output_classes=output_classes
     )
-    np.testing.assert_almost_equal(logp.targets, [-8.67468626, -0.44289729])
+    np.testing.assert_almost_equal(logp.logp_targets, [-8.67468626, -0.44289729])
     np.testing.assert_almost_equal(
-        logp.contexts,
+        logp.distribution,
         [
             [9.99829143e-01, 1.70856546e-04],
             [6.42173164e-01, 3.57826836e-01],
@@ -81,7 +79,7 @@ def test_log_p_without_output_classes(raw_logprobs, score_requests, mock_logprob
         init="",
     )
     logp = prior_layer.log_p(inputs, outputs)
-    np.testing.assert_almost_equal(logp.targets, [-1.48348267, -1.47351816])
+    np.testing.assert_almost_equal(logp.logp_targets, [-1.48348267, -1.47351816])
 
 
 def test_forward_with_output_class(top_logprobs, mock_logprobs_score, mock_llm):

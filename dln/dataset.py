@@ -7,6 +7,7 @@ import numpy as np
 import yaml
 
 from dln.score import OutputClasses
+from dln.vi.utils import log_message
 
 
 class Dataset:
@@ -17,10 +18,14 @@ class Dataset:
         seed,
         use_label_mapping=True,
         append_options=True,
+        n_few_shots=-1,
+        num_train_examples=-1,
     ):
         self.dataset_name = dataset
         self.data_path = dataset_path
         self.random_seed = seed
+        self.num_train_examples = num_train_examples
+        self.n_few_shots = n_few_shots
         self.dataset_info = self._load_config(
             pjoin(os.path.dirname(os.path.abspath(__file__)), "dataset_info.yaml")
         )
@@ -30,7 +35,9 @@ class Dataset:
         self.use_label_mapping = use_label_mapping and self.label_mapping
         self.append_options = append_options
         self.instruction = self.dataset_info[self.dataset_name]["instruction"]
+
         self.rng = np.random.RandomState(self.random_seed)
+        self.few_shot_rng = np.random.RandomState(self.random_seed)
 
         # load dataset from file
         self.dataset = dict(
@@ -66,6 +73,33 @@ class Dataset:
     @property
     def test_size(self):
         return len(self.dataset["test"]["label"])
+
+    def _get_few_shots(self):
+        if self.n_few_shots <= 0:
+            return None
+
+        indices = []
+        pick_order = self.few_shot_rng.choice(
+            list(self.dataset["train_per_class"].keys()),
+            len(self.dataset["train_per_class"].keys()),
+            replace=False,
+        )
+
+        i = 0
+        while len(indices) < self.n_few_shots:
+            indices += self.few_shot_rng.choice(
+                self.dataset["train_per_class"][pick_order[i % len(pick_order)]],
+                1,
+            ).tolist()
+            i += 1
+        x = [self.dataset["train"]["sentence"][i] for i in indices]
+
+        if self.use_label_mapping:
+            label_mapping = self.label_mapping
+            y = [label_mapping[self.dataset["train"]["label"][i]] for i in indices]
+        else:
+            y = [self.dataset["train"]["label"][i] for i in indices]
+        return list(zip(x, y))
 
     def resize(self, split, size):
         indices = np.random.permutation(np.arange(len(self.dataset[split]["label"])))[
@@ -208,6 +242,33 @@ class Dataset:
             train_per_class[label].append(index)
         self.dataset["train_per_class"] = train_per_class
 
+        if self.num_train_examples > 0:
+            log_message(f"Cutting dataset to {self.num_train_examples} examples.")
+            indices = []
+            pick_order = self.rng.choice(
+                list(self.dataset["train_per_class"].keys()),
+                len(self.dataset["train_per_class"].keys()),
+                replace=False,
+            )
+
+            i = 0
+            while len(indices) < self.num_train_examples:
+                indices += self.rng.choice(
+                    self.dataset["train_per_class"][
+                        pick_order[i % len(pick_order)]
+                    ],
+                    1,
+                ).tolist()
+                i += 1
+
+            self.dataset["train"]["sentence"] = [self.dataset["train"]["sentence"][i] for i in indices]
+            self.dataset["train"]["label"] = [self.dataset["train"]["label"][i] for i in indices]
+
+            train_per_class = defaultdict(list)
+            for index, label in enumerate(self.dataset["train"]["label"]):
+                train_per_class[label].append(index)
+            self.dataset["train_per_class"] = train_per_class
+
     def reset_pointer(self, split):
         if split == "train":
             self.train_pointer = 0
@@ -266,13 +327,15 @@ class Dataset:
         sentence_list, label_list = [], []
         for idx in indices:
             sentence_list.append(self.dataset[split]["sentence"][idx])
+
             if self.use_label_mapping:
                 label_mapping = self.label_mapping
                 label_list.append(label_mapping[self.dataset[split]["label"][idx]])
             else:
                 label_list.append(self.dataset[split]["label"][idx])
 
-        return sentence_list, label_list
+        few_shots = self._get_few_shots()
+        return sentence_list, label_list, few_shots
 
     def iterate(self, split, batch_size, random_sample=False):
         if split == "train":
@@ -309,7 +372,7 @@ class Dataset:
         return res_sentence, res_label
 
 
-def init_dataset(dataset_id, seed, data_dir):
+def init_dataset(dataset_id, seed, data_dir, n_few_shots=-1, num_train_examples=-1):
     ordered_prompt = os.path.join(data_dir, "ordered_prompt")
     leopard = os.path.join(data_dir, "leopard")
     bbh = os.path.join(data_dir, "bbh")
@@ -327,7 +390,13 @@ def init_dataset(dataset_id, seed, data_dir):
 
     assert dataset_id in dataset_location, f"Dataset {dataset_id} not found"
 
-    dataset = Dataset(dataset_location[dataset_id], dataset_id, seed)
+    dataset = Dataset(
+        dataset_location[dataset_id],
+        dataset_id,
+        seed,
+        n_few_shots=n_few_shots,
+        num_train_examples=num_train_examples,
+    )
     val_examples = {"hyperbaton": 300}.get(dataset_id, -1)
     protos = {
         "hyperbaton": ["a|A", "b|B"],

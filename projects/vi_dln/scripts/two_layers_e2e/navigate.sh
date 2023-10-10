@@ -6,9 +6,9 @@ batch_size=10
 num_p_samples=10
 bwd_temp=0.7
 held_out_prompt_ranking=True
-use_memory=2
+use_memory=5
 tolerance=2
-num_h_samples=5
+num_h_samples=10
 q_prompt_tpl="q_action_prompt:v3.5"
 logp_penalty=2.
 posterior_temp=1.
@@ -21,7 +21,6 @@ dir=log/two_layers_e2e/${dataset}
 
 for seed in 13 42 25; do
     python vi_main.py \
-        --do_first_eval \
         --balance_batch \
         --num_p_samples ${num_p_samples} \
         --num_h_samples ${num_h_samples} \
@@ -44,5 +43,6 @@ for seed in 13 42 25; do
         --forward_use_classes True \
         --logp_penalty ${logp_penalty} \
         --posterior_temp ${posterior_temp} \
-        --strip_options_for_hidden True
+        --strip_options_for_hidden True \
+        --strip_prefix_for_hidden False
 done

@@ -34,11 +34,24 @@ def init_prompts(dataset, init_p1, init_p2):
     if init_p1 and init_p1.endswith(".json"):
         with open(init_p1) as f:
             best_weights = json.load(f)
-        init_p1 = best_weights[dataset]["best_weights"]
+        init_p1 = best_weights[dataset.name]["best_weights"]
     elif init_p2 and init_p2.endswith(".json"):
         with open(init_p2) as f:
             best_weights = json.load(f)
-        init_p2 = best_weights[dataset]["best_weights"]
+        init_p2 = best_weights[dataset.name]["best_weights"]
+    elif init_p2 and init_p2.endswith(".log"):
+        found = False
+        with open(init_p2) as f:
+            lines = f.readlines()
+            for line in lines:
+                if "Best L2 weights" in line:
+                    init_p2 = line.partition("Best L2 weights:")[-1].strip()
+                    found = True
+                    break
+            if not found:
+                raise ValueError("Best weights were not found in the log file!")
+    if init_p2 is None:
+        init_p2 = dataset.instruction
     return init_p1, init_p2
 
 
@@ -61,19 +74,31 @@ def validate(dataset, model, loss_fn, iteration, val_examples, val_scores, write
         )
         dataset.reset_pointer("dev")
         num_examples = 0
+        class_counter = Counter()
+        total_counter = Counter()
 
         for batch in dataset.iterate("dev", batch_size=20):
-            x, y = batch
-            y_hat = model.forward(np.array(x))
+            x, y, infos = batch
+            y_hat = model.forward(np.array(x), infos=infos)
             result_writer.write_examples(iteration, x, y, model.result_entry.outputs, model.result_entry.hiddens)
-            acc += len(y) - np.sum(loss_fn(y_hat, y))
+            losses = loss_fn(y_hat, y)
+            acc += len(y) - np.sum(losses)
             tot += len(y)
+            num_examples += len(y)
+
+            for xi, yi, yhati, li in zip(x, y, y_hat, losses):
+                total_counter.update([yi])
+                if li > 0:
+                    class_counter.update([yi])
+
             pbar.update(len(y))
             pbar.set_postfix_str(f"{acc / tot:.1%}")
-            num_examples += len(y)
 
             if num_examples == val_examples:
                 break
+
+        for k, v in class_counter.items():
+            log_message(f"{k}: {float(v)/total_counter[k]}")
         dev_acc = acc / tot
         val_scores[val_key] = dev_acc
 
@@ -84,20 +109,24 @@ def validate(dataset, model, loss_fn, iteration, val_examples, val_scores, write
     return dev_acc
 
 
-def test(dataset, model, loss_fn, iteration, writer):
+def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     log_message(colored("TESTING...", "red"))
     acc = 0.0
     tot = 0.0
+    all_accs = []
+
     pbar = tqdm.tqdm(
         total=dataset.get_size("test"),
         bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
         desc="Eval",
     )
 
+    model.cost = 0.
     dataset.reset_pointer("test")
     for batch in dataset.iterate("test", batch_size=20):
-        x, y = batch
-        y_hat = model.forward(np.array(x))
+        x, y, infos = batch
+        y_hat = model.forward(np.array(x), infos=infos, cost_only=cost_only)
+        all_accs += (1. - loss_fn(y_hat, y)).tolist()
         acc += len(y) - np.sum(loss_fn(y_hat, y))
         tot += len(y)
         pbar.update(len(y))
@@ -105,7 +134,9 @@ def test(dataset, model, loss_fn, iteration, writer):
 
     test_acc = acc / tot
     writer.add_scalar("test/acc", (test_acc), iteration)
-
+    # for sig-test purposes
+    log_message("ALL ACCS:", all_accs)
+    log_message("TOKEN COST:", model.cost)
     return test_acc
 
 
@@ -113,13 +144,16 @@ def test(dataset, model, loss_fn, iteration, writer):
 @click.option("--seed", default=42, help="Random seed.")
 @click.option("--out_dir", default="log/")
 @click.option("--data_dir", default="../../data")
+@click.option("--num_train_examples", default=-1, type=int, help="Use only so many train examples.")
 @click.option("--val_freq", default=2)
 @click.option("--do_first_eval", is_flag=True)
 @click.option("--do_zero_shot", is_flag=True)
+@click.option("--n_shots", default=-1, type=int)
 @click.option("--q_hidden", default="suffix_forward_tbs")
 @click.option("--q_prompt", default="q_action_prompt")
 @click.option("--p_hidden", default="suffix_forward_tbs")
 @click.option("--p_class", default="classify_forward")
+@click.option("--p_residual", type=str, default="classify_residual")
 @click.option("--balance_batch", is_flag=True, help="Balance batch.")
 @click.option("--batch_size", type=int, default=20)
 @click.option("--one_layer", is_flag=True)
@@ -129,6 +163,7 @@ def test(dataset, model, loss_fn, iteration, writer):
 @click.option("--num_p_samples", type=int, default=5)
 @click.option("--num_h_samples", type=int, default=3)
 @click.option("--tolerance", type=int, default=-1)
+@click.option("--compute_cost", is_flag=True)
 @click.option(
     "--strip_options_for_hidden",
     type=bool,
@@ -157,9 +192,6 @@ def test(dataset, model, loss_fn, iteration, writer):
     help="Backward temperature",
 )
 @click.option(
-    "--one_batch", type=float, default=0.0, help="Run only one batch, debug mode."
-)
-@click.option(
     "--use_memory",
     type=int,
     default=0,
@@ -174,12 +206,12 @@ def test(dataset, model, loss_fn, iteration, writer):
 @click.option(
     "--init_p1",
     type=str,
-    default="Decompose the problem to make it simpler:",
+    default="",
 )
 @click.option(
     "--init_p2",
     type=str,
-    default=None,
+    default="",
 )
 @click.option(
     "--held_out_prompt_ranking",
@@ -212,6 +244,30 @@ def test(dataset, model, loss_fn, iteration, writer):
     help="Decay logp penalty linearly, reaching zero at the last iteration.",
 )
 @click.option(
+    "--output_scoring_function",
+    type=str,
+    default="logprobs",
+    help="Use logprobs to score output predictions.",
+)
+@click.option(
+    "--hidden_scoring_function",
+    type=str,
+    default="logprobs",
+    help="Use logprobs to score hidden states",
+)
+@click.option(
+    "--posterior_sharpening_include_prior",
+    type=bool,
+    default=True,
+    help="Include prior term in the posterior sharpening.",
+)
+@click.option(
+    "--posterior_sharpening_use_mi_regularization",
+    type=bool,
+    default=False,
+    help="MI-type regularization term on the hidden states.",
+)
+@click.option(
     "--posterior_temp",
     type=float,
     default=1.0,
@@ -236,10 +292,21 @@ def test(dataset, model, loss_fn, iteration, writer):
     help="Overrides model_type for backward. If not specified, use the same as model_type.",
 )
 @click.option(
+    "--bwd_model_type",
+    type=str,
+    default=None,
+)
+@click.option(
     "--fwd_max_tokens",
     type=int,
     default=256,
     help="Forward max tokens.",
+)
+@click.option(
+    "--p1_max_tokens",
+    type=int,
+    default=256,
+    help="Layer one max tokens.",
 )
 @click.option(
     "--bwd_max_tokens",
@@ -258,6 +325,18 @@ def test(dataset, model, loss_fn, iteration, writer):
     type=int,
     default=20,
     help="P2 max tokens.",
+)
+@click.option(
+    "--num_p1_steps",
+    type=int,
+    default=1,
+    help="Number of prompt optimization steps for the hidden layer.",
+)
+@click.option(
+    "--use_nce",
+    type=bool,
+    default=False,
+    help="Use NCE for hidden scoring.",
 )
 @click.option(
     "--result_data_path",
@@ -281,13 +360,17 @@ def main(
     seed,
     out_dir,
     data_dir,
+    num_train_examples,
     val_freq,
+    compute_cost,
     do_first_eval,
     do_zero_shot,
+    n_shots,
     q_hidden,
     q_prompt,
     p_hidden,
     p_class,
+    p_residual,
     fwd_temp,
     bwd_temp,
     balance_batch,
@@ -301,11 +384,14 @@ def main(
     strip_options_for_hidden,
     strip_answer_for_hidden,
     trust_factor,
-    one_batch,
     use_memory,
     init_p1,
     init_p2,
     tolerance,
+    output_scoring_function,
+    hidden_scoring_function,
+    posterior_sharpening_include_prior,
+    posterior_sharpening_use_mi_regularization,
     forward_use_classes,
     held_out_prompt_ranking,
     train_p1,
@@ -320,6 +406,8 @@ def main(
     bwd_max_tokens,
     p1_max_tokens,
     p2_max_tokens,
+    num_p1_steps,
+    use_nce,
     result_data_path,
     result_exp_name,
     enable_wandb,
@@ -334,6 +422,7 @@ def main(
         format="%(asctime)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+
     log_message(json.dumps(locals()))
     log_message("Logging to... {}".format(out_dir + "/output.log"))
 
@@ -347,13 +436,15 @@ def main(
             log_message(colored("Wandb is not installed. Please install it to enable wandb logging.", "red"))
 
     writer = SummaryWriter(f"{out_dir}")
+
+    dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir, n_shots, num_train_examples)
     result_writer = ResultLogWriter(dataset, path=result_data_path, name=result_exp_name)
 
     init_p1, init_p2 = init_prompts(dataset, init_p1, init_p2)
     if wandb_enabled:
         prompt_table.add_data(0, init_p1, init_p2)
-
-    dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir)
+    log_message("Init P1: ", init_p1)
+    log_message("Init P2: ", init_p2)
 
     fwd_model_type = fwd_model_type or model_type
     bwd_model_type = bwd_model_type or model_type
@@ -363,6 +454,7 @@ def main(
         max_tokens=fwd_max_tokens,
         stop=None,
     )
+
     bwd_model = instantiate_model(
         bwd_model_type,
         temperature=bwd_temp,
@@ -377,18 +469,19 @@ def main(
     logprobs_score = LogProbsScore(tokenizer, fwd_model)
     model = VILModel(
         loss_fn,
-        task_description=dataset.instruction,
+        init_p1=init_p1,
+        init_p2=init_p2,
         two_layers=not one_layer,
         num_p_samples=num_p_samples,
         num_h_samples=num_h_samples,
         forward_evaluate=fwd_model,
         posterior_sampler=posterior_sampler,
-        prompt_sampler=prompt_sampler,
+        prompt_sampler_1=prompt_sampler,
+        prompt_sampler_2=prompt_sampler,
         logprobs_score=logprobs_score,
         p_hidden=p_hidden,
         p_class=p_class,
-        init_p1=init_p1,
-        init_p2=init_p2,
+        p_residual=p_residual,
         use_h_argmax=use_h_argmax,
         output_classes=output_classes,
         strip_options_for_hidden=strip_options_for_hidden,
@@ -403,14 +496,19 @@ def main(
         p1_max_tokens=p1_max_tokens,
         p2_max_tokens=p2_max_tokens,
         posterior_temp=posterior_temp,
+        strip_prefix_for_hidden=dataset.prefix if strip_prefix_for_hidden else None,
+        output_scoring_function=output_scoring_function,
+        hidden_scoring_function=hidden_scoring_function,
+        num_p1_steps=num_p1_steps,
+        posterior_sharpening_include_prior=posterior_sharpening_include_prior,
+        posterior_sharpening_use_mi_regularization=posterior_sharpening_use_mi_regularization,
+        use_nce=use_nce,
     )
 
     running_acc = 0.0
     running_elbo = 0.0
     best_dev = 0.0
     best_ps = [model.encoder_l1.weight, model.encoder_l2.weight]
-    train_x, train_y = None, None
-    sample_next_batch = False
     val_scores = {}
 
     patience = 0
@@ -418,7 +516,7 @@ def main(
         log_message("STARTING EPOCH {} - {}".format(iteration, out_dir))
 
         if iteration % val_freq == 0 and (
-            iteration > 0 or do_first_eval or do_zero_shot
+            iteration > 0 or do_first_eval
         ):
             dev_acc = validate(
                 dataset, model, loss_fn, iteration, val_examples, val_scores, writer, result_writer
@@ -455,21 +553,12 @@ def main(
         )
 
         # zero shot or allow last iteration for validation
-        if do_zero_shot or iteration == iters:
+        if do_zero_shot or iteration == iters or compute_cost or (n_shots >= 0 and not train_p1 and not train_p2):
             break
 
-        if one_batch > 0.0 and train_x is not None and not sample_next_batch:
-            # use the same batch, just re-shuffle the examples in the batch
-            permutation_indices = np.random.permutation(np.arange(len(train_x)))
-            x, y = np.asarray([train_x[i] for i in permutation_indices]), np.asarray(
-                [train_y[i] for i in permutation_indices]
-            )
-            log_message(colored("USING SAME BATCH FOR TRAINING!!!", "yellow"))
-        else:
-            x, y = dataset.get_batch(
-                "train", batch_size, random_sample=True, balance=balance_batch
-            )
-            train_x, train_y = x, y
+        x, y, infos = dataset.get_batch(
+            "train", batch_size, random_sample=True, balance=balance_batch
+        )
 
         if decay_logp_penalty:
             model.logp_penalty = logp_penalty * (1.0 - (iteration / iters))
@@ -477,7 +566,7 @@ def main(
         log_message(colored("Training P2? {}".format(model.train_p2), "red"))
         log_message(colored("LOGPenalty? {}".format(model.logp_penalty), "red"))
         elbo, p1, p2, loss, elbo1, elbo2 = model.forward(
-            np.array(x), np.array(y), temperature=fwd_temp
+            np.array(x), np.array(y), infos=infos, temperature=fwd_temp
         )
         # Update prompts
         model.encoder_l1.weight = p1
@@ -492,9 +581,6 @@ def main(
         else:
             running_elbo = 0.2 * elbo + 0.8 * running_elbo
             running_acc = 0.2 * (1.0 - loss) + 0.8 * running_acc
-
-        # get another batch if training accuracy is too good!
-        sample_next_batch = (1.0 - loss) > one_batch
 
         log_message("--------------------")
         log_message(colored("{} TRAINING EPOCH DONE.".format(iteration), "blue"))
@@ -528,13 +614,15 @@ def main(
     log_message("Best L1 weights:", model.encoder_l1.weight)
     log_message("Best L2 weights:", model.encoder_l2.weight)
 
-    test_acc = test(dataset, model, loss_fn, iteration, writer)
+    test_acc = test(dataset, model, loss_fn, iteration, writer, cost_only=compute_cost)
+
 
     if wandb_enabled:
         wandb.log({"test/acc": test_acc, "epoch": iteration})
 
     log_message(colored("DEV ACC: {}".format(best_dev), "green"))
     log_message(colored("TEST ACC: {}".format(test_acc), "green"))
+    
     result_writer.save_to_json_file()
     writer.close()
 

@@ -4,6 +4,7 @@ import asyncio
 import numpy as np
 import openai
 import logging
+import os
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -74,6 +75,18 @@ class LLM(ABC):
     def generate(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
         raise NotImplementedError
 
+    @abstractmethod
+    def encode(self, string: str) -> List[int]:
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def has_log_probs(self) -> bool:
+        raise NotImplementedError
+    
+    def compute_cost(self, inputs: List[str]) -> float:
+        return np.sum(list([len(self.encode(input)) for input in inputs]))
+
 
 class GPT(LLM):
 
@@ -82,6 +95,7 @@ class GPT(LLM):
         "gpt-3.5-turbo",
         "gpt-4",
         "gpt-4-32k",
+        "gpt-4-0613",
     ]
 
     COMPLETION_MODELS = [
@@ -95,13 +109,24 @@ class GPT(LLM):
 
     AVAILABLE_MODELS = CHAT_COMPLETION_MODELS + COMPLETION_MODELS
 
-
     def __init__(self, model_name="text-davinci-003", **generation_options):
         if model_name not in self.AVAILABLE_MODELS:
             raise ValueError(
                 f"GPT model_name should be one of: {','.join(self.AVAILABLE_MODELS)}"
             )
         super().__init__(model_name, **generation_options)
+        engine_for_encoder = self.engine
+        if engine_for_encoder == "gpt-35-turbo":
+            engine_for_encoder = "gpt-3.5-turbo"
+        self.encoder = instantiate_tokenizer(engine_for_encoder)
+        openai.api_version = os.environ.get('OPENAI_API_VERSION')
+
+    def encode(self, string: str) -> List[int]:
+        return self.encoder.encode(string)
+
+    @property
+    def has_log_probs(self) -> bool:
+        return self.engine in self.COMPLETION_MODELS
 
     @_retry_request(min_wait=4, max_wait=10, max_attempts=100)
     async def _aget_chat_completion_response(self, prompt, **kwargs):
@@ -253,6 +278,10 @@ class GPT(LLM):
 
 class VLLM(LLM):
 
+    def __init__(self, model_name="text-davinci-003", **generation_options):
+        super().__init__(model_name, **generation_options)
+        self.encoder = instantiate_tokenizer(model_name)
+
     @_retry_request(min_wait=1, max_wait=1, max_attempts=100)
     async def _aget_vllm_response(self, input, **kwargs):
         response = await openai.Completion.acreate(
@@ -296,6 +325,13 @@ class VLLM(LLM):
             ]
         return outputs
 
+    def encode(self, string: str) -> List[int]:
+        return self.encoder.encode(string)
+
+    @property
+    def has_log_probs(self) -> bool:
+        return True
+
 
 def instantiate_model(model_name, **generation_options) -> LLM:
     if model_name in GPT.AVAILABLE_MODELS:
@@ -308,7 +344,6 @@ def instantiate_tokenizer(model_name: str):
         import tiktoken
         encoder = tiktoken.encoding_for_model(model_name)
     else:
-        import os
         from transformers import AutoTokenizer
         if model_name.startswith("/"):
             pretrained_path = os.getenv("TOKENIZER_PATH")

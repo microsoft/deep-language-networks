@@ -11,6 +11,11 @@ def mock_llm():
     class MockLLM(LLM):
         def generate(self, inputs, **kwargs):
             return inputs
+        def encode(self, string):
+            return string
+        @property
+        def has_log_probs(self):
+            return True
     return MockLLM("MockLLM")
 
 
