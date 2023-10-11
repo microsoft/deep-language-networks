@@ -171,6 +171,12 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     help="Remove options from examples for the hidden layer.",
 )
 @click.option(
+    "--strip_prefix_for_hidden",
+    type=bool,
+    default=False,
+    help="Strip the prefix from the examples if it exists in some tasks, e.g. BBH.",
+)
+@click.option(
     "--strip_answer_for_hidden",
     type=bool,
     default=False,
@@ -303,12 +309,6 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     help="Forward max tokens.",
 )
 @click.option(
-    "--p1_max_tokens",
-    type=int,
-    default=256,
-    help="Layer one max tokens.",
-)
-@click.option(
     "--bwd_max_tokens",
     type=int,
     default=512,
@@ -382,6 +382,7 @@ def main(
     num_p_samples,
     num_h_samples,
     strip_options_for_hidden,
+    strip_prefix_for_hidden,
     strip_answer_for_hidden,
     trust_factor,
     use_memory,
