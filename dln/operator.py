@@ -291,7 +291,7 @@ class VLLM(LLM):
             logprobs=kwargs.get("top_logprobs") or 1,
             **kwargs,
         )
-        return _parse_openai_response(response, **kwargs)
+        return _parse_openai_response(response, **kwargs)[0]
 
     async def _gather_vllm_response(self, inputs, **kwargs):
         outputs = await asyncio.gather(

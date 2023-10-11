@@ -279,15 +279,11 @@ class PosteriorSampler:
         # this might happen when all memories are correct
         log_message("Q proposals: " + str(len(tpls)) + ", Q template:" + "\n" + tpls[0])
         log_message("Generating {} ~h proposals...".format(num_samples))
-        
-        # FIXME: #parametrize this? 512?
-        max_tokens = 256  
 
         sampled = self.evaluate_func(
             tpls,
             stop=self.stop_tokens,
             n=1,
-            max_tokens=max_tokens,
             async_generation=True,
             return_logprobs=return_logprobs,
         )
