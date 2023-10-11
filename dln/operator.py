@@ -4,6 +4,8 @@ import asyncio
 import numpy as np
 import openai
 import logging
+import tiktoken
+import os
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -13,6 +15,11 @@ from tenacity import (
 
 forward_interpreter = None
 backward_interpreter = None
+
+
+def compute_cost(inputs):
+    assert forward_interpreter is not None
+    return np.sum(list([len(forward_interpreter.encode(input)) for input in inputs]))
 
 
 class GPT:
@@ -27,6 +34,8 @@ class GPT:
         "gpt-35-turbo",
         "gpt-4",
         "gpt-4-32k",
+        "gpt-4-0613",
+        "any",
     ]
 
     def __init__(self, model_name="text-davinci-003", **generation_options):
@@ -34,8 +43,30 @@ class GPT:
             raise ValueError(
                 f"model_name should be one of: {','.join(self.AVAILABLE_MODELS)}"
             )
+
         self.generation_options = generation_options
         self.engine = model_name
+
+        if self.engine == "any":
+            openai.api_base = "http://0.0.0.0:8081"
+            openai.api_key = "any"
+            openai.api_type = "openai"
+            self.encoder = tiktoken.encoding_for_model("text-davinci-003")
+        else:
+            self.encoder = tiktoken.encoding_for_model(self.engine)
+        openai.api_version = os.environ.get('OPENAI_API_VERSION')
+
+    def encode(self, string):
+        return self.encoder.encode(string)
+
+    @property
+    def has_log_probs(self):
+        return not (
+            "gpt-3.5" in self.engine or
+            "gpt-4" in self.engine or
+            "gpt-35" in self.engine or
+            "gpt-4-0613" in self.engine
+        )
 
     @retry(
         reraise=True,
@@ -227,7 +258,7 @@ class GPT:
         generation_options = self.generation_options.copy()
         generation_options.update(**kwargs)
 
-        if self.engine in ("gpt-3.5-turbo", "gpt-35-turbo", "gpt-4", "gpt-4-32k"):
+        if self.engine in ("gpt-3.5-turbo", "gpt-35-turbo", "gpt-4", "gpt-4-32k", "gpt-4-0613", "any"):
             if "return_logprobs" in generation_options:
                 del generation_options["return_logprobs"]
 
