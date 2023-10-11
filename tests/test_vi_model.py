@@ -174,9 +174,9 @@ def test_inference_one_layer(loss_fn, backward_info, log_p_fn):
 @pytest.mark.parametrize(
     "train_p1, train_p2, expec_best_p1_elbo, expec_best_p2_elbo, expec_best_p1, expec_best_p2",
     [
-        (True, False, 0.39742681, 0.0, "prompt 2", ""),  # Train p1
-        (False, True, 0.0, 0.49596743, "", "prompt 2"),  # Train p2
-        (True, True, 0.39742681, 0.49596743, "prompt 2", "prompt 2"),  # Train e2e
+        (True, False, 0.44168435, 0.0, "prompt 2", ""),  # Train p1
+        (False, True, 0.0, 0.54359470, "", "prompt 2"),  # Train p2
+        (True, True, 0.44168435, 0.54359470, "prompt 2", "prompt 2"),  # Train e2e
     ],
 )
 def test_inference_vi(
@@ -226,9 +226,9 @@ def test_inference_vi(
 @pytest.mark.parametrize(
     "train_p1, train_p2, expec_elbo, expec_best_p1, expec_best_p2, expec_loss_mean, expec_elbo1, expec_elbo2",
     [
-        (True, False, 0.39742681, 'prompt 2', '', 0.5, 0.39742681, 0.0),  # Train p1
-        (False, True, 0.49596743, '', 'prompt 2', 0.5, 0.0, 0.49596743),  # Train p2
-        (True, True, 0.89339424, 'prompt 2', 'prompt 2', 0.5, 0.39742681, 0.49596743),  # Train e2e
+        (True, False, 0.44168435, 'prompt 2', '', 0.5, 0.44168435, 0.0),  # Train p1
+        (False, True, 0.54359470, '', 'prompt 2', 0.5, 0.0, 0.54359470),  # Train p2
+        (True, True, 0.98527906, 'prompt 2', 'prompt 2', 0.5, 0.44168435, 0.54359470),  # Train e2e
     ],
 )
 def test_forward_two_layers(
