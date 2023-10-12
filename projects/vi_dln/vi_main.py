@@ -466,8 +466,7 @@ def main(
     loss_fn = ZeroOneLoss(postproc=postprocess_prediction)
     prompt_sampler = PromptSampler(bwd_model, q_prompt)
     posterior_sampler = PosteriorSampler(bwd_model, q_hidden)
-    tokenizer = instantiate_tokenizer(fwd_model_type)
-    logprobs_score = LogProbsScore(tokenizer, fwd_model)
+    logprobs_score = LogProbsScore(fwd_model)
     model = VILModel(
         loss_fn,
         init_p1=init_p1,

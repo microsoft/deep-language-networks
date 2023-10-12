@@ -45,7 +45,7 @@ def test_apply_residual_with_template(mock_logprobs_score, mock_llm):
 
 
 def test_log_p_with_output_classes(top_logprobs, mock_logprobs_score, mock_llm):
-    mock_logprobs_score.forward_evaluate = top_logprobs
+    mock_logprobs_score.forward_evaluate.generate = top_logprobs
     inputs = ["1 + 1", "1 * 1"]
     outputs = ["B", "A"]
     output_classes = OutputClasses(protos=["a|A", "b|B"])
@@ -69,7 +69,7 @@ def test_log_p_with_output_classes(top_logprobs, mock_logprobs_score, mock_llm):
 
 
 def test_log_p_without_output_classes(raw_logprobs, score_requests, mock_logprobs_score, mock_llm):
-    mock_logprobs_score.forward_evaluate = raw_logprobs
+    mock_logprobs_score.forward_evaluate.generate = raw_logprobs
     inputs = [s.context for s in score_requests]
     outputs = ["B", "A"]
     prior_layer = PriorLayer(
@@ -83,7 +83,7 @@ def test_log_p_without_output_classes(raw_logprobs, score_requests, mock_logprob
 
 
 def test_forward_with_output_class(top_logprobs, mock_logprobs_score, mock_llm):
-    mock_logprobs_score.forward_evaluate = top_logprobs
+    mock_logprobs_score.forward_evaluate.generate = top_logprobs
     inputs = ["1 + 1", "1 * 1"]
     output_classes = OutputClasses(protos=["A|a", "B|b"])
     prior_layer = PriorLayer(

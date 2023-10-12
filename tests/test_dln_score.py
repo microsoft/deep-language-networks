@@ -1,13 +1,12 @@
 import numpy as np
 
-from dln.operator import instantiate_tokenizer
 from dln.score import LogProbsScore, OutputClasses
 
 
-def test_logprobs_score_with_output_classes(score_requests, top_logprobs, mock_llm):
+def test_logprobs_score_with_output_classes(score_requests, top_logprobs, mock_llm_func):
+    mock_llm = mock_llm_func("text-davinci-003")
     mock_llm.generate = top_logprobs
-    tokenizer = instantiate_tokenizer("text-davinci-003")
-    logprobs_score = LogProbsScore(tokenizer, mock_llm)
+    logprobs_score = LogProbsScore(mock_llm)
 
     logprobs = logprobs_score.score_requests(
         score_requests, output_classes=OutputClasses(protos=["a|A", "b|B"])
@@ -23,10 +22,10 @@ def test_logprobs_score_with_output_classes(score_requests, top_logprobs, mock_l
     )
 
 
-def test_logprobs_score_without_output_classes(score_requests, raw_logprobs, mock_llm):
+def test_logprobs_score_without_output_classes(score_requests, raw_logprobs, mock_llm_func):
+    mock_llm = mock_llm_func("text-davinci-003")
     mock_llm.generate = raw_logprobs
-    tokenizer = instantiate_tokenizer("text-davinci-003")
-    logprobs_score = LogProbsScore(tokenizer, mock_llm)
+    logprobs_score = LogProbsScore(mock_llm)
     
     logprobs = logprobs_score.score_requests(score_requests)
 

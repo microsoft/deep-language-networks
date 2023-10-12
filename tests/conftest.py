@@ -7,22 +7,47 @@ from dln.score import LogProbsScore, ScoreRequest
 
 
 @pytest.fixture
-def mock_llm():
-    class MockLLM(LLM):
-        def generate(self, inputs, **kwargs):
-            return inputs
-        def encode(self, string):
-            return string
-        @property
-        def has_log_probs(self):
-            return True
-    return MockLLM("MockLLM")
+def mock_llm_func():
+
+    def instantiate_llm(model_name=None):
+        class MockEncoder:
+            def encode(self, string):
+                return string
+
+        class MockLLM(LLM):
+
+            def __init__(self, model_name):
+                if model_name is None:
+                    model_name = "MockLLM"
+                    self.encoder = MockEncoder()
+                else:
+                    self.encoder = instantiate_tokenizer(model_name)
+                super().__init__(model_name)
+
+            def generate(self, inputs, **kwargs):
+                return inputs
+
+            def encode(self, string):
+                return self.encoder.encode(string)
+
+            @property
+            def has_log_probs(self):
+                return True
+        
+        return MockLLM(model_name)
+    
+    return instantiate_llm
 
 
 @pytest.fixture
-def mock_logprobs_score(mock_llm):
-    tokenizer = instantiate_tokenizer("text-davinci-003")
-    logprobs_score = LogProbsScore(tokenizer, mock_llm)
+def mock_llm(mock_llm_func):
+    return mock_llm_func()
+
+
+@pytest.fixture
+def mock_logprobs_score(mock_llm_func):
+    llm = mock_llm_func("text-davinci-003")
+    logprobs_score = LogProbsScore(llm)
     return logprobs_score
 
 
