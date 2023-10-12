@@ -27,8 +27,6 @@ class VILModel:
         prompt_sampler_2: PromptSampler = None,
         posterior_sampler : PosteriorSampler = None,
         logprobs_score: LogProbsScore = None,
-        q_prompt: str = "q_action_prompt:latest",
-        q_hidden: str = "suffix_forward_tbs:latest",
         p_hidden: str = "suffix_forward_tbs:latest",
         p_class: str = "classify_forward:latest",
         p_residual: str = "classify_residual:latest",
@@ -56,17 +54,21 @@ class VILModel:
         """
         Args:
             loss_fn: loss function to use
+            init_p1: initialization for the first prompt
+            init_p2: initialization for the second prompt
             two_layers: whether to use two layers or one layer
             num_h_samples: number of posterior samples to use for the hidden state
             num_p_samples: number of posterior samples to use for the prompt
             use_h_argmax: whether to use the argmax of the posterior distribution when selecting best prompts, if False, then
                           we compute num_h_samples * num_p_samples scores and select prompts based on the sum of the num_h_samples scores
-            init_p1: initialization for the first prompt
-            init_p2: initialization for the second prompt
-            q_prompt: prompt for the posterior over the prompt
-            q_hidden: prompt for the posterior over the hidden state
+            forward_evaluate: LLM for the forward pass
+            prompt_sampler_1: posterior sampler over the prompt
+            prompt_sampler_2: posterior sampler over the hidden state
+            posterior_sampler: sample hidden states from the posterior distribution
+            logprobs_score: logprobs scoring function
             p_hidden: forward template for the forward pass that generates the hidden state
             p_class: forward template for the classification layer
+            p_residual: forward template for the residual layer
             output_classes: if specified, we compute log-likelihood over these classes only
             strip_options_for_hidden: whether to strip the options from the input when computing the hidden state, don't use it.
             strip_answer_for_hidden: whether to strip the answer from the input when computing the hidden state, don't use it.
@@ -77,6 +79,17 @@ class VILModel:
             use_memory: whether to use memory, if 0, we don't use memory, if n, we include n best DEV prompts in the list of candidate prompts to select from, etc...
             train_p1: whether to train the first prompt
             train_p2: whether to train the second prompt
+            logp_penalty: penalizes the log-likelihood of wrong thoughts
+            p1_max_tokens: max tokens for the residual layer
+            p2_max_tokens: max tokens for the prior layer
+            posterior_temp: posterior temperature
+            strip_prefix_for_hidden: strip prefix from the hidden state if the model generates it
+            output_scoring_function: output scoring function, either "logprobs" or "accuracy"
+            hidden_scoring_function: hidden scoring function, only "logprobs" is supported
+            posterior_sharpening_include_prior: include prior in the posterior sharpening
+            posterior_sharpening_use_mi_regularization: use MI regularization in the posterior sharpening
+            num_p1_steps: number of optimization steps for p1
+            use_nce: compute p1 elbo using NCE
         """
         self.encoder_l1 = ResidualPriorLayer(
             logprobs_score=logprobs_score,
