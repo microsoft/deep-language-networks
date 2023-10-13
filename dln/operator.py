@@ -108,6 +108,7 @@ class GPT(LLM):
     ]
 
     AVAILABLE_MODELS = CHAT_COMPLETION_MODELS + COMPLETION_MODELS
+    LOGPROBS_MODELS = COMPLETION_MODELS.copy()
 
     def __init__(self, model_name: str = "text-davinci-003", **generation_options):
         if model_name not in self.AVAILABLE_MODELS:
@@ -120,13 +121,14 @@ class GPT(LLM):
             engine_for_encoder = "gpt-3.5-turbo"
         self.encoder = instantiate_tokenizer(engine_for_encoder)
         openai.api_version = os.environ.get('OPENAI_API_VERSION')
+        self._has_logprobs = self.engine in self.LOGPROBS_MODELS
 
     def encode(self, string: str) -> List[int]:
         return self.encoder.encode(string)
 
     @property
     def has_logprobs(self) -> bool:
-        return self.engine in self.COMPLETION_MODELS
+        return self._has_logprobs
 
     @_retry_request(min_wait=4, max_wait=10, max_attempts=100)
     async def _aget_chat_completion_response(self, prompt, **kwargs):
@@ -242,13 +244,13 @@ class GPT(LLM):
         generation_options = self.generation_options.copy()
         generation_options.update(**kwargs)
 
-        if self.engine in self.CHAT_COMPLETION_MODELS:
-            if "return_logprobs" in generation_options:
-                logging.warn(
-                    "return_logprobs is not supported for chat completion models"
-                )
-                del generation_options["return_logprobs"]
+        if "return_logprobs" in generation_options and not self.has_logprobs:
+            logging.warn(
+                f"return_logprobs is not supported for model {self.engine}"
+            )
+            del generation_options["return_logprobs"]
 
+        if self.engine in self.CHAT_COMPLETION_MODELS:
             if async_generation is True:
                 # async call api, devide to mini batches to avoid call rate limit
                 outputs = []
