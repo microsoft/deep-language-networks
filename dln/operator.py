@@ -81,7 +81,7 @@ class LLM(ABC):
 
     @property
     @abstractmethod
-    def has_log_probs(self) -> bool:
+    def has_logprobs(self) -> bool:
         raise NotImplementedError
     
     def compute_cost(self, inputs: List[str]) -> float:
@@ -125,7 +125,7 @@ class GPT(LLM):
         return self.encoder.encode(string)
 
     @property
-    def has_log_probs(self) -> bool:
+    def has_logprobs(self) -> bool:
         return self.engine in self.COMPLETION_MODELS
 
     @_retry_request(min_wait=4, max_wait=10, max_attempts=100)
@@ -328,7 +328,7 @@ class VLLM(LLM):
         return self.encoder.encode(string)
 
     @property
-    def has_log_probs(self) -> bool:
+    def has_logprobs(self) -> bool:
         return True
 
 

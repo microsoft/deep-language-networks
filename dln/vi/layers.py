@@ -60,7 +60,7 @@ class PriorLayer:
                 async_generation=True,
             )
         else:
-            if self.forward_evaluate.has_log_probs:
+            if self.forward_evaluate.has_logprobs:
                 # compute log p of each output class, second return value is the p(class)
                 targets = [output_classes.prototype(0) for _ in inputs]
                 lp = self.log_p(

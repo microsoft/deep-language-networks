@@ -31,7 +31,7 @@ def mock_llm_func():
                 return self.encoder.encode(string)
 
             @property
-            def has_log_probs(self):
+            def has_logprobs(self):
                 return True
         
         return MockLLM(model_name)
