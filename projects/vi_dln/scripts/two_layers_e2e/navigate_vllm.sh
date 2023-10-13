@@ -15,15 +15,13 @@ posterior_temp=1.
 trust_factor=5.
 p_hidden_tpl="suffix_forward_tbs"
 q_hidden_tpl="suffix_forward_tbs_y|suffix_forward_tbs"
-# model_type="/llama/7Bf"
-model_type="/data/llama2/70Bf"
+model_type="meta-llama/Llama-2-70b-chat-hf"
 fwd_max_tokens=512
 bwd_max_tokens=1024
 p1_max_tokens=512
 p2_max_tokens=512
 
 dir=log/{model_type}/two_layers_e2e/${dataset}
-# /bin/rm -rf ${dir}
 
 
 for seed in 42; do
@@ -58,5 +56,3 @@ for seed in 42; do
         --p2_max_tokens ${p2_max_tokens} \
         --strip_options_for_hidden True
 done
-
-# export TOKENIZER_PATH="/data/models/llama2/70Bf"
