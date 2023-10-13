@@ -1,10 +1,9 @@
-# global interpreter
-from typing import List
+from abc import ABC, abstractmethod
+from typing import List, Union
 import asyncio
 import numpy as np
 import openai
 import logging
-import tiktoken
 import os
 from tenacity import (
     retry,
@@ -13,65 +12,15 @@ from tenacity import (
     retry_if_exception_type,
 )
 
-forward_interpreter = None
-backward_interpreter = None
+
+openai.util.logger.setLevel(logging.WARNING)
 
 
-def compute_cost(inputs):
-    assert forward_interpreter is not None
-    return np.sum(list([len(forward_interpreter.encode(input)) for input in inputs]))
-
-
-class GPT:
-    AVAILABLE_MODELS = [
-        "text-davinci-003",
-        "text-davinci-002",
-        "code-davinci-002",
-        "text-curie-001",
-        "text-babbage-001",
-        "text-ada-001",
-        "gpt-3.5-turbo",
-        "gpt-35-turbo",
-        "gpt-4",
-        "gpt-4-32k",
-        "gpt-4-0613",
-        "any",
-    ]
-
-    def __init__(self, model_name="text-davinci-003", **generation_options):
-        if model_name not in self.AVAILABLE_MODELS:
-            raise ValueError(
-                f"model_name should be one of: {','.join(self.AVAILABLE_MODELS)}"
-            )
-
-        self.generation_options = generation_options
-        self.engine = model_name
-
-        if self.engine == "any":
-            openai.api_base = "http://0.0.0.0:8081"
-            openai.api_key = "any"
-            openai.api_type = "openai"
-            self.encoder = tiktoken.encoding_for_model("text-davinci-003")
-        else:
-            self.encoder = tiktoken.encoding_for_model(self.engine)
-        openai.api_version = os.environ.get('OPENAI_API_VERSION')
-
-    def encode(self, string):
-        return self.encoder.encode(string)
-
-    @property
-    def has_log_probs(self):
-        return not (
-            "gpt-3.5" in self.engine or
-            "gpt-4" in self.engine or
-            "gpt-35" in self.engine or
-            "gpt-4-0613" in self.engine
-        )
-
-    @retry(
+def _retry_request(min_wait=4, max_wait=10, max_attempts=100):
+    return retry(
         reraise=True,
-        stop=stop_after_attempt(100),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
+        stop=stop_after_attempt(max_attempts),
+        wait=wait_exponential(multiplier=1, min=min_wait, max=max_wait),
         retry=(
             retry_if_exception_type(openai.error.Timeout)
             | retry_if_exception_type(openai.error.APIError)
@@ -80,7 +29,109 @@ class GPT:
             | retry_if_exception_type(openai.error.ServiceUnavailableError)
         ),
     )
-    async def aget_chat_completion_response(self, prompt, **kwargs):
+
+
+def _parse_openai_response(
+    response,
+    return_logprobs=False,
+    raw_logprobs=False,
+    top_logprobs=False,
+    **kwargs,
+):
+    output = []
+    nlls = []
+    lengths = []
+    for response in response["choices"]:
+        output.append(response["text"].strip())
+        if raw_logprobs:
+            nlls.append(response["logprobs"]["token_logprobs"])
+            lengths.append(response["logprobs"]["tokens"])
+        elif top_logprobs:
+            nlls.append(response["logprobs"]["top_logprobs"])
+            lengths.append(response["logprobs"]["tokens"])
+        else:
+            if "token_logprobs" in response["logprobs"]:
+                nlls.append(sum(response["logprobs"]["token_logprobs"]))
+                lengths.append(len(response["logprobs"]["token_logprobs"]))
+            else:
+                nlls.append(-np.inf)
+                lengths.append(1)
+
+    if return_logprobs:
+        output = list(zip(output, nlls, lengths))
+    return output
+
+
+class LLM(ABC):
+
+    def __init__(self, model_name: str, **generation_options):
+        self.generation_options = generation_options
+        self.engine = model_name
+
+    def __call__(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
+        return self.generate(inputs, **kwargs)
+
+    @abstractmethod
+    def generate(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def encode(self, string: str) -> List[int]:
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def has_logprobs(self) -> bool:
+        raise NotImplementedError
+    
+    def compute_cost(self, inputs: List[str]) -> float:
+        return np.sum(list([len(self.encode(input)) for input in inputs]))
+
+
+class GPT(LLM):
+
+    CHAT_COMPLETION_MODELS = [
+        "gpt-35-turbo",  # azure
+        "gpt-3.5-turbo",
+        "gpt-4",
+        "gpt-4-32k",
+        "gpt-4-0613",
+    ]
+
+    COMPLETION_MODELS = [
+        "text-davinci-003",
+        "text-davinci-002",
+        "code-davinci-002",
+        "text-curie-001",
+        "text-babbage-001",
+        "text-ada-001",
+    ]
+
+    AVAILABLE_MODELS = CHAT_COMPLETION_MODELS + COMPLETION_MODELS
+    LOGPROBS_MODELS = COMPLETION_MODELS.copy()
+
+    def __init__(self, model_name: str = "text-davinci-003", **generation_options):
+        if model_name not in self.AVAILABLE_MODELS:
+            raise ValueError(
+                f"GPT model_name should be one of: {','.join(self.AVAILABLE_MODELS)}"
+            )
+        super().__init__(model_name, **generation_options)
+        engine_for_encoder = self.engine
+        if engine_for_encoder == "gpt-35-turbo":
+            engine_for_encoder = "gpt-3.5-turbo"
+        self.encoder = instantiate_tokenizer(engine_for_encoder)
+        openai.api_version = os.environ.get('OPENAI_API_VERSION')
+        self._has_logprobs = self.engine in self.LOGPROBS_MODELS
+
+    def encode(self, string: str) -> List[int]:
+        return self.encoder.encode(string)
+
+    @property
+    def has_logprobs(self) -> bool:
+        return self._has_logprobs
+
+    @_retry_request(min_wait=4, max_wait=10, max_attempts=100)
+    async def _aget_chat_completion_response(self, prompt, **kwargs):
         """
         prompting chatgpt via openai api
         now batching only works for completion, not on chat
@@ -109,60 +160,8 @@ class GPT:
         output = response["choices"][0]["message"]["content"].strip()
         return output
 
-    @retry(
-        reraise=True,
-        stop=stop_after_attempt(100),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=(
-            retry_if_exception_type(openai.error.Timeout)
-            | retry_if_exception_type(openai.error.APIError)
-            | retry_if_exception_type(openai.error.APIConnectionError)
-            | retry_if_exception_type(openai.error.RateLimitError)
-            | retry_if_exception_type(openai.error.ServiceUnavailableError)
-        ),
-    )
-    def get_chat_completion_response(self, prompt, **kwargs):
-        """
-        prompting chatgpt via openai api
-        now batching only works for completion, not on chat
-        """
-        if openai.api_type == "azure":
-            try:
-                response = openai.ChatCompletion.create(
-                    deployment_id=self.engine,
-                    messages=[{"role": "user", "content": prompt}],
-                    **kwargs,
-                )
-            except openai.InvalidRequestError as e:
-                # Most likely a content filtering error from Azure.
-                logging.warn(str(e))
-                return str(e)
-        else:
-            response = openai.ChatCompletion.create(
-                model=self.engine,
-                messages=[{"role": "user", "content": prompt}],
-                **kwargs,
-            )
-
-        if "content" not in response["choices"][0]["message"]:
-            return ""
-
-        output = response["choices"][0]["message"]["content"].strip()
-        return output
-
-    @retry(
-        reraise=True,
-        stop=stop_after_attempt(100),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=(
-            retry_if_exception_type(openai.error.Timeout)
-            | retry_if_exception_type(openai.error.APIError)
-            | retry_if_exception_type(openai.error.APIConnectionError)
-            | retry_if_exception_type(openai.error.RateLimitError)
-            | retry_if_exception_type(openai.error.ServiceUnavailableError)
-        ),
-    )
-    def get_completion_response(
+    @_retry_request(min_wait=4, max_wait=10, max_attempts=100)
+    def _get_completion_response(
         self,
         prompt_batch,
         return_logprobs=False,
@@ -203,39 +202,22 @@ class GPT:
                         response["choices"].append(
                             {
                                 "text": str(e),
-                                "logprobs": {"token_logprobs": [0], "top_logprobs": [{}], "tokens": {}},
+                                "logprobs": {
+                                    "token_logprobs": [0],
+                                    "top_logprobs": [{}],
+                                    "tokens": {}
+                                },
                             }
                         )
             else:
                 raise e
 
-        output = []
-        nlls = []
-        lengths = []
-        for response in response["choices"]:
-            output.append(response["text"].strip())
-            if raw_logprobs:
-                nlls.append(response["logprobs"]["token_logprobs"])
-                lengths.append(response["logprobs"]["tokens"])
-            elif top_logprobs:
-                nlls.append(response["logprobs"]["top_logprobs"])
-                lengths.append(response["logprobs"]["tokens"])
-            else:
-                if "token_logprobs" in response["logprobs"]:
-                    nlls.append(sum(response["logprobs"]["token_logprobs"]))
-                    lengths.append(len(response["logprobs"]["token_logprobs"]))
-                else:
-                    nlls.append(-np.inf)
-                    lengths.append(1)
+        return _parse_openai_response(response, return_logprobs, raw_logprobs, top_logprobs)
 
-        if return_logprobs:
-            output = list(zip(output, nlls, lengths))
-        return output
-
-    async def gather_chat_response(self, inputs, **generation_options):
+    async def _gather_chat_response(self, inputs, **generation_options):
         outputs = await asyncio.gather(
             *[
-                self.aget_chat_completion_response(_input, **generation_options)
+                self._aget_chat_completion_response(_input, **generation_options)
                 for _input in inputs
             ]
         )
@@ -250,66 +232,123 @@ class GPT:
             input_batch = inputs[batch_size * i : batch_size * (i + 1)]
             yield input_batch
 
-    def generate(self, inputs, async_generation=True, batch_size=20, **kwargs):
-        if type(inputs) is not list:
+    def generate(
+        self,
+        inputs: Union[List[str], str],
+        async_generation: bool = True,
+        batch_size: int = 20,
+        **kwargs,
+    ) -> List[str]:
+        if not isinstance(inputs, list):
             inputs = [inputs]
-
-        kwargs.pop("output_space", None)
         generation_options = self.generation_options.copy()
         generation_options.update(**kwargs)
 
-        if self.engine in ("gpt-3.5-turbo", "gpt-35-turbo", "gpt-4", "gpt-4-32k", "gpt-4-0613", "any"):
-            if "return_logprobs" in generation_options:
-                del generation_options["return_logprobs"]
+        if "return_logprobs" in generation_options and not self.has_logprobs:
+            logging.warn(
+                f"return_logprobs is not supported for model {self.engine}"
+            )
+            del generation_options["return_logprobs"]
 
+        if self.engine in self.CHAT_COMPLETION_MODELS:
             if async_generation is True:
                 # async call api, devide to mini batches to avoid call rate limit
                 outputs = []
                 for input_batch in self._mini_batch(inputs, batch_size=10):
                     outputs_batch = asyncio.run(
-                        self.gather_chat_response(input_batch, **generation_options)
+                        self._gather_chat_response(input_batch, **generation_options)
                     )
                     outputs = outputs + outputs_batch
             else:
                 # call api one by one
                 outputs = [
-                    self.get_chat_completion_response(_input, **generation_options)
+                    asyncio.run(
+                        self._aget_chat_completion_response(_input, **generation_options)
+                    )
                     for _input in inputs
                 ]
         else:
-            # devide to mini batches (max batch size = 20 according to openai)
+            # completion_models, devide to mini batches (max batch size = 20 according to openai)
             outputs = []
             for input_batch in self._mini_batch(inputs, batch_size=batch_size):
-                outputs_batch = self.get_completion_response(
+                outputs_batch = self._get_completion_response(
                     input_batch, **generation_options
                 )
                 outputs = outputs + outputs_batch
         return outputs
 
 
-def forward_instantiate(model_name="text-davinci-003", **generation_options):
-    global forward_interpreter
+class VLLM(LLM):
 
-    if forward_interpreter is None:
-        forward_interpreter = GPT(model_name, **generation_options)
+    def __init__(self, model_name: str, **generation_options):
+        super().__init__(model_name, **generation_options)
+        self.encoder = instantiate_tokenizer(model_name)
+
+    @_retry_request(min_wait=1, max_wait=1, max_attempts=100)
+    async def _aget_vllm_response(self, input, **kwargs):
+        response = await openai.Completion.acreate(
+            model=self.engine,
+            prompt=input,
+            logprobs=kwargs.get("top_logprobs") or 1,
+            **kwargs,
+        )
+        return _parse_openai_response(response, **kwargs)[0]
+
+    async def _gather_vllm_response(self, inputs, **kwargs):
+        outputs = await asyncio.gather(
+            *[
+                self._aget_vllm_response(_input, **kwargs)
+                for _input in inputs
+            ]
+        )
+        return outputs
+
+    def generate(
+        self,
+        inputs: Union[List[str], str],
+        async_generation: bool = True,
+        **kwargs
+    ) -> List[str]:
+        if not isinstance(inputs, list):
+            inputs = [inputs]
+        generation_options = self.generation_options.copy()
+        generation_options.update(**kwargs)
+        if async_generation:
+            outputs = asyncio.run(
+                self._gather_vllm_response(inputs, **generation_options)
+            )
+        else:
+            outputs = [
+                asyncio.run(
+                    self._aget_vllm_response(_input, **generation_options)
+                )
+                for _input in inputs
+            ]
+        return outputs
+
+    def encode(self, string: str) -> List[int]:
+        return self.encoder.encode(string)
+
+    @property
+    def has_logprobs(self) -> bool:
+        return True
+
+
+def instantiate_model(model_name: str, **generation_options) -> LLM:
+    if model_name in GPT.AVAILABLE_MODELS:
+        return GPT(model_name, **generation_options)
+    return VLLM(model_name, **generation_options)
+
+
+def instantiate_tokenizer(model_name: str):
+    if model_name in GPT.AVAILABLE_MODELS:
+        import tiktoken
+        encoder = tiktoken.encoding_for_model(model_name)
     else:
-        print("Forward interpreter already instantiated.")
-        pass
-
-
-def backward_instantiate(model_name="text-davinci-003", **generation_options):
-    global backward_interpreter
-
-    if backward_interpreter is None:
-        backward_interpreter = GPT(model_name, **generation_options)
-    else:
-        print("Backward interpreter already instantiated.")
-        pass
-
-
-def forward_evaluate(input: List[str], **kwargs):
-    return forward_interpreter.generate(input, **kwargs)
-
-
-def backward_evaluate(input: List[str], **kwargs):
-    return backward_interpreter.generate(input, **kwargs)
+        from transformers import AutoTokenizer
+        if model_name.startswith("/"):
+            pretrained_path = os.getenv("TOKENIZER_PATH")
+        else:
+            pretrained_path = model_name
+        encoder = AutoTokenizer.from_pretrained(pretrained_path)
+    return encoder

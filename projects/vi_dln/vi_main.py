@@ -12,9 +12,11 @@ from torch.utils.tensorboard import SummaryWriter
 
 from dln.dataset import init_dataset
 from dln.loss import ZeroOneLoss
-from dln.operator import backward_instantiate, forward_instantiate
+from dln.operator import instantiate_model, instantiate_tokenizer
 from dln.postprocessing import postprocess_prediction
+from dln.score import LogProbsScore
 from dln.vi.model import VILModel, log_message
+from dln.vi.sampler import PosteriorSampler, PromptSampler
 from dln.vi.utils import ResultLogWriter
 
 try:
@@ -281,6 +283,19 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     "--model_type",
     type=str,
     default="text-davinci-003",
+    help="Model type for forward and backward models if not specified separately.",
+)
+@click.option(
+    "--fwd_model_type",
+    type=str,
+    default="",
+    help="Overrides model_type for forward. If not specified, use the same as model_type.",
+)
+@click.option(
+    "--bwd_model_type",
+    type=str,
+    default="",
+    help="Overrides model_type for backward. If not specified, use the same as model_type.",
 )
 @click.option(
     "--bwd_model_type",
@@ -294,16 +309,22 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     help="Forward max tokens.",
 )
 @click.option(
-    "--p1_max_tokens",
-    type=int,
-    default=256,
-    help="Layer one max tokens.",
-)
-@click.option(
     "--bwd_max_tokens",
     type=int,
     default=512,
     help="Backward max tokens.",
+)
+@click.option(
+    "--p1_max_tokens",
+    type=int,
+    default=256,
+    help="P1 max tokens.",
+)
+@click.option(
+    "--p2_max_tokens",
+    type=int,
+    default=20,
+    help="P2 max tokens.",
 )
 @click.option(
     "--num_p1_steps",
@@ -361,8 +382,8 @@ def main(
     num_p_samples,
     num_h_samples,
     strip_options_for_hidden,
-    strip_answer_for_hidden,
     strip_prefix_for_hidden,
+    strip_answer_for_hidden,
     trust_factor,
     use_memory,
     init_p1,
@@ -380,10 +401,12 @@ def main(
     decay_logp_penalty,
     posterior_temp,
     model_type,
+    fwd_model_type,
     bwd_model_type,
     fwd_max_tokens,
     bwd_max_tokens,
     p1_max_tokens,
+    p2_max_tokens,
     num_p1_steps,
     use_nce,
     result_data_path,
@@ -424,20 +447,26 @@ def main(
     log_message("Init P1: ", init_p1)
     log_message("Init P2: ", init_p2)
 
-    forward_instantiate(
+    fwd_model_type = fwd_model_type or model_type
+    bwd_model_type = bwd_model_type or model_type
+    fwd_model = instantiate_model(
         model_type,
         temperature=0.0,
         max_tokens=fwd_max_tokens,
         stop=None,
     )
-    backward_instantiate(
-        bwd_model_type or model_type,
+
+    bwd_model = instantiate_model(
+        bwd_model_type,
         temperature=bwd_temp,
         max_tokens=bwd_max_tokens,
         stop=None,
     )
 
     loss_fn = ZeroOneLoss(postproc=postprocess_prediction)
+    prompt_sampler = PromptSampler(bwd_model, q_prompt)
+    posterior_sampler = PosteriorSampler(bwd_model, q_hidden)
+    logprobs_score = LogProbsScore(fwd_model)
     model = VILModel(
         loss_fn,
         init_p1=init_p1,
@@ -445,8 +474,11 @@ def main(
         two_layers=not one_layer,
         num_p_samples=num_p_samples,
         num_h_samples=num_h_samples,
-        q_hidden=q_hidden,
-        q_prompt=q_prompt,
+        forward_evaluate=fwd_model,
+        posterior_sampler=posterior_sampler,
+        prompt_sampler_1=prompt_sampler,
+        prompt_sampler_2=prompt_sampler,
+        logprobs_score=logprobs_score,
         p_hidden=p_hidden,
         p_class=p_class,
         p_residual=p_residual,
@@ -462,7 +494,7 @@ def main(
         train_p2=train_p2,
         logp_penalty=logp_penalty,
         p1_max_tokens=p1_max_tokens,
-        p2_max_tokens=20,
+        p2_max_tokens=p2_max_tokens,
         posterior_temp=posterior_temp,
         strip_prefix_for_hidden=dataset.prefix if strip_prefix_for_hidden else None,
         output_scoring_function=output_scoring_function,
@@ -536,10 +568,11 @@ def main(
         elbo, p1, p2, loss, elbo1, elbo2 = model.forward(
             np.array(x), np.array(y), infos=infos, temperature=fwd_temp
         )
-
         # Update prompts
         model.encoder_l1.weight = p1
         model.encoder_l2.weight = p2
+        log_message("Current L1 weights:", model.encoder_l1.weight)
+        log_message("Current L2 weights:", model.encoder_l2.weight)
         log_message("Patience: {}".format(patience))
 
         if iteration == 0:
