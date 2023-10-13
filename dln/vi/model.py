@@ -713,7 +713,7 @@ class VILModel:
                 x_stripped = self.strip_options(x)
             else:
                 x_stripped = x
-            
+
             if self.strip_prefix_for_hidden:
                 x_stripped = self.strip_prefix(x_stripped)
 

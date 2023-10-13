@@ -286,8 +286,7 @@ class VLLM(LLM):
     async def _aget_vllm_response(self, input, **kwargs):
         response = await openai.Completion.acreate(
             model=self.engine,
-            # prompt=input,
-            prompt = f"<s>[INST] {input} [/INST]",
+            prompt=input,
             logprobs=kwargs.get("top_logprobs") or 1,
             **kwargs,
         )
