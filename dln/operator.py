@@ -109,7 +109,7 @@ class GPT(LLM):
 
     AVAILABLE_MODELS = CHAT_COMPLETION_MODELS + COMPLETION_MODELS
 
-    def __init__(self, model_name="text-davinci-003", **generation_options):
+    def __init__(self, model_name: str = "text-davinci-003", **generation_options):
         if model_name not in self.AVAILABLE_MODELS:
             raise ValueError(
                 f"GPT model_name should be one of: {','.join(self.AVAILABLE_MODELS)}"
@@ -278,7 +278,7 @@ class GPT(LLM):
 
 class VLLM(LLM):
 
-    def __init__(self, model_name="text-davinci-003", **generation_options):
+    def __init__(self, model_name: str, **generation_options):
         super().__init__(model_name, **generation_options)
         self.encoder = instantiate_tokenizer(model_name)
 
@@ -332,7 +332,7 @@ class VLLM(LLM):
         return True
 
 
-def instantiate_model(model_name, **generation_options) -> LLM:
+def instantiate_model(model_name: str, **generation_options) -> LLM:
     if model_name in GPT.AVAILABLE_MODELS:
         return GPT(model_name, **generation_options)
     return VLLM(model_name, **generation_options)
