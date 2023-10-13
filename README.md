@@ -40,13 +40,15 @@ The OPENAI_API_TYPE must be set to 'azure' and the others correspond to the prop
 
 ### Setup self-hosted models (vLLM)
 
-Export huggingface id or path to the tokenizer and openai env vars. Unset `OPENAI_API_TYPE` and `OPENAI_API_VERSION`.
+Export huggingface id or path to the tokenizer, for example `meta-llama/Llama-2-70b-chat-hf` from huggingface or `/path/to/Llama-2-70b-chat-hf` from your local machine.
+Then, export the openai env vars `OPENAI_API_BASE` and `OPENAI_API_KEY`. Remember to unset `OPENAI_API_TYPE` and `OPENAI_API_VERSION` if you have set them before.
 
     export TOKENIZER_PATH=<PATH_TO_TOKENIZER>
     export OPENAI_API_KEY=EMPTY
     export OPENAI_API_BASE=http://127.0.0.1:8000/v1
     unset OPENAI_API_TYPE
     unset OPENAI_API_VERSION
+
 
 ## Running experiments
 
