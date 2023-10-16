@@ -12,7 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from dln.dataset import init_dataset
 from dln.loss import ZeroOneLoss
-from dln.operator import instantiate_model, instantiate_tokenizer
+from dln.operator import instantiate_model
 from dln.postprocessing import postprocess_prediction
 from dln.score import LogProbsScore
 from dln.vi.model import VILModel, log_message
@@ -341,7 +341,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option(
     "--result_data_path",
     type=str,
-    default="../demo/result_data.json",
+    default=None,
     help="The path of the file where the result logs json are stored",
 )
 @click.option(
@@ -414,18 +414,18 @@ def main(
     enable_wandb,
 ):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S.%f")
-    out_dir = f"{out_dir}/{timestamp}"
+    out_dir = os.path.join(out_dir, timestamp)
     os.makedirs(out_dir, exist_ok=True)
-
+    output_log_dir = os.path.join(out_dir, "output.log")
     logging.basicConfig(
-        filename=f"{out_dir}/output.log",
+        filename=output_log_dir,
         level=logging.INFO,
         format="%(asctime)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
     log_message(json.dumps(locals()))
-    log_message("Logging to... {}".format(out_dir + "/output.log"))
+    log_message(f"Logging to... {output_log_dir}")
 
     wandb_enabled = False
     if enable_wandb:
@@ -436,9 +436,11 @@ def main(
         else:
             log_message(colored("Wandb is not installed. Please install it to enable wandb logging.", "red"))
 
-    writer = SummaryWriter(f"{out_dir}")
+    writer = SummaryWriter(out_dir)
 
     dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir, n_shots, num_train_examples)
+    if result_data_path is None:
+        result_data_path = os.path.join(out_dir, "result_data.log")
     result_writer = ResultLogWriter(dataset, path=result_data_path, name=result_exp_name)
 
     init_p1, init_p2 = init_prompts(dataset, init_p1, init_p2)
