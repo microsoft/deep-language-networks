@@ -298,11 +298,6 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     help="Overrides model_type for backward. If not specified, use the same as model_type.",
 )
 @click.option(
-    "--bwd_model_type",
-    type=str,
-    default=None,
-)
-@click.option(
     "--fwd_max_tokens",
     type=int,
     default=256,
@@ -313,6 +308,42 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     type=int,
     default=512,
     help="Backward max tokens.",
+)
+@click.option(
+    "--prompt_sampler_model_type",
+    type=str,
+    default="",
+    help="Prompt sampler model type. If not specified, use the same as bwd_model_type.",
+)
+@click.option(
+    "--prompt_sampler_temp",
+    type=float,
+    default=None,
+    help="Prompt sampler temperature. If not specified, use the same as bwd_temp.",
+)
+@click.option(
+    "--prompt_sampler_max_tokens",
+    type=int,
+    default=None,
+    help="Prompt sampler max tokens. If not specified, use the same as bwd_max_tokens.",
+)
+@click.option(
+    "--posterior_sampler_model_type",
+    type=str,
+    default="",
+    help="Posterior sampler model type. If not specified, use the same as bwd_model_type.",
+)
+@click.option(
+    "--posterior_sampler_temp",
+    type=float,
+    default=None,
+    help="Posterior sampler temperature. If not specified, use the same as bwd_temp.",
+)
+@click.option(
+    "--posterior_sampler_max_tokens",
+    type=int,
+    default=None,
+    help="Posterior sampler max tokens. If not specified, use the same as bwd_max_tokens.",
 )
 @click.option(
     "--p1_max_tokens",
@@ -405,6 +436,12 @@ def main(
     bwd_model_type,
     fwd_max_tokens,
     bwd_max_tokens,
+    prompt_sampler_model_type,
+    prompt_sampler_temp,
+    prompt_sampler_max_tokens,
+    posterior_sampler_model_type,
+    posterior_sampler_temp,
+    posterior_sampler_max_tokens,
     p1_max_tokens,
     p2_max_tokens,
     num_p1_steps,
@@ -450,7 +487,7 @@ def main(
     log_message("Init P2: ", init_p2)
 
     fwd_model_type = fwd_model_type or model_type
-    bwd_model_type = bwd_model_type or model_type
+
     fwd_model = instantiate_model(
         model_type,
         temperature=0.0,
@@ -458,16 +495,25 @@ def main(
         stop=None,
     )
 
-    bwd_model = instantiate_model(
-        bwd_model_type,
-        temperature=bwd_temp,
-        max_tokens=bwd_max_tokens,
+    bwd_model_type = bwd_model_type or model_type
+
+    prompt_sampler_model = instantiate_model(
+        prompt_sampler_model_type or bwd_model_type,
+        temperature=prompt_sampler_temp or bwd_temp,
+        max_tokens=prompt_sampler_max_tokens or bwd_max_tokens,
+        stop=None,
+    )
+
+    posterior_sampler_model = instantiate_model(
+        posterior_sampler_model_type or bwd_model_type,
+        temperature=posterior_sampler_temp or bwd_temp,
+        max_tokens=posterior_sampler_max_tokens or bwd_max_tokens,
         stop=None,
     )
 
     loss_fn = ZeroOneLoss(postproc=postprocess_prediction)
-    prompt_sampler = PromptSampler(bwd_model, q_prompt)
-    posterior_sampler = PosteriorSampler(bwd_model, q_hidden)
+    prompt_sampler = PromptSampler(prompt_sampler_model, q_prompt)
+    posterior_sampler = PosteriorSampler(posterior_sampler_model, q_hidden)
     logprobs_score = LogProbsScore(fwd_model)
     model = VILModel(
         loss_fn,
