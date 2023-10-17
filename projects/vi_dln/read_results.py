@@ -4,6 +4,8 @@ import re
 import json
 import numpy as np
 from termcolor import colored
+import scipy.stats as st
+import pandas
 
 
 def escape_ansi(line):
@@ -15,8 +17,9 @@ root = sys.argv[1]
 results = {}
 
 for method in glob.glob(root + "/**/output.log", recursive=True):
-    # time should be -2, method -3
-    name = "/".join(method.split("/")[-3:-2])
+    # time should be -2, method -3, dataset -4
+    # from ipdb import set_trace; set_trace()
+    name = "/".join(method.split("/")[-4:-2])
     if name not in results:
         results[name] = {"dev": [], "test": [], "cost": [], "args": None}
 
@@ -47,21 +50,76 @@ for method in glob.glob(root + "/**/output.log", recursive=True):
     if token_cost:
         results[name]["cost"].append(token_cost[0])
 
+def mean_confidence_interval(data, confidence=0.95):
+    a = 1.0 * np.array(data)
+    n = len(a)
+    m, se = np.mean(a), st.sem(a)
+    h = se * st.t.ppf((1 + confidence) / 2., n-1)
+    return m, h
+
 data = []
 for key, val in results.items():
-    res = {"name": key}
-    for s in ["dev", "test", "cost"]:
-        if val[s]:
-            res[s] = "{:.3f}".format(np.mean(val[s])) + " +/- " + "{:.3f}".format(np.std(val[s]))
-            res["n_seeds"] = len(val[s])
+    res = {
+        "name": key.replace("logical_deduction_seven_objects", "logic7"),
+        #"dev": f"{np.mean(val['dev']):.3f}",
+        "cost": f"{np.mean(val['cost']):.1f}",
+        "test": f"{np.mean(val['test'])*100:2.1f}",
+        "std":  f"{np.std(val['test'])*100:2.1f}",
+        "95%-ci": f"{mean_confidence_interval(val['test'])[1]*100:2.1f}",
+        "n_seeds": len(val['test']),
+    }
+
+    # for s in ["dev", "test", "cost"]:
+    #     if val[s]:
+    #         res[s] = f"{np.mean(val[s]):.3f} +/- {np.std(val[s]):.3f} [{mean_confidence_interval(val[s])[1]:.3f}]"
+    #         #res[s] = f"{np.mean(val[s]):.3f} {{\\tiny$\pm${mean_confidence_interval(val[s])[1]:.3f}}}"
+    #         res["n_seeds"] = len(val[s])
     data.append(res)
 
 
-import pandas
+pandas.set_option('display.max_colwidth', max(len(k) + 90 for k in results))
 
-pandas.set_option('display.max_colwidth', max(len(k) + 10 for k in results))
+data = pandas.DataFrame(data)
 
 try:
-    print(pandas.DataFrame(data).sort_values("dev"))
+    print(data.sort_values("dev"))
 except:
-    print(pandas.DataFrame(data))
+    print(data)
+
+
+# Print average cost across all datasets
+#print("Average cost:")
+#print(np.mean([float(d["cost"]) for d in data.to_dict("records") if "cost" in d]))
+
+# Export latex
+datasets = [
+    "hyperbaton",
+    "navigate",
+    "date_understanding",
+    "logical_deduction_seven_objects",
+    "mpqa",
+    "trec",
+    "subj",
+    "disaster",
+    "airline",
+]
+
+
+latex = ""
+for nb_shots in ["0shot", "5shot", "16shot"]:
+    latex += f"{nb_shots} & "
+    for dataset in datasets:
+        for key, val in results.items():
+            if dataset not in key:
+                continue
+
+            if nb_shots not in key:
+                continue
+
+            print(f"{key}: {np.mean(val['test']):.3f} {{\\tiny$\pm${mean_confidence_interval(val['test'])[1]:.3f}}}")
+            latex += f"{np.mean(val['test'])*100:2.1f}{{\\tiny$\pm${mean_confidence_interval(val['test'])[1]*100:2.1f}}} & "
+
+
+    latex = latex[:-2] + "\\\\\n"
+
+print(latex)
