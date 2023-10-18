@@ -10,6 +10,33 @@ from dln.score import OutputClasses
 from dln.vi.utils import log_message
 
 
+def option_augment_date(data_point, rng):
+    import re
+
+    pattern = r'\([A-Z]\)\s(.*)'
+    letters = ['(A)', '(B)', '(C)', '(D)', '(E)', '(F)']
+
+    input = data_point['input']
+    target = data_point['target']
+    input, _, options = input.partition('?')
+    options = options.strip().split("\n")
+    options_text = [re.findall(pattern, option)[-1] for option in options]
+    assert len(options) == len(letters) or len(options) == len(letters) - 1, data_point
+
+    random_indices = rng.permutation(range(len(options)))
+    target_index = letters.index(target)
+
+    new_target = letters[list(random_indices).index(target_index)]
+    new_options = [options_text[i] for i in random_indices]
+    new_options = [f'{letter} {text}' for letter, text in zip(letters, new_options)]
+
+    new_data_point = {}
+    new_data_point['input'] = f'{input}?\n' + '\n'.join(new_options)
+    new_data_point['target'] = new_target
+
+    return new_data_point
+
+
 class Dataset:
     def __init__(
         self,
@@ -140,6 +167,7 @@ class Dataset:
                 dev_size = min(dev_size, 1000)
                 assert train_size > 0, train_size
                 assert dev_size > 0, dev_size
+
                 data_shuffling_rng.shuffle(data)
                 for i in range(len(data)):
                     if i < train_size:
@@ -148,7 +176,12 @@ class Dataset:
                         split = "dev"
                     else:
                         break
+
+                    if self.dataset_name == "date_understanding":
+                        data[i] = option_augment_date(data[i], data_shuffling_rng)
+
                     input, target = data[i]["input"], data[i]["target"]
+                    
                     if self.dataset_name == "date_understanding" and split == "train":
                         # for date understanding, we add training data to dev set, as the dev set is too small
                         self.dataset["dev"]["sentence"].append(input)

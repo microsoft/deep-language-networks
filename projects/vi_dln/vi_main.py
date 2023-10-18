@@ -50,8 +50,13 @@ def init_prompts(dataset, init_p1, init_p2):
                     break
             if not found:
                 raise ValueError("Best weights were not found in the log file!")
+
     if init_p2 is None:
         init_p2 = dataset.instruction
+
+    if init_p1 is None:
+        init_p1 = ""
+
     return init_p1, init_p2
 
 
@@ -163,7 +168,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option("--num_p_samples", type=int, default=5)
 @click.option("--num_h_samples", type=int, default=3)
 @click.option("--tolerance", type=int, default=-1)
-@click.option("--compute_cost", is_flag=True)
+@click.option("--cost_only", is_flag=True)
 @click.option(
     "--strip_options_for_hidden",
     type=bool,
@@ -175,12 +180,6 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     type=bool,
     default=False,
     help="Strip the prefix from the examples if it exists in some tasks, e.g. BBH.",
-)
-@click.option(
-    "--strip_answer_for_hidden",
-    type=bool,
-    default=False,
-    help="Strip the 'Answer:' from the hidden state, if the model generates it.",
 )
 @click.option(
     "--trust_factor",
@@ -212,12 +211,12 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option(
     "--init_p1",
     type=str,
-    default="",
+    default=None,
 )
 @click.option(
     "--init_p2",
     type=str,
-    default="",
+    default=None,
 )
 @click.option(
     "--held_out_prompt_ranking",
@@ -362,7 +361,7 @@ def main(
     data_dir,
     num_train_examples,
     val_freq,
-    compute_cost,
+    cost_only,
     do_first_eval,
     do_zero_shot,
     n_shots,
@@ -383,7 +382,6 @@ def main(
     num_h_samples,
     strip_options_for_hidden,
     strip_prefix_for_hidden,
-    strip_answer_for_hidden,
     trust_factor,
     use_memory,
     init_p1,
@@ -487,7 +485,6 @@ def main(
         use_h_argmax=use_h_argmax,
         output_classes=output_classes,
         strip_options_for_hidden=strip_options_for_hidden,
-        strip_answer_for_hidden=strip_answer_for_hidden,
         trust_factor=trust_factor,
         forward_use_classes=forward_use_classes,
         held_out_prompt_ranking=held_out_prompt_ranking,
@@ -555,7 +552,7 @@ def main(
         )
 
         # zero shot or allow last iteration for validation
-        if do_zero_shot or iteration == iters or compute_cost or (n_shots >= 0 and not train_p1 and not train_p2):
+        if do_zero_shot or iteration == iters or cost_only or (n_shots >= 0 and not train_p1 and not train_p2):
             break
 
         x, y, infos = dataset.get_batch(
@@ -570,6 +567,7 @@ def main(
         elbo, p1, p2, loss, elbo1, elbo2 = model.forward(
             np.array(x), np.array(y), infos=infos, temperature=fwd_temp
         )
+
         # Update prompts
         model.encoder_l1.weight = p1
         model.encoder_l2.weight = p2
@@ -616,8 +614,7 @@ def main(
     log_message("Best L1 weights:", model.encoder_l1.weight)
     log_message("Best L2 weights:", model.encoder_l2.weight)
 
-    test_acc = test(dataset, model, loss_fn, iteration, writer, cost_only=compute_cost)
-
+    test_acc = test(dataset, model, loss_fn, iteration, writer, cost_only=cost_only)
 
     if wandb_enabled:
         wandb.log({"test/acc": test_acc, "epoch": iteration})
