@@ -12,7 +12,7 @@ p_class_tpl="classify_forward:3.0"
 q_prompt_tpl="q_action_prompt:v3.5"
 p_hidden_tpl="suffix_forward_tbs"
 q_hidden_tpl='"suffix_forward_tbs_y|suffix_forward_tbs"'
-model_type="text-davinci-003"
+fwd_model_type="text-davinci-003"
 bwd_model_type="text-davinci-003"
 one_layer=False
 
@@ -34,7 +34,7 @@ for batch_size in ${batch_sizes[@]}; do
 for strip in ${strip_options[@]}; do
 for decay in ${logp_decays[@]}; do
 
-dir=log/one_layer${one_layer}_e2e/${dataset}/mt${model_type}_bmt${bwd_model_type}_stripopt${strip}_decay${decay}_logp${logp_penalty}_bwdt${bwd_temp}_bsz${batch_size}_np${num_p_samples}_nh${num_h_samples}_pt${posterior_temp}
+dir=log/one_layer${one_layer}_e2e/${dataset}/fmt${model_type}_bmt${bwd_model_type}_stripopt${strip}_decay${decay}_logp${logp_penalty}_bwdt${bwd_temp}_bsz${batch_size}_np${num_p_samples}_nh${num_h_samples}_pt${posterior_temp}
 /bin/rm -rf ${dir}
 
 for seed in 13 42 25; do
