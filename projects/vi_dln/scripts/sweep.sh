@@ -62,7 +62,7 @@ for seed in 13 42 25; do
         --tolerance ${tolerance} \
         --held_out_prompt_ranking ${held_out_prompt_ranking} \
         --trust_factor ${trust_factor} \
-        --model_type ${model_type} \
+        --fwd_model_type ${fwd_model_type} \
         --bwd_model_type ${bwd_model_type} \
         --forward_use_classes True \
         --logp_penalty ${logp_penalty} \
