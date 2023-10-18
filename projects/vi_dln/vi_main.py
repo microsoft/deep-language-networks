@@ -161,7 +161,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option("--p_residual", type=str, default="classify_residual")
 @click.option("--balance_batch", is_flag=True, help="Balance batch.")
 @click.option("--batch_size", type=int, default=20)
-@click.option("--one_layer", is_flag=True)
+@click.option("--one_layer", type=bool, default=False)
 @click.option("--dataset", type=str, default="subj")
 @click.option("--use_h_argmax", type=bool, default=False)
 @click.option("--iters", type=int, default=20)
