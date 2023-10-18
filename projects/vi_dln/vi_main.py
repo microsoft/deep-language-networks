@@ -297,11 +297,6 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     help="Overrides model_type for backward. If not specified, use the same as model_type.",
 )
 @click.option(
-    "--bwd_model_type",
-    type=str,
-    default=None,
-)
-@click.option(
     "--fwd_max_tokens",
     type=int,
     default=256,

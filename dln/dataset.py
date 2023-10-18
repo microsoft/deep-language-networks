@@ -10,7 +10,7 @@ from dln.score import OutputClasses
 from dln.vi.utils import log_message
 
 
-def option_augment_date(data_point, rng):
+def option_augment(data_point, rng):
     import re
 
     pattern = r'\([A-Z]\)\s(.*)'
@@ -18,7 +18,8 @@ def option_augment_date(data_point, rng):
 
     input = data_point['input']
     target = data_point['target']
-    input, _, options = input.partition('?')
+    input, _, options = input.partition('\nOptions:\n')
+
     options = options.strip().split("\n")
     options_text = [re.findall(pattern, option)[-1] for option in options]
     assert len(options) == len(letters) or len(options) == len(letters) - 1, data_point
@@ -31,7 +32,7 @@ def option_augment_date(data_point, rng):
     new_options = [f'{letter} {text}' for letter, text in zip(letters, new_options)]
 
     new_data_point = {}
-    new_data_point['input'] = f'{input}?\n' + '\n'.join(new_options)
+    new_data_point['input'] = f'{input}\nOptions:\n' + '\n'.join(new_options)
     new_data_point['target'] = new_target
 
     return new_data_point
@@ -177,11 +178,10 @@ class Dataset:
                     else:
                         break
 
-                    if self.dataset_name == "date_understanding":
-                        data[i] = option_augment_date(data[i], data_shuffling_rng)
-
+                    # option shuffling in all cases!
+                    data[i] = option_augment(data[i], data_shuffling_rng)
                     input, target = data[i]["input"], data[i]["target"]
-                    
+
                     if self.dataset_name == "date_understanding" and split == "train":
                         # for date understanding, we add training data to dev set, as the dev set is too small
                         self.dataset["dev"]["sentence"].append(input)
