@@ -125,7 +125,7 @@ def test_unknow_connections():
     assert connections.get("llama2", default="default") == "default"
 
 
-def test_load_connections_yaml(tmp_path):
+def test_load_connections_from_yaml(tmp_path):
     connections_yaml_content = """
     - name: gpt-3
       model: text-davinci-003
@@ -144,7 +144,7 @@ def test_load_connections_yaml(tmp_path):
     connections_yaml_path.write_text(connections_yaml_content)
 
     with patch("dln.operator.instantiate_tokenizer"):
-        connections = Connections(config_yaml=connections_yaml_path)
+        connections = Connections.from_yaml(connections_yaml_path)
 
     assert len(connections) == 2
 
