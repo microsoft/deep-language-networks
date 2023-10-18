@@ -12,7 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from dln.dataset import init_dataset
 from dln.loss import ZeroOneLoss
-from dln.operator import instantiate_model
+from dln.operator import Connections, instantiate_model
 from dln.postprocessing import postprocess_prediction
 from dln.score import LogProbsScore
 from dln.vi.model import VILModel, log_message
@@ -387,6 +387,12 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     is_flag=True,
     help="Enable wandb logging. Requires wandb to be installed.",
 )
+@click.option(
+    "--connections_config",
+    type=str,
+    default=None,
+    help="Path to yaml file where you specify your connection.",
+)
 def main(
     seed,
     out_dir,
@@ -449,6 +455,7 @@ def main(
     result_data_path,
     result_exp_name,
     enable_wandb,
+    connections_config,
 ):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S.%f")
     out_dir = os.path.join(out_dir, timestamp)
@@ -486,30 +493,36 @@ def main(
     log_message("Init P1: ", init_p1)
     log_message("Init P2: ", init_p2)
 
+    connections = Connections.from_yaml(connections_config)
     fwd_model_type = fwd_model_type or model_type
-
-    fwd_model = instantiate_model(
-        model_type,
-        temperature=0.0,
-        max_tokens=fwd_max_tokens,
-        stop=None,
-    )
+    # fwd_model = instantiate_model(
+    #     fwd_model_type,
+    #     temperature=0.0,
+    #     max_tokens=fwd_max_tokens,
+    #     stop=None,
+    # )
+    fwd_model = connections[fwd_model_type]
 
     bwd_model_type = bwd_model_type or model_type
+    prompt_sampler_model_type = prompt_sampler_model_type or bwd_model_type
+    posterior_sampler_model_type = posterior_sampler_model_type or bwd_model_type
+    
+    prompt_sampler_model = connections[prompt_sampler_model_type]
+    posterior_sampler_model = connections[posterior_sampler_model_type]
 
-    prompt_sampler_model = instantiate_model(
-        prompt_sampler_model_type or bwd_model_type,
-        temperature=prompt_sampler_temp or bwd_temp,
-        max_tokens=prompt_sampler_max_tokens or bwd_max_tokens,
-        stop=None,
-    )
+    # prompt_sampler_model = instantiate_model(
+    #     prompt_sampler_model_type,
+    #     temperature=prompt_sampler_temp or bwd_temp,
+    #     max_tokens=prompt_sampler_max_tokens or bwd_max_tokens,
+    #     stop=None,
+    # )
 
-    posterior_sampler_model = instantiate_model(
-        posterior_sampler_model_type or bwd_model_type,
-        temperature=posterior_sampler_temp or bwd_temp,
-        max_tokens=posterior_sampler_max_tokens or bwd_max_tokens,
-        stop=None,
-    )
+    # posterior_sampler_model = instantiate_model(
+    #     posterior_sampler_model_type,
+    #     temperature=posterior_sampler_temp or bwd_temp,
+    #     max_tokens=posterior_sampler_max_tokens or bwd_max_tokens,
+    #     stop=None,
+    # )
 
     loss_fn = ZeroOneLoss(postproc=postprocess_prediction)
     prompt_sampler = PromptSampler(prompt_sampler_model, q_prompt)

@@ -1,9 +1,9 @@
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import openai
 import pytest
 
-from dln.operator import GPT
+from dln.operator import GPT, VLLM, Connections
 
 
 @pytest.fixture
@@ -65,3 +65,93 @@ def test_generate(mock_openai_api, async_generation):
         async_generation=async_generation,
     )
     assert response == ["Montreal", "Montreal"]
+
+
+def test_load_connections():
+    gpt_api_config = {
+        "api_key": "gpt3-key",
+        "api_base": "https://gpt-3-api.com",
+        "api_type": "azure",
+        "api_version": "2023-03-15-preview",
+    }
+    llama_api_config = {
+        "api_key": "llama-key",
+        "api_base": "https://llama-api.com",
+        "api_type": None,
+        "api_version": None,
+    }
+    config = [
+        {
+            "name": "gpt-3",
+            "model": "text-davinci-003",
+            **gpt_api_config,
+        },
+        {
+            "name": "llama2",
+            # model is not required, use name as default
+            **llama_api_config,
+        },
+    ]
+
+    with patch("dln.operator.instantiate_tokenizer"):
+        connections = Connections(config=config)
+
+    assert len(connections) == 2
+    gpt = connections.get("gpt-3")
+    llama = connections.get("llama2")
+    assert isinstance(gpt, GPT)
+    assert isinstance(llama, VLLM)
+    assert gpt.engine == "text-davinci-003"
+    assert llama.engine == "llama2"
+    assert gpt.generation_options == gpt_api_config
+    assert llama.generation_options == llama_api_config
+
+
+def test_unknow_connections():
+    config = [
+        {
+            "name": "gpt-3",
+            "model": "text-davinci-003",
+            "api_key": "gpt3-key",
+            "api_base": "https://gpt-3-api.com",
+            "api_type": "azure",
+            "api_version": "2023-03-15-preview",
+        }
+    ]
+    connections = Connections(config=config)
+    with pytest.raises(KeyError):
+        connections["llama2"]
+    assert connections.get("llama2") is None
+    assert connections.get("llama2", default="default") == "default"
+
+
+def test_load_connections_yaml(tmp_path):
+    connections_yaml_content = """
+    - name: gpt-3
+      model: text-davinci-003
+      api_key: gpt3-key
+      api_base: https://gpt-3-api.com
+      api_type: azure
+      api_version: '2023-03-15-preview'
+    - name: llama2
+      api_key: llama-key
+      api_base: https://llama-api.com
+      api_type: null
+      api_version: null
+    """
+
+    connections_yaml_path = tmp_path / "connections.yaml"
+    connections_yaml_path.write_text(connections_yaml_content)
+
+    with patch("dln.operator.instantiate_tokenizer"):
+        connections = Connections(config_yaml=connections_yaml_path)
+
+    assert len(connections) == 2
+
+    gpt = connections.get("gpt-3")
+    llama = connections.get("llama2")
+
+    assert isinstance(gpt, GPT)
+    assert isinstance(llama, VLLM)
+    assert gpt.generation_options["api_key"] == "gpt3-key"
+    assert llama.generation_options["api_key"] == "llama-key"

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Union
+from typing import Dict, List, Union
 import asyncio
 import numpy as np
 import openai
@@ -11,6 +11,7 @@ from tenacity import (
     wait_exponential,
     retry_if_exception_type,
 )
+import yaml
 
 
 openai.util.logger.setLevel(logging.WARNING)
@@ -65,8 +66,8 @@ def _parse_openai_response(
 class LLM(ABC):
 
     def __init__(self, model_name: str, **generation_options):
-        self.generation_options = generation_options
         self.engine = model_name
+        self.generation_options = generation_options
 
     def __call__(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
         return self.generate(inputs, **kwargs)
@@ -120,7 +121,7 @@ class GPT(LLM):
         if engine_for_encoder == "gpt-35-turbo":
             engine_for_encoder = "gpt-3.5-turbo"
         self.encoder = instantiate_tokenizer(engine_for_encoder)
-        openai.api_version = os.environ.get('OPENAI_API_VERSION')
+        openai.api_version = os.getenv('OPENAI_API_VERSION')
         self._has_logprobs = self.engine in self.LOGPROBS_MODELS
 
     def encode(self, string: str) -> List[int]:
@@ -243,7 +244,6 @@ class GPT(LLM):
             inputs = [inputs]
         generation_options = self.generation_options.copy()
         generation_options.update(**kwargs)
-
         if "return_logprobs" in generation_options and not self.has_logprobs:
             logging.warn(
                 f"return_logprobs is not supported for model {self.engine}"
@@ -284,7 +284,7 @@ class VLLM(LLM):
         super().__init__(model_name, **generation_options)
         self.encoder = instantiate_tokenizer(model_name)
 
-    @_retry_request(min_wait=1, max_wait=1, max_attempts=100)
+    @_retry_request(min_wait=1, max_wait=10, max_attempts=100)
     async def _aget_vllm_response(self, input, **kwargs):
         response = await openai.Completion.acreate(
             model=self.engine,
@@ -352,3 +352,41 @@ def instantiate_tokenizer(model_name: str):
             pretrained_path = model_name
         encoder = AutoTokenizer.from_pretrained(pretrained_path)
     return encoder
+
+
+class Connections:
+
+    def __init__(self, config: dict):
+        self.connections = self._create_connections(config)
+
+    def __len__(self):
+        return len(self.connections)
+
+    def __getitem__(self, key):
+        return self.connections[key]
+
+    def __contains__(self, key):
+        return key in self.connections
+
+    def get(self, key, default=None):
+        if key in self:
+            return self[key]
+        return default
+
+    @classmethod
+    def from_yaml(cls, path):
+        with open(path, "r") as f:
+            config = yaml.safe_load(f)
+        return cls(config)
+
+    @staticmethod
+    def _create_connections(configs: List[Dict]):
+        connections = {}
+        for config in configs:
+            name = config.pop("name")  # how you refer to the model
+            model = config.pop("model", name)  # the api model name
+            connections[name] = instantiate_model(
+                model,
+                **config,
+            )
+        return connections
