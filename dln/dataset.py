@@ -10,19 +10,21 @@ from dln.score import OutputClasses
 from dln.vi.utils import log_message
 
 
-def option_augment(data_point, rng):
+def option_shuffle(data_point, rng):
     import re
 
     pattern = r'\([A-Z]\)\s(.*)'
-    letters = ['(A)', '(B)', '(C)', '(D)', '(E)', '(F)']
+    letters = ['(A)', '(B)', '(C)', '(D)', '(E)', '(F)', '(G)']
 
     input = data_point['input']
     target = data_point['target']
-    input, _, options = input.partition('\nOptions:\n')
 
+    if "\nOptions:\n" not in input:
+        raise ValueError("Error detected in data point, Options not found.")
+
+    input, _, options = input.partition('\nOptions:\n')
     options = options.strip().split("\n")
     options_text = [re.findall(pattern, option)[-1] for option in options]
-    assert len(options) == len(letters) or len(options) == len(letters) - 1, data_point
 
     random_indices = rng.permutation(range(len(options)))
     target_index = letters.index(target)
@@ -179,7 +181,7 @@ class Dataset:
                         break
 
                     # option shuffling in all cases!
-                    data[i] = option_augment(data[i], data_shuffling_rng)
+                    data[i] = option_shuffle(data[i], data_shuffling_rng)
                     input, target = data[i]["input"], data[i]["target"]
 
                     if self.dataset_name == "date_understanding" and split == "train":
