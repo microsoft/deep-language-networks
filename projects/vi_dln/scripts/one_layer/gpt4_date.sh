@@ -12,7 +12,7 @@ num_h_samples=5
 q_prompt_tpl="q_action_prompt:v3.5"
 logp_penalty=2.
 posterior_temp=1.
-model_type="gpt-4"
+fwd_model_type="gpt-4"
 
 dir=log/one_layer_gpt_4_temp_0.7_new/${dataset}
 /bin/rm -rf ${dir}
@@ -34,5 +34,5 @@ for seed in 13 42 25; do
         --tolerance ${tolerance} \
         --held_out_prompt_ranking ${held_out_prompt_ranking} \
         --output_scoring_function accuracy \
-        --model_type ${model_type}
+        --fwd_model_type ${fwd_model_type}
 done

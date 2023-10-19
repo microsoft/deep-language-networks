@@ -11,7 +11,7 @@ tolerance=2
 num_h_samples=5
 logp_penalty=2.
 posterior_temp=1.
-model_type="gpt-4"
+fwd_model_type="gpt-4"
 
 # dataset
 for dataset in subj; do
@@ -42,7 +42,7 @@ if [ ! -f ${dir}/done.txt ]; then
             --tolerance ${tolerance} \
             --held_out_prompt_ranking ${held_out_prompt_ranking} \
             --output_scoring_function accuracy \
-            --model_type ${model_type}
+            --fwd_model_type ${fwd_model_type}
     # seed
     done
 
