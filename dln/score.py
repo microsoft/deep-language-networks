@@ -38,6 +38,8 @@ class LogProbs:
 
 
 class LogProbsScore:
+    cache = {}
+
     def __init__(self, forward_evaluate: LLM):
         self.forward_evaluate = forward_evaluate
 
@@ -66,30 +68,40 @@ class LogProbsScore:
             "raw_logprobs": False,
             "top_logprobs": 100,
         }
+        
+        output_logprobs = []
+        output_distribs = []
 
-        unique_contexts = list(set(contexts))
-        context_to_position = {context: i for i, context in enumerate(unique_contexts)}
-        to_eval = [f"{context}\n" for context in unique_contexts]
+        to_eval = []
+        for context in contexts:
+            if context not in self.cache:
+                context_ = f"{context}\n"
+                to_eval.append(context_)
 
         print("# Scoring requests = {}".format(len(contexts)))
-        print("# Scoring unique requests = {}".format(len(unique_contexts)))
-        eval_results = self.forward_evaluate(
+        print("# Scoring non cached requests = {}".format(len(to_eval)))
+
+        partial_results = self.forward_evaluate(
             to_eval,
             async_generation=True,
             **eval_kwargs,
         )
+        for context, result in zip(to_eval, partial_results):
+            assert context not in self.cache
+            self.cache[context.strip()] = result
+
+        eval_results = []
+        for context in contexts:
+            eval_results.append(self.cache[context])
 
         top_logprobs = []
-        for context in contexts:
-            position = context_to_position[context]
-            context_top_logprobs = eval_results[position][1][0]
+        for context, result in zip(contexts, eval_results):
+            context_top_logprobs = result[1][0]
             top_logprobs.append(dict(context_top_logprobs))
 
         output_logprobs = []
         output_distribs = []
         for context, target, context_top_logprobs in zip(contexts, targets, top_logprobs):
-            position = context_to_position[context]
-
             # make this fixed
             if context_top_logprobs:
                 min_prob = np.exp(np.min(list(context_top_logprobs.values())))
