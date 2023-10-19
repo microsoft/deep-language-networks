@@ -58,6 +58,7 @@ class PromptSampler:
             Info(input=input_i, output=y_hat_i, target=y_i, loss=loss)
             for input_i, y_i, y_hat_i, loss in zip(inputs, y, y_hat, losses)
         ]
+        log_message("Generating {} ~p proposals...".format(num_samples))
         while True:
             try:
                 tpls = []
@@ -83,11 +84,9 @@ class PromptSampler:
                     )
                     tpls.append(self.prompt_template.render(**template_infos))
 
-                log_message("Generating {} ~p proposals...".format(num_samples))
                 new_prompts = self.evaluate_func(
                     tpls, stop=self.prompt_template.stop_tokens, n=1
                 )
-                log_message("DONE...")
 
                 if type(prompt) == list:
                     prompts = np.array(prompt + list(new_prompts))
