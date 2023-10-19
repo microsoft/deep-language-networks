@@ -193,7 +193,7 @@ class VILModel:
 
         if self.output_scoring_function == "logprobs":
             # batch_size, num_p_samples
-            ll = self.encoder_l2.log_p(
+            ll_ = self.encoder_l2.log_p(
                 inputs=np.array([eval[0] for eval in evals]),
                 targets=np.array([eval[1] for eval in evals]),
                 prompts=np.array([eval[2] for eval in evals]),
@@ -202,11 +202,13 @@ class VILModel:
             ).logp_targets
 
             # batch_size, num_p_samples
-            ll = ll.reshape(batch_size, p_tilde_2.shape[0])
+            ll = ll_.reshape(batch_size, p_tilde_2.shape[0])
 
             p2_elbo = ll.mean(axis=0)
+            best_index = np.argmax(p2_elbo)
+
             self.result_entry.log_candidates(p_tilde_2, p2_elbo)
-            best_p2 = p_tilde_2[np.argmax(p2_elbo)]
+            best_p2 = p_tilde_2[best_index]
             best_p2_elbo = np.max(p2_elbo)
 
             log_message("--- P2 ---")
@@ -214,7 +216,7 @@ class VILModel:
                 log_message("#", i, "ELBO", p2_elbo_i, ",", p_tilde_2_i)
             log_message("----------")
 
-            log_message("Best P2 Index: ", np.argmax(p2_elbo))
+            log_message("Best P2 Index: ", best_index)
             log_message("Best P2: ", best_p2)
             log_message("Best P2 ELBO: ", best_p2_elbo)
 
