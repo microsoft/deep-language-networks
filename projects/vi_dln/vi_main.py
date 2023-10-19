@@ -283,22 +283,16 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     help="Sharpen (<1.0)/Flatten (>1.0) the posterior distribution over h.",
 )
 @click.option(
-    "--model_type",
-    type=str,
-    default="text-davinci-003",
-    help="Model type for forward and backward models if not specified separately.",
-)
-@click.option(
     "--fwd_model_type",
     type=str,
-    default="",
-    help="Overrides model_type for forward. If not specified, use the same as model_type.",
+    default="text-davinci-003",
+    help="Model type for forward.",
 )
 @click.option(
     "--bwd_model_type",
     type=str,
     default="",
-    help="Overrides model_type for backward. If not specified, use the same as model_type.",
+    help="Model type for backward. If not specified, use the same as fwd_model_type.",
 )
 @click.option(
     "--fwd_max_tokens",
@@ -397,7 +391,6 @@ def main(
     logp_penalty,
     decay_logp_penalty,
     posterior_temp,
-    model_type,
     fwd_model_type,
     bwd_model_type,
     fwd_max_tokens,
@@ -446,10 +439,9 @@ def main(
     log_message("Init P1: ", init_p1)
     log_message("Init P2: ", init_p2)
 
-    fwd_model_type = fwd_model_type or model_type
-    bwd_model_type = bwd_model_type or model_type
+    bwd_model_type = bwd_model_type or fwd_model_type  # Use the same model type if bwd is not specified.
     fwd_model = instantiate_model(
-        model_type,
+        fwd_model_type,
         temperature=0.0,
         max_tokens=fwd_max_tokens,
         stop=None,
@@ -508,7 +500,6 @@ def main(
     best_dev = 0.0
     best_ps = [model.encoder_l1.weight, model.encoder_l2.weight]
     val_scores = {}
-    batch = None
 
     patience = 0
     for iteration in range(iters + 1):
@@ -620,7 +611,7 @@ def main(
 
     log_message(colored("DEV ACC: {}".format(best_dev), "green"))
     log_message(colored("TEST ACC: {}".format(test_acc), "green"))
-    
+
     result_writer.save_to_json_file()
     writer.close()
 
