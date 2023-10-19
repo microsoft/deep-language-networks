@@ -138,6 +138,10 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
         pbar.set_postfix_str(f"{acc / tot:.1%}")
 
     test_acc = acc / tot
+    if iteration == 0:
+        log_message(colored("INIT TEST ACC: {}".format(test_acc), "red"))
+
+    log_message(colored("TEST ACC: {}".format(test_acc), "red"))
     writer.add_scalar("test/acc", (test_acc), iteration)
     # for sig-test purposes
     log_message("ALL ACCS:", all_accs)
@@ -504,14 +508,13 @@ def main(
     best_dev = 0.0
     best_ps = [model.encoder_l1.weight, model.encoder_l2.weight]
     val_scores = {}
+    batch = None
 
     patience = 0
     for iteration in range(iters + 1):
         log_message("STARTING EPOCH {} - {}".format(iteration, out_dir))
 
-        if iteration % val_freq == 0 and (
-            iteration > 0 or do_first_eval
-        ):
+        if (iteration == 0 and do_first_eval) or (iteration > 0 and iteration % val_freq == 0):
             dev_acc = validate(
                 dataset, model, loss_fn, iteration, val_examples, val_scores, writer, result_writer
             )
@@ -519,6 +522,7 @@ def main(
                 wandb.log({"dev/acc": dev_acc, "epoch": iteration})
 
             model.result_entry.log_metric('dev_acc', dev_acc)
+
             if dev_acc > best_dev:
                 best_dev = dev_acc
                 best_ps = (model.encoder_l1.weight, model.encoder_l2.weight)
