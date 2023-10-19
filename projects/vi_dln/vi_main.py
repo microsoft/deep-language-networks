@@ -209,7 +209,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option(
     "--forward_use_classes",
     type=bool,
-    default=False,
+    default=True,
     help="Uses classes in the forward pass, constrains the output space.",
 )
 @click.option(
