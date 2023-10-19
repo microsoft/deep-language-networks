@@ -337,20 +337,22 @@ class Dataset:
         if random_sample is True:
             if balance is True:
                 indices = []
-                pick_order = self.rng.choice(
-                    list(self.dataset["train_per_class"].keys()),
-                    len(self.dataset["train_per_class"].keys()),
-                    replace=False,
+                example_pools = {}
+                for key in self.dataset[f"{split}_per_class"].keys():
+                    example_pools[key] = self.rng.permutation(
+                        self.dataset[f"{split}_per_class"][key]
                 )
-
                 i = 0
+                pick_order = self.rng.permutation(list(self.dataset[f"{split}_per_class"].keys()))
                 while len(indices) < batch_size:
-                    indices += self.rng.choice(
-                        self.dataset["train_per_class"][
-                            pick_order[i % len(pick_order)]
-                        ],
-                        1,
-                    ).tolist()
+                    current_key = pick_order[i % len(pick_order)]
+
+                    if sum(map(len, example_pools.values())) == 0:
+                        raise ValueError(f"Not enough examples to sample batch of size {batch_size}.")
+
+                    if len(example_pools[current_key]) > 0:
+                        indices.append(example_pools[current_key][0])
+                        example_pools[current_key] = example_pools[current_key][1:]
                     i += 1
             else:
                 indices = self.rng.choice(data_size, batch_size, replace=False)
@@ -435,6 +437,7 @@ def init_dataset(dataset_id, seed, data_dir, n_few_shots=-1, num_train_examples=
     val_examples = {"hyperbaton": 300}.get(dataset_id, -1)
     protos = {
         "hyperbaton": ["a|A", "b|B"],
+        "airline": ["positive|Positive", "negative|Negative", "neutral|Neutral"],
         "navigate": ["yes|Yes", "no|No"],
         "date_understanding": ["a|A", "b|B", "c|C", "d|D", "e|E", "f|F"],
         "logical_deduction_seven_objects": [
