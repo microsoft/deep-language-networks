@@ -248,6 +248,7 @@ def test_inference_vi(
 )
 def test_forward_two_layers(
     loss_fn,
+    mock_llm,
     backward_info,
     log_p_fn,
     mock_prompt_sampler,
@@ -268,6 +269,7 @@ def test_forward_two_layers(
     output_classes = OutputClasses(protos=["A", "B"])
     model = VILModel(
         loss_fn,
+        forward_evaluate=mock_llm,
         prompt_sampler_1=mock_prompt_sampler,
         prompt_sampler_2=mock_prompt_sampler,
         posterior_sampler=mock_posterior_sampler,
