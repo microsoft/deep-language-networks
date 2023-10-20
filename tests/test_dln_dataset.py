@@ -69,7 +69,7 @@ def test_init_dataset_airline():
         == "Read the following sentence, then choose whether it is positive, negative, or neutral."
     )
     assert dataset.dataset_name == "airline"
-    assert output_classes.protos == ["positive", "negative", "neutral"]
+    assert output_classes.protos == ["positive|Positive", "negative|Negative", "neutral|Neutral"]
     assert val_examples == -1
 
 
