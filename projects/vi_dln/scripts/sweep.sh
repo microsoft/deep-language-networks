@@ -41,7 +41,7 @@ for seed in 13 42 25; do
     echo "python vi_main.py \
         --val_freq 2 \
         --do_first_eval \
-        --one_layer \
+        --one_layer ${one_layer} \
         --train_p1 True \
         --train_p2 True \
         --balance_batch \
