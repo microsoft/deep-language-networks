@@ -3,20 +3,29 @@ from typing import List
 import numpy as np
 from dln.loss import ZeroOneLoss
 
-import dln.operator
-from dln.operator import forward_evaluate
+from dln.loss import ZeroOneLoss
+from dln.operator import LLM
 from dln.score import LogProbs, LogProbsScore, OutputClasses, ScoreRequest
 from dln.template import load_template
 from dln.vi.utils import log_message
 
 
 class PriorLayer:
-    def __init__(self, forward_template, init=""):
+
+    def __init__(
+        self,
+        logprobs_score: LogProbsScore,
+        forward_evaluate: LLM,
+        forward_template: str,
+        init: str = "",
+    ):
         self.forward_template = load_template(
             forward_template
         )
         log_message("Forward template:\n", f"{repr(self.forward_template.template)}")
         self.weight = init
+        self.logprobs_score = logprobs_score
+        self.forward_evaluate = forward_evaluate
 
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
@@ -43,17 +52,16 @@ class PriorLayer:
                 self.forward_template.render(input=input, prompt=self.weight)
                 for input in inputs
             ]
-
             log_message(tpl_inputs[0])
-
-            outputs = forward_evaluate(
+            outputs = self.forward_evaluate(
                 tpl_inputs,
                 stop=self.forward_template.stop_tokens,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                async_generation=True,
             )
         else:
-            if dln.operator.forward_interpreter.has_log_probs:
+            if self.forward_evaluate.has_logprobs:
                 # compute log p of each output class, second return value is the p(class)
                 targets = [output_classes.prototype(0) for _ in inputs]
                 lp = self.log_p(
@@ -72,12 +80,12 @@ class PriorLayer:
                 max_len = 0
 
                 for i in range(len(output_classes)):
-                    token_ids = dln.operator.forward_interpreter.encode(output_classes.prototype(i))
+                    token_ids = self.forward_evaluate.encode(output_classes.prototype(i))
                     max_len = max(max_len, len(token_ids))
                     assert max_len == 1
                     logit_bias[token_ids[0]] = 100
 
-                outputs = forward_evaluate(
+                outputs = self.forward_evaluate(
                     tpl_inputs,
                     stop=self.forward_template.stop_tokens,
                     temperature=temperature,
@@ -111,7 +119,7 @@ class PriorLayer:
             requests.append(self.log_p_request(input, target, prompt=prompt))
 
         # build up a set of score requests
-        logprobs = LogProbsScore().score_requests(requests, output_classes, agg=agg)
+        logprobs = self.logprobs_score.score_requests(requests, output_classes, agg=agg)
         return logprobs
 
     def accuracy(
@@ -133,7 +141,7 @@ class PriorLayer:
                 requests.append(self.forward_template.render(input=input, prompt=prompt))
 
         # build up a set of score requests
-        outputs = forward_evaluate(
+        outputs = self.forward_evaluate(
             requests,
             stop=self.forward_template.stop_tokens,
             temperature=1.0 if num_samples > 1 else 0.,
@@ -149,11 +157,16 @@ class PriorLayer:
 
 class ResidualPriorLayer(PriorLayer):
 
-    def __init__(self, forward_template, init="", residual_template="classify_residual"):
-        super().__init__(forward_template, init=init)
-        self.residual_template = load_template(
-            residual_template
-        )
+    def __init__(
+        self,
+        logprobs_score: LogProbsScore,
+        forward_evaluate: LLM,
+        forward_template,
+        init="",
+        residual_template="classify_residual"
+    ):
+        super().__init__(logprobs_score, forward_evaluate, forward_template, init=init)
+        self.residual_template = load_template(residual_template)
         log_message("Residual template:\n", f"{repr(self.residual_template.template)}")
 
     def forward(self, inputs, **kwargs) -> np.array:

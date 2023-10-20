@@ -5,11 +5,11 @@ from termcolor import colored
 
 from dln.postprocessing import postprocess_prediction
 from dln.loss import LLoss
-from dln.score import OutputClasses
+from dln.operator import LLM
+from dln.score import LogProbsScore, OutputClasses
 from dln.vi.layers import PriorLayer, ResidualPriorLayer
 from dln.vi.sampler import PosteriorSampler, PromptSampler
 from dln.vi.utils import compute_pairwise_kl, log_message, ResultLogEntry
-from dln.operator import compute_cost
 
 
 class VILModel:
@@ -22,8 +22,11 @@ class VILModel:
         num_h_samples: int = 3,
         num_p_samples: int = 5,
         use_h_argmax: bool = False,
-        q_prompt: str = "q_action_prompt:latest",
-        q_hidden: str = "suffix_forward_tbs:latest",
+        forward_evaluate: LLM = None,
+        prompt_sampler_1: PromptSampler = None,
+        prompt_sampler_2: PromptSampler = None,
+        posterior_sampler : PosteriorSampler = None,
+        logprobs_score: LogProbsScore = None,
         p_hidden: str = "suffix_forward_tbs:latest",
         p_class: str = "classify_forward:latest",
         p_residual: str = "classify_residual:latest",
@@ -51,17 +54,21 @@ class VILModel:
         """
         Args:
             loss_fn: loss function to use
+            init_p1: initialization for the first prompt
+            init_p2: initialization for the second prompt
             two_layers: whether to use two layers or one layer
             num_h_samples: number of posterior samples to use for the hidden state
             num_p_samples: number of posterior samples to use for the prompt
             use_h_argmax: whether to use the argmax of the posterior distribution when selecting best prompts, if False, then
                           we compute num_h_samples * num_p_samples scores and select prompts based on the sum of the num_h_samples scores
-            init_p1: initialization for the first prompt
-            init_p2: initialization for the second prompt
-            q_prompt: prompt for the posterior over the prompt
-            q_hidden: prompt for the posterior over the hidden state
+            forward_evaluate: LLM for the forward pass
+            prompt_sampler_1: posterior sampler over the prompt
+            prompt_sampler_2: posterior sampler over the hidden state
+            posterior_sampler: sample hidden states from the posterior distribution
+            logprobs_score: logprobs scoring function
             p_hidden: forward template for the forward pass that generates the hidden state
             p_class: forward template for the classification layer
+            p_residual: forward template for the residual layer
             output_classes: if specified, we compute log-likelihood over these classes only
             strip_options_for_hidden: whether to strip the options from the input when computing the hidden state, don't use it.
             strip_answer_for_hidden: whether to strip the answer from the input when computing the hidden state, don't use it.
@@ -72,23 +79,37 @@ class VILModel:
             use_memory: whether to use memory, if 0, we don't use memory, if n, we include n best DEV prompts in the list of candidate prompts to select from, etc...
             train_p1: whether to train the first prompt
             train_p2: whether to train the second prompt
+            logp_penalty: penalizes the log-likelihood of wrong thoughts
+            p1_max_tokens: max tokens for the residual layer
+            p2_max_tokens: max tokens for the prior layer
+            posterior_temp: posterior temperature
+            strip_prefix_for_hidden: strip prefix from the hidden state if the model generates it
+            output_scoring_function: output scoring function, either "logprobs" or "accuracy"
+            hidden_scoring_function: hidden scoring function, only "logprobs" is supported
+            posterior_sharpening_include_prior: include prior in the posterior sharpening
+            posterior_sharpening_use_mi_regularization: use MI regularization in the posterior sharpening
+            num_p1_steps: number of optimization steps for p1
+            use_nce: compute p1 elbo using NCE
         """
         self.encoder_l1 = ResidualPriorLayer(
+            logprobs_score=logprobs_score,
+            forward_evaluate=forward_evaluate,
             forward_template=p_hidden,
             init=init_p1,
             residual_template=p_residual,
         )
         self.encoder_l2 = PriorLayer(
+            logprobs_score=logprobs_score,
+            forward_evaluate=forward_evaluate,
             forward_template=p_class,
             init=init_p2,
         )
         if not two_layers:
             self.encoder_l1.weight = ""
 
-        self.prompt_sampler_1 = PromptSampler.create(q_prompt)
-        self.prompt_sampler_2 = PromptSampler.create(q_prompt)
-        self.q_sampler = PosteriorSampler(q_hidden)
-
+        self.prompt_sampler_1 = prompt_sampler_1
+        self.prompt_sampler_2 = prompt_sampler_2
+        self.q_sampler = posterior_sampler
         self.trust_factor = trust_factor
         self.strip_answer_for_hidden = strip_answer_for_hidden
         self.strip_options_for_hidden = strip_options_for_hidden
@@ -710,6 +731,7 @@ class VILModel:
                 if self.forward_use_classes
                 else None,
                 temperature=temperature,
+                max_tokens=self.p2_max_tokens,
             )
         else:
             h_1_out, h_1 = None, None
@@ -732,7 +754,7 @@ class VILModel:
                 )
                 for x_ in x
             ]
-            self.cost += compute_cost(x_)
+            self.cost += self.encoder_l2.forward_evaluate.compute_cost(x_)
 
             # only compute cost! save inference
             if cost_only:

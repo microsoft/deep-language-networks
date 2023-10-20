@@ -1,11 +1,13 @@
 import logging
 from dataclasses import dataclass
+from typing import Union, List
 
 import numpy as np
 from typing import Union, List
-from dln.operator import backward_evaluate
-from dln.template import load_template, DLNTemplate
 
+from dln.template import load_template, DLNTemplate
+from dln.operator import LLM
+from dln.template import load_template
 from dln.vi.utils import log_message
 
 
@@ -18,13 +20,14 @@ class Info:
 
 
 class PromptSampler:
-    def __init__(self, p_template="q_action_prompt:v3.5"):
+    def __init__(self, evaluate_func: LLM, p_template: str = "q_action_prompt:v3.5"):
         self.prompt_template = load_template(p_template)
         log_message("Prompt template:\n", f"{repr(self.prompt_template.template)}")
         log_message(
             "Message alternatives:\n", f"{self.prompt_template.message_alternatives}"
         )
-        self.evaluate_func = backward_evaluate
+
+        self.evaluate_func = evaluate_func
         self.prompt_history = []
 
     @staticmethod
@@ -166,6 +169,7 @@ class SequentialPromptSampler(PromptSampler):
                     tpls,
                     stop=self.prompt_template.stop_tokens,
                     n=1,
+                    async_generation=True,
                 )
                 log_message("DONE...")
 
@@ -196,7 +200,7 @@ class SequentialPromptSampler(PromptSampler):
 
 
 class PosteriorSampler:
-    def __init__(self, q_template):
+    def __init__(self, evaluate_func: LLM, q_template: str):
         self.q_templates = []
         
         if type(q_template) != DLNTemplate:
@@ -209,8 +213,8 @@ class PosteriorSampler:
             log_message("Q template:", f"{repr(q_template.template)}")
 
         self.stop_tokens = self.q_templates[0].stop_tokens
+        self.evaluate_func = evaluate_func
         self.rng = np.random.RandomState(0)
-        self.evaluate_func = backward_evaluate
 
     def sample_q_h(
         self,
@@ -285,6 +289,7 @@ class PosteriorSampler:
             tpls,
             stop=self.stop_tokens,
             n=1,
+            async_generation=True,
             return_logprobs=return_logprobs,
         )
         if return_logprobs:

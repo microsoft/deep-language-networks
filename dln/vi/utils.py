@@ -74,7 +74,7 @@ class ResultLogWriter(object):
         Returns:
             A ResultLogWriter object
         """
-        self.name = name if name is not None else dataset
+        self.name = name if name is not None else dataset.dataset_name
         self.path = path
         self.result_dict = {}
         self.result_dict[self.name] = {'training': [], 'examples': []}

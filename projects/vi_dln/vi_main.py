@@ -12,9 +12,11 @@ from torch.utils.tensorboard import SummaryWriter
 
 from dln.dataset import init_dataset
 from dln.loss import ZeroOneLoss
-from dln.operator import backward_instantiate, forward_instantiate
+from dln.operator import instantiate_model
 from dln.postprocessing import postprocess_prediction
+from dln.score import LogProbsScore
 from dln.vi.model import VILModel, log_message
+from dln.vi.sampler import PosteriorSampler, PromptSampler
 from dln.vi.utils import ResultLogWriter
 
 try:
@@ -77,7 +79,6 @@ def validate(dataset, model, loss_fn, iteration, val_examples, val_scores, write
 
         for batch in dataset.iterate("dev", batch_size=20):
             x, y, infos = batch
-            result_writer.write_examples(iteration, x, y, model.result_entry.outputs, model.result_entry.hiddens)
             y_hat = model.forward(np.array(x), infos=infos)
             result_writer.write_examples(iteration, x, y, model.result_entry.outputs, model.result_entry.hiddens)
             losses = loss_fn(y_hat, y)
@@ -282,6 +283,24 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     "--model_type",
     type=str,
     default="text-davinci-003",
+    help="Model type for forward and backward models if not specified separately.",
+)
+@click.option(
+    "--fwd_model_type",
+    type=str,
+    default="",
+    help="Overrides model_type for forward. If not specified, use the same as model_type.",
+)
+@click.option(
+    "--bwd_model_type",
+    type=str,
+    default="",
+    help="Overrides model_type for backward. If not specified, use the same as model_type.",
+)
+@click.option(
+    "--bwd_model_type",
+    type=str,
+    default=None,
 )
 @click.option(
     "--bwd_model_type",
@@ -307,6 +326,18 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     help="Backward max tokens.",
 )
 @click.option(
+    "--p1_max_tokens",
+    type=int,
+    default=256,
+    help="P1 max tokens.",
+)
+@click.option(
+    "--p2_max_tokens",
+    type=int,
+    default=20,
+    help="P2 max tokens.",
+)
+@click.option(
     "--num_p1_steps",
     type=int,
     default=1,
@@ -321,7 +352,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option(
     "--result_data_path",
     type=str,
-    default="../demo/result_data.json",
+    default=None,
     help="The path of the file where the result logs json are stored",
 )
 @click.option(
@@ -362,8 +393,8 @@ def main(
     num_p_samples,
     num_h_samples,
     strip_options_for_hidden,
-    strip_answer_for_hidden,
     strip_prefix_for_hidden,
+    strip_answer_for_hidden,
     trust_factor,
     use_memory,
     init_p1,
@@ -381,10 +412,12 @@ def main(
     decay_logp_penalty,
     posterior_temp,
     model_type,
+    fwd_model_type,
     bwd_model_type,
     fwd_max_tokens,
     bwd_max_tokens,
     p1_max_tokens,
+    p2_max_tokens,
     num_p1_steps,
     use_nce,
     result_data_path,
@@ -392,17 +425,18 @@ def main(
     enable_wandb,
 ):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S.%f")
-    out_dir = f"{out_dir}/{timestamp}"
+    out_dir = os.path.join(out_dir, timestamp)
     os.makedirs(out_dir, exist_ok=True)
-
+    output_log_dir = os.path.join(out_dir, "output.log")
     logging.basicConfig(
-        filename=f"{out_dir}/output.log",
+        filename=output_log_dir,
         level=logging.INFO,
         format="%(asctime)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+
     log_message(json.dumps(locals()))
-    log_message("Logging to... {}".format(out_dir + "/output.log"))
+    log_message(f"Logging to... {output_log_dir}")
 
     wandb_enabled = False
     if enable_wandb:
@@ -413,7 +447,11 @@ def main(
         else:
             log_message(colored("Wandb is not installed. Please install it to enable wandb logging.", "red"))
 
-    writer = SummaryWriter(f"{out_dir}")
+    writer = SummaryWriter(out_dir)
+
+    dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir, n_shots, num_train_examples)
+    if result_data_path is None:
+        result_data_path = os.path.join(out_dir, "result_data.log")
     result_writer = ResultLogWriter(dataset, path=result_data_path, name=result_exp_name)
 
     dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir, n_shots, num_train_examples)
@@ -421,24 +459,29 @@ def main(
     init_p1, init_p2 = init_prompts(dataset, init_p1, init_p2)
     if wandb_enabled:
         prompt_table.add_data(0, init_p1, init_p2)
-
     log_message("Init P1: ", init_p1)
     log_message("Init P2: ", init_p2)
 
-    forward_instantiate(
+    fwd_model_type = fwd_model_type or model_type
+    bwd_model_type = bwd_model_type or model_type
+    fwd_model = instantiate_model(
         model_type,
         temperature=0.0,
         max_tokens=fwd_max_tokens,
         stop=None,
     )
-    backward_instantiate(
-        bwd_model_type or model_type,
+
+    bwd_model = instantiate_model(
+        bwd_model_type,
         temperature=bwd_temp,
         max_tokens=bwd_max_tokens,
         stop=None,
     )
 
     loss_fn = ZeroOneLoss(postproc=postprocess_prediction)
+    prompt_sampler = PromptSampler(bwd_model, q_prompt)
+    posterior_sampler = PosteriorSampler(bwd_model, q_hidden)
+    logprobs_score = LogProbsScore(fwd_model)
     model = VILModel(
         loss_fn,
         init_p1=init_p1,
@@ -446,8 +489,11 @@ def main(
         two_layers=not one_layer,
         num_p_samples=num_p_samples,
         num_h_samples=num_h_samples,
-        q_hidden=q_hidden,
-        q_prompt=q_prompt,
+        forward_evaluate=fwd_model,
+        posterior_sampler=posterior_sampler,
+        prompt_sampler_1=prompt_sampler,
+        prompt_sampler_2=prompt_sampler,
+        logprobs_score=logprobs_score,
         p_hidden=p_hidden,
         p_class=p_class,
         p_residual=p_residual,
@@ -463,7 +509,7 @@ def main(
         train_p2=train_p2,
         logp_penalty=logp_penalty,
         p1_max_tokens=p1_max_tokens,
-        p2_max_tokens=20,
+        p2_max_tokens=p2_max_tokens,
         posterior_temp=posterior_temp,
         strip_prefix_for_hidden=dataset.prefix if strip_prefix_for_hidden else None,
         output_scoring_function=output_scoring_function,
@@ -537,10 +583,11 @@ def main(
         elbo, p1, p2, loss, elbo1, elbo2 = model.forward(
             np.array(x), np.array(y), infos=infos, temperature=fwd_temp
         )
-
         # Update prompts
         model.encoder_l1.weight = p1
         model.encoder_l2.weight = p2
+        log_message("Current L1 weights:", model.encoder_l1.weight)
+        log_message("Current L2 weights:", model.encoder_l2.weight)
         log_message("Patience: {}".format(patience))
 
         if iteration == 0:
@@ -589,6 +636,7 @@ def main(
 
     log_message(colored("DEV ACC: {}".format(best_dev), "green"))
     log_message(colored("TEST ACC: {}".format(test_acc), "green"))
+    
     result_writer.save_to_json_file()
     writer.close()
 
