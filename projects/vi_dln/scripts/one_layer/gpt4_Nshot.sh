@@ -26,7 +26,7 @@ if [ ! -f ${dir}/done.txt ]; then
     # seed
     for seed in 13 42 25; do
         python vi_main.py \
-            --compute_cost \
+            --cost_only \
             --balance_batch \
             --n_shots ${n_shot} \
             --one_layer \
