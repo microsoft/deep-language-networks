@@ -21,6 +21,7 @@ from dln.vi.utils import ResultLogWriter
 
 try:
     import wandb
+
     wandb_installed = True
 except ImportError:
     wandb_installed = False
@@ -60,7 +61,9 @@ def init_prompts(dataset, init_p1, init_p2):
     return init_p1, init_p2
 
 
-def validate(dataset, model, loss_fn, iteration, val_examples, val_scores, writer, result_writer):
+def validate(
+    dataset, model, loss_fn, iteration, val_examples, val_scores, writer, result_writer
+):
     log_message(colored("VALIDATING...", "red"))
     log_message("Current L1 weights:", model.encoder_l1.weight)
     log_message("Current L2 weights:", model.encoder_l2.weight)
@@ -85,7 +88,9 @@ def validate(dataset, model, loss_fn, iteration, val_examples, val_scores, write
         for batch in dataset.iterate("dev", batch_size=20):
             x, y, infos = batch
             y_hat = model.forward(np.array(x), infos=infos)
-            result_writer.write_examples(iteration, x, y, model.result_entry.outputs, model.result_entry.hiddens)
+            result_writer.write_examples(
+                iteration, x, y, model.result_entry.outputs, model.result_entry.hiddens
+            )
             losses = loss_fn(y_hat, y)
             acc += len(y) - np.sum(losses)
             tot += len(y)
@@ -126,12 +131,12 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
         desc="Eval",
     )
 
-    model.cost = 0.
+    model.cost = 0.0
     dataset.reset_pointer("test")
     for batch in dataset.iterate("test", batch_size=20):
         x, y, infos = batch
         y_hat = model.forward(np.array(x), infos=infos, cost_only=cost_only)
-        all_accs += (1. - loss_fn(y_hat, y)).tolist()
+        all_accs += (1.0 - loss_fn(y_hat, y)).tolist()
         acc += len(y) - np.sum(loss_fn(y_hat, y))
         tot += len(y)
         pbar.update(len(y))
@@ -153,7 +158,12 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option("--seed", default=42, help="Random seed.")
 @click.option("--out_dir", default="log/")
 @click.option("--data_dir", default="../../data")
-@click.option("--num_train_examples", default=-1, type=int, help="Use only so many train examples.")
+@click.option(
+    "--num_train_examples",
+    default=-1,
+    type=int,
+    help="Use only so many train examples.",
+)
 @click.option("--val_freq", default=2)
 @click.option("--do_first_eval", is_flag=True)
 @click.option("--do_zero_shot", is_flag=True)
@@ -173,6 +183,12 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option("--num_h_samples", type=int, default=3)
 @click.option("--tolerance", type=int, default=-1)
 @click.option("--cost_only", is_flag=True)
+@click.option(
+    "--rewrite_loss_only",
+    type=bool,
+    default=False,
+    help="Rewrite hidden states for examples with errors only. Speeds-up inference.",
+)
 @click.option(
     "--strip_options_for_hidden",
     type=bool,
@@ -271,6 +287,12 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     help="Include prior term in the posterior sharpening.",
 )
 @click.option(
+    "--posterior_sharpening_correct_weighting",
+    type=bool,
+    default=True,
+    help="Correct importance sampling weighting for sharpening.",
+)
+@click.option(
     "--posterior_sharpening_use_mi_regularization",
     type=bool,
     default=False,
@@ -355,6 +377,7 @@ def main(
     num_train_examples,
     val_freq,
     cost_only,
+    rewrite_loss_only,
     do_first_eval,
     do_zero_shot,
     n_shots,
@@ -383,6 +406,7 @@ def main(
     output_scoring_function,
     hidden_scoring_function,
     posterior_sharpening_include_prior,
+    posterior_sharpening_correct_weighting,
     posterior_sharpening_use_mi_regularization,
     forward_use_classes,
     held_out_prompt_ranking,
@@ -424,14 +448,23 @@ def main(
             wandb.init(config=locals(), project="dln")
             prompt_table = wandb.Table(columns=["epoch", "w1", "w2"])
         else:
-            log_message(colored("Wandb is not installed. Please install it to enable wandb logging.", "red"))
+            log_message(
+                colored(
+                    "Wandb is not installed. Please install it to enable wandb logging.",
+                    "red",
+                )
+            )
 
     writer = SummaryWriter(out_dir)
 
-    dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir, n_shots, num_train_examples)
+    dataset, output_classes, val_examples = init_dataset(
+        dataset, seed, data_dir, n_shots, num_train_examples
+    )
     if result_data_path is None:
         result_data_path = os.path.join(out_dir, "result_data.log")
-    result_writer = ResultLogWriter(dataset, path=result_data_path, name=result_exp_name)
+    result_writer = ResultLogWriter(
+        dataset, path=result_data_path, name=result_exp_name
+    )
 
     init_p1, init_p2 = init_prompts(dataset, init_p1, init_p2)
     if wandb_enabled:
@@ -439,7 +472,9 @@ def main(
     log_message("Init P1: ", init_p1)
     log_message("Init P2: ", init_p2)
 
-    bwd_model_type = bwd_model_type or fwd_model_type  # Use the same model type if bwd is not specified.
+    bwd_model_type = (
+        bwd_model_type or fwd_model_type
+    )  # Use the same model type if bwd is not specified.
     fwd_model = instantiate_model(
         fwd_model_type,
         temperature=0.0,
@@ -491,8 +526,10 @@ def main(
         hidden_scoring_function=hidden_scoring_function,
         num_p1_steps=num_p1_steps,
         posterior_sharpening_include_prior=posterior_sharpening_include_prior,
+        posterior_sharpening_correct_weighting=posterior_sharpening_correct_weighting,
         posterior_sharpening_use_mi_regularization=posterior_sharpening_use_mi_regularization,
         use_nce=use_nce,
+        rewrite_loss_only=rewrite_loss_only,
     )
 
     running_acc = 0.0
@@ -505,14 +542,23 @@ def main(
     for iteration in range(iters + 1):
         log_message("STARTING EPOCH {} - {}".format(iteration, out_dir))
 
-        if (iteration == 0 and do_first_eval) or (iteration > 0 and iteration % val_freq == 0):
+        if (iteration == 0 and do_first_eval) or (
+            iteration > 0 and iteration % val_freq == 0
+        ):
             dev_acc = validate(
-                dataset, model, loss_fn, iteration, val_examples, val_scores, writer, result_writer
+                dataset,
+                model,
+                loss_fn,
+                iteration,
+                val_examples,
+                val_scores,
+                writer,
+                result_writer,
             )
             if wandb_enabled:
                 wandb.log({"dev/acc": dev_acc, "epoch": iteration})
 
-            model.result_entry.log_metric('dev_acc', dev_acc)
+            model.result_entry.log_metric("dev_acc", dev_acc)
 
             if dev_acc > best_dev:
                 best_dev = dev_acc
@@ -532,17 +578,24 @@ def main(
                 model.encoder_l2.weight = best_ps[1]
                 patience = 0
         else:
-            model.result_entry.log_metric('dev_acc', None)
+            model.result_entry.log_metric("dev_acc", None)
 
         result_writer.write_result(
             step=iteration,
-            layers=[model.encoder_l2.weight] if one_layer else [model.encoder_l1.weight, model.encoder_l2.weight],
+            layers=[model.encoder_l2.weight]
+            if one_layer
+            else [model.encoder_l1.weight, model.encoder_l2.weight],
             metrics=model.result_entry.metrics,
             candidates=model.result_entry.candidates,
         )
 
         # zero shot or allow last iteration for validation
-        if do_zero_shot or iteration == iters or cost_only or (n_shots >= 0 and not train_p1 and not train_p2):
+        if (
+            do_zero_shot
+            or iteration == iters
+            or cost_only
+            or (n_shots >= 0 and not train_p1 and not train_p2)
+        ):
             break
 
         x, y, infos = dataset.get_batch(
@@ -583,17 +636,19 @@ def main(
 
         if wandb_enabled:
             prompt_table.add_data(iteration + 1, str(p1), str(p2))
-            wandb.log({"train/prompts" : prompt_table})
-            wandb.log({"train/elbo": elbo, "train/acc": (1.0 - loss), "epoch": iteration})
+            wandb.log({"train/prompts": prompt_table})
+            wandb.log(
+                {"train/elbo": elbo, "train/acc": (1.0 - loss), "epoch": iteration}
+            )
 
         writer.add_scalar("elbo", elbo, iteration)
         writer.add_scalar("elbo1", elbo1, iteration)
         writer.add_scalar("elbo2", elbo2, iteration)
         writer.add_scalar("acc", (1.0 - loss), iteration)
-        model.result_entry.log_metric('elbo', elbo)
-        model.result_entry.log_metric('acc', (1.0 - loss))
-        model.result_entry.log_metric('run_elbo', running_elbo)
-        model.result_entry.log_metric('run_acc', running_acc)
+        model.result_entry.log_metric("elbo", elbo)
+        model.result_entry.log_metric("acc", (1.0 - loss))
+        model.result_entry.log_metric("run_elbo", running_elbo)
+        model.result_entry.log_metric("run_acc", running_acc)
 
     log_message("--------------------")
     log_message("Loading best model...")

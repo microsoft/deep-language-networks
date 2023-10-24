@@ -254,7 +254,6 @@ class PosteriorSampler:
 
                 # pick another example in the set
                 all_indices = list(np.arange(len(x)))
-                all_indices.remove(i)
                 source_example = self.rng.choice(all_indices)
 
                 tpl = q_template.render(
