@@ -11,7 +11,8 @@ tolerance=2
 num_h_samples=5
 logp_penalty=2.
 posterior_temp=1.
-model_type="gpt-4"
+fwd_model_type="gpt-4"
+one_layer=True
 
 # dataset
 for dataset in subj; do
@@ -26,7 +27,7 @@ if [ ! -f ${dir}/done.txt ]; then
         python vi_main.py \
             --do_first_eval \
             --balance_batch \
-            --one_layer \
+            --one_layer ${one_layer} \
             --train_p1 False \
             --train_p2 True \
             --num_p_samples ${num_p_samples} \
@@ -42,7 +43,7 @@ if [ ! -f ${dir}/done.txt ]; then
             --tolerance ${tolerance} \
             --held_out_prompt_ranking ${held_out_prompt_ranking} \
             --output_scoring_function accuracy \
-            --model_type ${model_type}
+            --fwd_model_type ${fwd_model_type}
     # seed
     done
 

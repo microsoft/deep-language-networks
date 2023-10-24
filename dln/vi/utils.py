@@ -2,7 +2,7 @@ import logging
 import os
 import copy
 import json
-from typing import Dict
+from typing import Optional
 
 import numpy as np
 
@@ -32,7 +32,10 @@ class ResultLogEntry():
         self.metrics = {}
         self.outputs = []
 
-    def log_metric(self, metric: str, value: float):
+    def log_metric(self, metric: str, value: Optional[float]):
+        if value is not None:
+            value = float(value)
+
         self.metrics[metric] = value
 
     def log_outputs(self, outputs):
@@ -53,7 +56,7 @@ class ResultLogEntry():
             for i in range(p_tilde_1.shape[0]):
                 self.candidates[0].append({
                     "layer": p_tilde_1[i],
-                    "score": p1_elbo[i],
+                    "score": float(p1_elbo[i]),
                 })
             p2_ind = 1
         else:
@@ -61,7 +64,7 @@ class ResultLogEntry():
         for i in range(p_tilde_2.shape[0]):
             self.candidates[p2_ind].append({
                 "layer": p_tilde_2[i],
-                "score": p2_elbo[i],
+                "score": float(p2_elbo[i]),
             })
 
 

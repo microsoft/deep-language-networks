@@ -12,7 +12,8 @@ num_h_samples=5
 q_prompt_tpl="q_action_prompt:v3.5"
 logp_penalty=2.
 posterior_temp=1.
-model_type="local-2"
+fwd_model_type="local-2"
+one_layer=True
 
 # dataset
 for dataset in navigate subj logical_deduction_seven_objects; do
@@ -29,7 +30,7 @@ if [ ! -f ${dir}/done.txt ]; then
         python vi_main.py \
             --balance_batch \
             --n_shots ${n_shot} \
-            --one_layer \
+            --one_layer ${one_layer} \
             --num_p_samples ${num_p_samples} \
             --bwd_temp ${bwd_temp} \
             --iters ${iters} \
@@ -43,7 +44,7 @@ if [ ! -f ${dir}/done.txt ]; then
             --tolerance ${tolerance} \
             --held_out_prompt_ranking ${held_out_prompt_ranking} \
             --output_scoring_function accuracy \
-            --model_type ${model_type}
+            --fwd_model_type ${fwd_model_type}
     # seed
     done
 

@@ -50,8 +50,13 @@ def init_prompts(dataset, init_p1, init_p2):
                     break
             if not found:
                 raise ValueError("Best weights were not found in the log file!")
+
     if init_p2 is None:
         init_p2 = dataset.instruction
+
+    if init_p1 is None:
+        init_p1 = ""
+
     return init_p1, init_p2
 
 
@@ -133,6 +138,10 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
         pbar.set_postfix_str(f"{acc / tot:.1%}")
 
     test_acc = acc / tot
+    if iteration == 0:
+        log_message(colored("INIT TEST ACC: {}".format(test_acc), "red"))
+
+    log_message(colored("TEST ACC: {}".format(test_acc), "red"))
     writer.add_scalar("test/acc", (test_acc), iteration)
     # for sig-test purposes
     log_message("ALL ACCS:", all_accs)
@@ -156,14 +165,14 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option("--p_residual", type=str, default="classify_residual")
 @click.option("--balance_batch", is_flag=True, help="Balance batch.")
 @click.option("--batch_size", type=int, default=20)
-@click.option("--one_layer", is_flag=True)
+@click.option("--one_layer", type=bool, default=False)
 @click.option("--dataset", type=str, default="subj")
 @click.option("--use_h_argmax", type=bool, default=False)
 @click.option("--iters", type=int, default=20)
 @click.option("--num_p_samples", type=int, default=5)
 @click.option("--num_h_samples", type=int, default=3)
 @click.option("--tolerance", type=int, default=-1)
-@click.option("--compute_cost", is_flag=True)
+@click.option("--cost_only", is_flag=True)
 @click.option(
     "--strip_options_for_hidden",
     type=bool,
@@ -175,12 +184,6 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     type=bool,
     default=False,
     help="Strip the prefix from the examples if it exists in some tasks, e.g. BBH.",
-)
-@click.option(
-    "--strip_answer_for_hidden",
-    type=bool,
-    default=False,
-    help="Strip the 'Answer:' from the hidden state, if the model generates it.",
 )
 @click.option(
     "--trust_factor",
@@ -206,18 +209,18 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option(
     "--forward_use_classes",
     type=bool,
-    default=False,
+    default=True,
     help="Uses classes in the forward pass, constrains the output space.",
 )
 @click.option(
     "--init_p1",
     type=str,
-    default="",
+    default=None,
 )
 @click.option(
     "--init_p2",
     type=str,
-    default="",
+    default=None,
 )
 @click.option(
     "--held_out_prompt_ranking",
@@ -280,27 +283,16 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     help="Sharpen (<1.0)/Flatten (>1.0) the posterior distribution over h.",
 )
 @click.option(
-    "--model_type",
-    type=str,
-    default="text-davinci-003",
-    help="Model type for forward and backward models if not specified separately.",
-)
-@click.option(
     "--fwd_model_type",
     type=str,
-    default="",
-    help="Overrides model_type for forward. If not specified, use the same as model_type.",
+    default="text-davinci-003",
+    help="Model type for forward.",
 )
 @click.option(
     "--bwd_model_type",
     type=str,
     default="",
-    help="Overrides model_type for backward. If not specified, use the same as model_type.",
-)
-@click.option(
-    "--bwd_model_type",
-    type=str,
-    default=None,
+    help="Model type for backward. If not specified, use the same as fwd_model_type.",
 )
 @click.option(
     "--fwd_max_tokens",
@@ -362,7 +354,7 @@ def main(
     data_dir,
     num_train_examples,
     val_freq,
-    compute_cost,
+    cost_only,
     do_first_eval,
     do_zero_shot,
     n_shots,
@@ -383,7 +375,6 @@ def main(
     num_h_samples,
     strip_options_for_hidden,
     strip_prefix_for_hidden,
-    strip_answer_for_hidden,
     trust_factor,
     use_memory,
     init_p1,
@@ -400,7 +391,6 @@ def main(
     logp_penalty,
     decay_logp_penalty,
     posterior_temp,
-    model_type,
     fwd_model_type,
     bwd_model_type,
     fwd_max_tokens,
@@ -449,10 +439,9 @@ def main(
     log_message("Init P1: ", init_p1)
     log_message("Init P2: ", init_p2)
 
-    fwd_model_type = fwd_model_type or model_type
-    bwd_model_type = bwd_model_type or model_type
+    bwd_model_type = bwd_model_type or fwd_model_type  # Use the same model type if bwd is not specified.
     fwd_model = instantiate_model(
-        model_type,
+        fwd_model_type,
         temperature=0.0,
         max_tokens=fwd_max_tokens,
         stop=None,
@@ -487,7 +476,6 @@ def main(
         use_h_argmax=use_h_argmax,
         output_classes=output_classes,
         strip_options_for_hidden=strip_options_for_hidden,
-        strip_answer_for_hidden=strip_answer_for_hidden,
         trust_factor=trust_factor,
         forward_use_classes=forward_use_classes,
         held_out_prompt_ranking=held_out_prompt_ranking,
@@ -517,9 +505,7 @@ def main(
     for iteration in range(iters + 1):
         log_message("STARTING EPOCH {} - {}".format(iteration, out_dir))
 
-        if iteration % val_freq == 0 and (
-            iteration > 0 or do_first_eval
-        ):
+        if (iteration == 0 and do_first_eval) or (iteration > 0 and iteration % val_freq == 0):
             dev_acc = validate(
                 dataset, model, loss_fn, iteration, val_examples, val_scores, writer, result_writer
             )
@@ -527,6 +513,7 @@ def main(
                 wandb.log({"dev/acc": dev_acc, "epoch": iteration})
 
             model.result_entry.log_metric('dev_acc', dev_acc)
+
             if dev_acc > best_dev:
                 best_dev = dev_acc
                 best_ps = (model.encoder_l1.weight, model.encoder_l2.weight)
@@ -555,7 +542,7 @@ def main(
         )
 
         # zero shot or allow last iteration for validation
-        if do_zero_shot or iteration == iters or compute_cost or (n_shots >= 0 and not train_p1 and not train_p2):
+        if do_zero_shot or iteration == iters or cost_only or (n_shots >= 0 and not train_p1 and not train_p2):
             break
 
         x, y, infos = dataset.get_batch(
@@ -570,6 +557,7 @@ def main(
         elbo, p1, p2, loss, elbo1, elbo2 = model.forward(
             np.array(x), np.array(y), infos=infos, temperature=fwd_temp
         )
+
         # Update prompts
         model.encoder_l1.weight = p1
         model.encoder_l2.weight = p2
@@ -616,15 +604,14 @@ def main(
     log_message("Best L1 weights:", model.encoder_l1.weight)
     log_message("Best L2 weights:", model.encoder_l2.weight)
 
-    test_acc = test(dataset, model, loss_fn, iteration, writer, cost_only=compute_cost)
-
+    test_acc = test(dataset, model, loss_fn, iteration, writer, cost_only=cost_only)
 
     if wandb_enabled:
         wandb.log({"test/acc": test_acc, "epoch": iteration})
 
     log_message(colored("DEV ACC: {}".format(best_dev), "green"))
     log_message(colored("TEST ACC: {}".format(test_acc), "green"))
-    
+
     result_writer.save_to_json_file()
     writer.close()
 

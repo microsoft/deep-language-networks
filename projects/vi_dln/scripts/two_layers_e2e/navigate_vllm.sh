@@ -15,20 +15,20 @@ posterior_temp=1.
 trust_factor=5.
 p_hidden_tpl="suffix_forward_tbs"
 q_hidden_tpl="suffix_forward_tbs_y|suffix_forward_tbs"
-model_type="meta-llama/Llama-2-70b-chat-hf"
+fwd_model_type="meta-llama/Llama-2-70b-chat-hf"
 fwd_max_tokens=512
 bwd_max_tokens=1024
 p1_max_tokens=512
 p2_max_tokens=512
 
-dir=log/{model_type}/two_layers_e2e/${dataset}
+dir=log/{fwd_model_type}/two_layers_e2e/${dataset}
 
 
 for seed in 42; do
     python vi_main.py \
         --do_first_eval \
         --balance_batch \
-        --model_type ${model_type} \
+        --fwd_model_type ${fwd_model_type} \
         --num_p_samples ${num_p_samples} \
         --num_h_samples ${num_h_samples} \
         --bwd_temp ${bwd_temp} \

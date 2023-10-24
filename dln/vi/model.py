@@ -32,7 +32,6 @@ class VILModel:
         p_residual: str = "classify_residual:latest",
         output_classes: OutputClasses = None,
         strip_options_for_hidden: bool = False,
-        strip_answer_for_hidden: bool = False,
         trust_factor: float = 0.0,
         forward_use_classes: bool = False,
         held_out_prompt_ranking: bool = False,
@@ -71,7 +70,6 @@ class VILModel:
             p_residual: forward template for the residual layer
             output_classes: if specified, we compute log-likelihood over these classes only
             strip_options_for_hidden: whether to strip the options from the input when computing the hidden state, don't use it.
-            strip_answer_for_hidden: whether to strip the answer from the input when computing the hidden state, don't use it.
             trust_factor: trust factor for the KL divergence between the current prompt and the new prompt, it acts *only* at the last layer, a sort of step size.
             forward_use_classes: whether to use the classes in the forward pass, if True, then we pick the class with the highest probability.
             held_out_prompt_ranking: when proposing the prompts from the posterior, we only use HALF of the batch, kind of limiting over-fitting, but it decreases batch size
@@ -111,7 +109,6 @@ class VILModel:
         self.prompt_sampler_2 = prompt_sampler_2
         self.q_sampler = posterior_sampler
         self.trust_factor = trust_factor
-        self.strip_answer_for_hidden = strip_answer_for_hidden
         self.strip_options_for_hidden = strip_options_for_hidden
         self.strip_prefix_for_hidden = strip_prefix_for_hidden
         self.output_classes = output_classes
@@ -196,7 +193,7 @@ class VILModel:
 
         if self.output_scoring_function == "logprobs":
             # batch_size, num_p_samples
-            ll = self.encoder_l2.log_p(
+            ll_ = self.encoder_l2.log_p(
                 inputs=np.array([eval[0] for eval in evals]),
                 targets=np.array([eval[1] for eval in evals]),
                 prompts=np.array([eval[2] for eval in evals]),
@@ -205,11 +202,13 @@ class VILModel:
             ).logp_targets
 
             # batch_size, num_p_samples
-            ll = ll.reshape(batch_size, p_tilde_2.shape[0])
+            ll = ll_.reshape(batch_size, p_tilde_2.shape[0])
 
             p2_elbo = ll.mean(axis=0)
+            best_index = np.argmax(p2_elbo)
+
             self.result_entry.log_candidates(p_tilde_2, p2_elbo)
-            best_p2 = p_tilde_2[np.argmax(p2_elbo)]
+            best_p2 = p_tilde_2[best_index]
             best_p2_elbo = np.max(p2_elbo)
 
             log_message("--- P2 ---")
@@ -217,7 +216,7 @@ class VILModel:
                 log_message("#", i, "ELBO", p2_elbo_i, ",", p_tilde_2_i)
             log_message("----------")
 
-            log_message("Best P2 Index: ", np.argmax(p2_elbo))
+            log_message("Best P2 Index: ", best_index)
             log_message("Best P2: ", best_p2)
             log_message("Best P2 ELBO: ", best_p2_elbo)
 
@@ -678,17 +677,6 @@ class VILModel:
             x_.append(x_i)
         return np.array(x_)
 
-    def strip_answer(self, x):
-        """
-        Strip 'Answer:' from the hidden state if the model generates it.
-        """
-        x_ = []
-        for x_i in x:
-            if "Answer:" in x_i:
-                x_i = x_i[: x_i.index("Answer:")].strip()
-            x_.append(x_i)
-        return np.array(x_)
-
     def strip_prefix(self, x):
         """
         Strip prefix from the hidden state if the model generates it.
@@ -720,8 +708,8 @@ class VILModel:
             h_1_out = self.encoder_l1(
                 x_stripped, temperature=temperature, max_tokens=self.p1_max_tokens
             )
-            if self.strip_answer_for_hidden:
-                h_1_out = self.strip_answer(h_1_out)
+
+            self.cost += self.encoder_l2.forward_evaluate.compute_cost(x_stripped)
 
             # execute second template
             h_1 = self.encoder_l1.apply_residual(h_1_out, x)
@@ -733,6 +721,8 @@ class VILModel:
                 temperature=temperature,
                 max_tokens=self.p2_max_tokens,
             )
+
+            self.cost += self.encoder_l2.forward_evaluate.compute_cost(h_1)
         else:
             h_1_out, h_1 = None, None
 

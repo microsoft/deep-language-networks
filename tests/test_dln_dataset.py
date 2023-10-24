@@ -1,8 +1,9 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import numpy as np
 
-from dln.dataset import Dataset, init_dataset
+from dln.dataset import Dataset, init_dataset, option_shuffle
 
 
 def test_init_dataset_subj():
@@ -68,7 +69,7 @@ def test_init_dataset_airline():
         == "Read the following sentence, then choose whether it is positive, negative, or neutral."
     )
     assert dataset.dataset_name == "airline"
-    assert output_classes.protos == ["positive", "negative", "neutral"]
+    assert output_classes.protos == ["positive|Positive", "negative|Negative", "neutral|Neutral"]
     assert val_examples == -1
 
 
@@ -121,3 +122,19 @@ def test_init_dataset_logical_deduction_seven_objects():
 def test_init_dataset_not_found():
     with pytest.raises(AssertionError, match=r"Dataset test not found"):
         init_dataset("test", 42, "./data")
+
+
+def test_option_shuffle():
+    data_point = {
+        "input": "This is a question.\nOptions:\n(A) Option A\n(B) Option B\n(C) Option C\n(D) Option D",
+        "target": "(C)"
+    }
+    target_input = "Option C"
+    rng = np.random.default_rng(42)
+
+    new_data_point = option_shuffle(data_point, rng)
+
+    options = new_data_point['input'].split('\n')[2:]
+    target_option = [i for i in options if target_input in i][0]
+    assert len(options) == 4
+    assert new_data_point["target"] in target_option
