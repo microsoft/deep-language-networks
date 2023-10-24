@@ -43,6 +43,7 @@ class LogProbsScore:
 
     def __init__(self, forward_evaluate: LLM):
         self.forward_evaluate = forward_evaluate
+        self.burn_in_tokens = 5
 
     def score_requests(self, requests, output_classes=None, agg="max") -> LogProbs:
         # create the batched inputs for the model
@@ -190,7 +191,7 @@ class LogProbsScore:
 
         for context, token_log_probs in zip(contexts, log_probs):
             num_tokens_prompt = len(self.forward_evaluate.encode(context))
-            target_log_probs = token_log_probs[num_tokens_prompt + 10:]
+            target_log_probs = token_log_probs[num_tokens_prompt + self.burn_in_tokens:]
             context_log_probs = token_log_probs[1:num_tokens_prompt]
             all_output_logprobs.append(target_log_probs)
             output_logprobs.append(sum(target_log_probs) / (len(target_log_probs) + 1e-5))
