@@ -13,16 +13,16 @@ from dln.vi.utils import log_message
 def option_shuffle(data_point, rng):
     import re
 
-    pattern = r'\([A-Z]\)\s(.*)'
-    letters = ['(A)', '(B)', '(C)', '(D)', '(E)', '(F)', '(G)']
+    pattern = r"\([A-Z]\)\s(.*)"
+    letters = ["(A)", "(B)", "(C)", "(D)", "(E)", "(F)", "(G)"]
 
-    input = data_point['input']
-    target = data_point['target']
+    input = data_point["input"]
+    target = data_point["target"]
 
     if "\nOptions:\n" not in input:
         raise ValueError("Error detected in data point, Options not found.")
 
-    input, _, options = input.partition('\nOptions:\n')
+    input, _, options = input.partition("\nOptions:\n")
     options = options.strip().split("\n")
     options_text = [re.findall(pattern, option)[-1] for option in options]
 
@@ -31,11 +31,11 @@ def option_shuffle(data_point, rng):
 
     new_target = letters[list(random_indices).index(target_index)]
     new_options = [options_text[i] for i in random_indices]
-    new_options = [f'{letter} {text}' for letter, text in zip(letters, new_options)]
+    new_options = [f"{letter} {text}" for letter, text in zip(letters, new_options)]
 
     new_data_point = {}
-    new_data_point['input'] = f'{input}\nOptions:\n' + '\n'.join(new_options)
-    new_data_point['target'] = new_target
+    new_data_point["input"] = f"{input}\nOptions:\n" + "\n".join(new_options)
+    new_data_point["target"] = new_target
 
     return new_data_point
 
@@ -257,6 +257,16 @@ class Dataset:
                             "- " + item for item in list(self.label_mapping.values())
                         ]
                         sentence = "\n".join(sentence)
+                    if self.dataset_name == "disaster":
+                        sentence = (
+                            "Is the following tweet relevant to a disaster? "
+                            + sentence
+                        )
+                    elif self.dataset_name == "airline":
+                        sentence = (
+                            "Is the following tweet positive, negative, or neutral? "
+                            + sentence
+                        )
                     sentence_list.append(sentence)
                     label_list.append(label)
             indices = data_shuffling_rng.choice(len(sentence_list), 1500, replace=False)
@@ -289,15 +299,17 @@ class Dataset:
             i = 0
             while len(indices) < self.num_train_examples:
                 indices += self.rng.choice(
-                    self.dataset["train_per_class"][
-                        pick_order[i % len(pick_order)]
-                    ],
+                    self.dataset["train_per_class"][pick_order[i % len(pick_order)]],
                     1,
                 ).tolist()
                 i += 1
 
-            self.dataset["train"]["sentence"] = [self.dataset["train"]["sentence"][i] for i in indices]
-            self.dataset["train"]["label"] = [self.dataset["train"]["label"][i] for i in indices]
+            self.dataset["train"]["sentence"] = [
+                self.dataset["train"]["sentence"][i] for i in indices
+            ]
+            self.dataset["train"]["label"] = [
+                self.dataset["train"]["label"][i] for i in indices
+            ]
 
             train_per_class = defaultdict(list)
             for index, label in enumerate(self.dataset["train"]["label"]):
@@ -341,14 +353,18 @@ class Dataset:
                 for key in self.dataset[f"{split}_per_class"].keys():
                     example_pools[key] = self.rng.permutation(
                         self.dataset[f"{split}_per_class"][key]
-                )
+                    )
                 i = 0
-                pick_order = self.rng.permutation(list(self.dataset[f"{split}_per_class"].keys()))
+                pick_order = self.rng.permutation(
+                    list(self.dataset[f"{split}_per_class"].keys())
+                )
                 while len(indices) < batch_size:
                     current_key = pick_order[i % len(pick_order)]
 
                     if sum(map(len, example_pools.values())) == 0:
-                        raise ValueError(f"Not enough examples to sample batch of size {batch_size}.")
+                        raise ValueError(
+                            f"Not enough examples to sample batch of size {batch_size}."
+                        )
 
                     if len(example_pools[current_key]) > 0:
                         indices.append(example_pools[current_key][0])
@@ -438,6 +454,8 @@ def init_dataset(dataset_id, seed, data_dir, n_few_shots=-1, num_train_examples=
     protos = {
         "hyperbaton": ["a|A", "b|B"],
         "airline": ["positive|Positive", "negative|Negative", "neutral|Neutral"],
+        "trec": ["description", "entity", "expression", "human", "location", "number"],
+        "disaster": ["yes|Yes", "no|No"],
         "navigate": ["yes|Yes", "no|No"],
         "date_understanding": ["a|A", "b|B", "c|C", "d|D", "e|E", "f|F"],
         "logical_deduction_seven_objects": [
