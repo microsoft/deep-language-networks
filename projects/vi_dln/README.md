@@ -37,3 +37,37 @@ Results will be saved in `log/<training_strategy>/<dataset_id>`.
 If you decide to run your own experiments, please check:
 
     python vi_main.py --help
+
+
+## LLMs yaml config
+
+You can specify multiple LLMs for the same execution using yaml, for example:
+
+```yaml
+- name: gpt-bwd
+  model: text-davinci-003
+  api_key: OPENAI_API_KEY
+  api_base: OPENAI_API_BASE
+  api_type: OPENAI_API_TYPE
+  api_version: OPENAI_API_VERSION
+  temperature: 0.7
+  max_tokens: 1024
+
+- name: llama2-fwd
+  model: meta-llama/Llama-2-70b-chat-hf
+  api_key: EMPTY
+  api_base: http://127.0.0.1:8000/v1
+  api_type: null
+  api_version: null
+  max_tokens: 512
+  temperature: 0
+
+- name: llama2-posterior
+  model: meta-llama/Llama-2-70b-chat-hf
+  api_key: EMPTY
+  api_base: http://127.0.0.1:8000/v1
+  api_type: null
+  api_version: null
+  max_tokens: 512
+  temperature: 0.75
+```
