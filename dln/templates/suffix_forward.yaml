@@ -4,3 +4,8 @@ v1.0:
     {{ input }}
 
     {{ prompt }}
+v2.0:
+  template: |-
+    {{ input }}
+
+    {{ prompt }}
