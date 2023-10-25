@@ -181,11 +181,11 @@ class Dataset:
                         break
 
                     # option shuffling in all cases!
-                    data[i] = option_shuffle(data[i], data_shuffling_rng)
-                    input, target = data[i]["input"], data[i]["target"]
+                    if self.dataset_name == "date_understanding":
+                        data[i] = option_shuffle(data[i], data_shuffling_rng)
 
+                    input, target = data[i]["input"], data[i]["target"]
                     if self.dataset_name == "date_understanding" and split == "train":
-                        # for date understanding, we add training data to dev set, as the dev set is too small
                         self.dataset["dev"]["sentence"].append(input)
                         self.dataset["dev"]["label"].append(target)
                     self.dataset[split]["sentence"].append(input)
