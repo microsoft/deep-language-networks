@@ -79,10 +79,10 @@ class PriorLayer:
                 max_len = 0
 
                 for i in range(len(output_classes)):
-                    token_ids = self.forward_evaluate.encode(output_classes.prototype(i))
-                    max_len = max(max_len, len(token_ids))
-                    assert max_len == 1
-                    logit_bias[token_ids[0]] = 100
+                    for realization in output_classes.verbalizers(i):
+                        token_ids = self.forward_evaluate.encode(realization)
+                        max_len = max(max_len, len(token_ids))
+                        logit_bias[token_ids[0]] = 100
 
                 outputs = self.forward_evaluate(
                     tpl_inputs,
