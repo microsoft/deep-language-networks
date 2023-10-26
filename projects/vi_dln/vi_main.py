@@ -126,7 +126,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
         desc="Eval",
     )
 
-    model.cost = 0.
+    # model.cost = 0.
     dataset.reset_pointer("test")
     for batch in dataset.iterate("test", batch_size=20):
         x, y, infos = batch
@@ -145,7 +145,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     writer.add_scalar("test/acc", (test_acc), iteration)
     # for sig-test purposes
     log_message("ALL ACCS:", all_accs)
-    log_message("TOKEN COST:", model.cost)
+    # log_message("TOKEN COST:", model.total_cost)
     return test_acc
 
 
@@ -604,7 +604,11 @@ def main(
     log_message("Best L1 weights:", model.encoder_l1.weight)
     log_message("Best L2 weights:", model.encoder_l2.weight)
 
+    log_message("TRAINING TOKEN COST:", fwd_model.total_cost + bwd_model.total_cost)
+
+    fwd_model.total_cost = 0.
     test_acc = test(dataset, model, loss_fn, iteration, writer, cost_only=cost_only)
+    log_message("TEST TOKEN COST:", fwd_model.total_cost)
 
     if wandb_enabled:
         wandb.log({"test/acc": test_acc, "epoch": iteration})

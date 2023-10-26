@@ -67,9 +67,16 @@ class LLM(ABC):
     def __init__(self, model_name: str, **generation_options):
         self.generation_options = generation_options
         self.engine = model_name
+        self.total_cost = 0.0
 
     def __call__(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
-        return self.generate(inputs, **kwargs)
+        is_echo_enabled = kwargs.get("echo") or self.generation_options.get("echo")
+        if not is_echo_enabled:
+            self.total_cost += self.compute_cost(inputs)
+
+        outputs = self.generate(inputs, **kwargs)
+        self.total_cost += self.compute_cost(outputs)
+        return outputs
 
     @abstractmethod
     def generate(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
@@ -83,7 +90,7 @@ class LLM(ABC):
     @abstractmethod
     def has_logprobs(self) -> bool:
         raise NotImplementedError
-    
+
     def compute_cost(self, inputs: List[str]) -> float:
         return np.sum(list([len(self.encode(input)) for input in inputs]))
 
@@ -335,9 +342,10 @@ class VLLM(LLM):
 
 
 def instantiate_model(model_name: str, **generation_options) -> LLM:
-    if model_name in GPT.AVAILABLE_MODELS:
-        return GPT(model_name, **generation_options)
-    return VLLM(model_name, **generation_options)
+    #if model_name in GPT.AVAILABLE_MODELS:
+    #    return GPT(model_name, **generation_options)
+    #return VLLM(model_name, **generation_options)
+    return LLM_REGISTRY.register(model_name, **generation_options)
 
 
 def instantiate_tokenizer(model_name: str):
@@ -352,3 +360,22 @@ def instantiate_tokenizer(model_name: str):
             pretrained_path = model_name
         encoder = AutoTokenizer.from_pretrained(pretrained_path)
     return encoder
+
+class LLMRegistry:
+    def __init__(self):
+        self.models = []
+
+    def register(self, model_name: str, **generation_options) -> LLM:
+        if model_name in GPT.AVAILABLE_MODELS:
+            llm = GPT(model_name, **generation_options)
+        else:
+            llm = VLLM(model_name, **generation_options)
+
+        self.models.append(llm)
+        return llm
+
+    @property
+    def total_cost(self):
+        return sum([llm.total_cost for llm in self.models])
+
+LLM_REGISTRY = LLMRegistry()
