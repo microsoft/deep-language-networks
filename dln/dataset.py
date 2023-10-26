@@ -180,8 +180,10 @@ class Dataset:
                     else:
                         break
 
-                    # option shuffling in all cases!
-                    data[i] = option_shuffle(data[i], data_shuffling_rng)
+                    # option shuffling in all multiple options cases, skip navigate (yes/no)
+                    if self.dataset_name != "navigate":
+                        data[i] = option_shuffle(data[i], data_shuffling_rng)
+
                     input, target = data[i]["input"], data[i]["target"]
 
                     if self.dataset_name == "date_understanding" and split == "train":
