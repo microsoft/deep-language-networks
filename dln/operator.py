@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Union
+from typing import Dict, List, Union
 import asyncio
 import numpy as np
 import openai
@@ -11,6 +11,7 @@ from tenacity import (
     wait_exponential,
     retry_if_exception_type,
 )
+import yaml
 
 
 openai.util.logger.setLevel(logging.WARNING)
@@ -341,11 +342,8 @@ class VLLM(LLM):
         return True
 
 
-def instantiate_model(model_name: str, **generation_options) -> LLM:
-    #if model_name in GPT.AVAILABLE_MODELS:
-    #    return GPT(model_name, **generation_options)
-    #return VLLM(model_name, **generation_options)
-    return LLM_REGISTRY.register(model_name, **generation_options)
+def instantiate_model(model_type: str, **generation_options) -> LLM:
+    return LLMRegistry.instantiate_llm(model_type, **generation_options)
 
 
 def instantiate_tokenizer(model_name: str):
@@ -361,21 +359,66 @@ def instantiate_tokenizer(model_name: str):
         encoder = AutoTokenizer.from_pretrained(pretrained_path)
     return encoder
 
+
 class LLMRegistry:
-    def __init__(self):
-        self.models = []
 
-    def register(self, model_name: str, **generation_options) -> LLM:
-        if model_name in GPT.AVAILABLE_MODELS:
-            llm = GPT(model_name, **generation_options)
-        else:
-            llm = VLLM(model_name, **generation_options)
+    def __init__(self, config=None):
+        self.models : Dict[str, LLM] = {}
+        if config is not None:
+            self._load_from_configs(config)
 
-        self.models.append(llm)
+    def register(self, model_name: str, model_type: str = None, **generation_options) -> LLM:
+        """ Register a single model to the registry.
+        Args:
+            model_name: how you refer to the model, for example: gpt-3.
+            model_type: the api model name, for example: text-davinci-003. If not provided, use model_name as default.
+            **generation_options: generation options, for example: api_key, api_base, api_type, api_version, max_tokens, temperature, etc.
+        Returns:
+            the instantiated model
+        """
+        if model_type is None:
+            model_type = model_name
+        llm = self.instantiate_llm(model_type, **generation_options)
+        self.models[model_name] = llm
         return llm
 
     @property
     def total_cost(self):
-        return sum([llm.total_cost for llm in self.models])
+        return sum([llm.total_cost for llm in self.models.values()])
 
-LLM_REGISTRY = LLMRegistry()
+    @classmethod
+    def instantiate_llm(cls, model_type: str, **generation_options) -> LLM:
+        if model_type in GPT.AVAILABLE_MODELS:
+            llm = GPT(model_type, **generation_options)
+        else:
+            llm = VLLM(model_type, **generation_options)
+        return llm
+    
+    @classmethod
+    def from_yaml(cls, path):
+        with open(path, "r") as f:
+            config = yaml.safe_load(f)
+        return cls(config=config)
+
+    def _load_from_configs(self, configs: List[Dict]):
+        for config in configs:
+            name = config.pop("name")  # how you refer to the model
+            model = config.pop("model", name)  # the api model name
+            self.models[name] = self.instantiate_llm(
+                model,
+                **config,
+            )
+
+    def __len__(self) -> int:
+        return len(self.models)
+
+    def __getitem__(self, model_name):
+        return self.models[model_name]
+
+    def __contains__(self, model_name):
+        return model_name in self.models
+
+    def get(self, model_name, default=None):
+        if model_name in self:
+            return self[model_name]
+        return default
