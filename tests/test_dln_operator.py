@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import openai
 import pytest
 
-from dln.operator import GPT, VLLM, LLMRegistry
+from dln.operator import GPT, VLLM, LLMRegistry, isolated_cost
 
 
 @pytest.fixture
@@ -200,3 +200,21 @@ def test_total_cost(gpt_api_config, llama_api_config):
     assert llm_registry.total_cost == 2.0
     llm_registry["llama2"].total_cost = 4.0
     assert llm_registry.total_cost == 6.0
+
+
+def test_compute_cost_manager(gpt_api_config, mock_openai_api):
+    llm = LLMRegistry.instantiate_llm("text-davinci-003", **gpt_api_config)
+    assert llm.total_cost == 0.0
+    with isolated_cost(llm):  # add_cost_to_total=False by default
+        prompt = "What is the largest city in Quebec?"
+        response = llm(prompt)
+        assert response == ["Montreal"]
+        assert llm.total_cost == 37.0
+    assert llm.total_cost == 0.0
+
+    with isolated_cost(llm, add_cost_to_total=True):
+        prompt = "What is the largest city in Quebec?"
+        response = llm(prompt)
+        assert response == ["Montreal"]
+        assert llm.total_cost == 37.0
+    assert llm.total_cost == 37.0

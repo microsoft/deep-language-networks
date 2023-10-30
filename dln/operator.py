@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from typing import Dict, List, Union
 import asyncio
 import numpy as np
@@ -94,6 +95,19 @@ class LLM(ABC):
 
     def compute_cost(self, inputs: List[str]) -> float:
         return np.sum(list([len(self.encode(input)) for input in inputs]))
+
+
+@contextmanager
+def isolated_cost(llm: LLM, add_cost_to_total: bool = False):
+    previous_cost = llm.total_cost
+    try:
+        llm.total_cost = 0.0
+        yield
+    finally:
+        if add_cost_to_total:
+            llm.total_cost += previous_cost
+        else:
+            llm.total_cost = previous_cost
 
 
 class GPT(LLM):
@@ -393,7 +407,7 @@ class LLMRegistry:
         else:
             llm = VLLM(model_type, **generation_options)
         return llm
-    
+
     @classmethod
     def from_yaml(cls, path):
         with open(path, "r") as f:
