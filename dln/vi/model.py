@@ -89,6 +89,7 @@ class VILModel:
             num_p1_steps: number of optimization steps for p1
             use_nce: compute p1 elbo using NCE
         """
+        self.forward_evaluate = forward_evaluate
         self.encoder_l1 = ResidualPriorLayer(
             logprobs_score=logprobs_score,
             forward_evaluate=forward_evaluate,
@@ -709,7 +710,7 @@ class VILModel:
                 x_stripped, temperature=temperature, max_tokens=self.p1_max_tokens
             )
 
-            self.cost += self.encoder_l2.forward_evaluate.compute_cost(x_stripped)
+            self.cost += self.forward_evaluate.compute_cost(x_stripped)
 
             # execute second template
             h_1 = self.encoder_l1.apply_residual(h_1_out, x)
@@ -722,7 +723,7 @@ class VILModel:
                 max_tokens=self.p2_max_tokens,
             )
 
-            self.cost += self.encoder_l2.forward_evaluate.compute_cost(h_1)
+            self.cost += self.forward_evaluate.compute_cost(h_1)
         else:
             h_1_out, h_1 = None, None
 
@@ -744,7 +745,7 @@ class VILModel:
                 )
                 for x_ in x
             ]
-            self.cost += self.encoder_l2.forward_evaluate.compute_cost(x_)
+            self.cost += self.forward_evaluate.compute_cost(x_)
 
             # only compute cost! save inference
             if cost_only:

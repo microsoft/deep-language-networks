@@ -75,9 +75,13 @@ class LLM(ABC):
         is_echo_enabled = kwargs.get("echo") or self.generation_options.get("echo")
         if not is_echo_enabled:
             self.total_cost += self.compute_cost(inputs)
-
         outputs = self.generate(inputs, **kwargs)
-        self.total_cost += self.compute_cost(outputs)
+        if kwargs.get("return_logprobs"):
+            self.total_cost += self.compute_cost(
+                [out[0] for out in outputs]
+            )
+        else:
+            self.total_cost += self.compute_cost(outputs)
         return outputs
 
     @abstractmethod
@@ -99,6 +103,7 @@ class LLM(ABC):
 
 @contextmanager
 def isolated_cost(llm: LLM, add_cost_to_total: bool = False):
+    # TODO: accept a list of llms / entire registry
     previous_cost = llm.total_cost
     try:
         llm.total_cost = 0.0
