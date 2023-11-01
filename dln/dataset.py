@@ -40,6 +40,16 @@ def option_shuffle(data_point, rng):
     return new_data_point
 
 
+# accessed outside
+# get_size
+# reset_pointer
+# iterate
+# prefix
+# get_data
+# get_batch
+# name
+# instruction
+
 class Dataset:
     def __init__(
         self,
@@ -141,9 +151,6 @@ class Dataset:
         self.dataset[split]["sentence"] = [
             self.dataset[split]["sentence"][i] for i in indices
         ]
-
-    def reset(self):
-        self.train_pointer, self.dev_pointer, self.test_pointer = 0, 0, 0
 
     def load_dataset(self):
         data_shuffling_rng = np.random.RandomState(42)
@@ -306,6 +313,9 @@ class Dataset:
                 train_per_class[label].append(index)
             self.dataset["train_per_class"] = train_per_class
 
+    def reset(self):
+        self.train_pointer, self.dev_pointer, self.test_pointer = 0, 0, 0
+
     def reset_pointer(self, split):
         if split == "train":
             self.train_pointer = 0
@@ -427,30 +437,113 @@ def init_dataset(dataset_id, seed, data_dir, n_few_shots=-1, num_train_examples=
         "logical_deduction_seven_objects": bbh,
     }
 
-    assert dataset_id in dataset_location, f"Dataset {dataset_id} not found"
-
-    dataset = Dataset(
-        dataset_location[dataset_id],
-        dataset_id,
-        seed,
-        n_few_shots=n_few_shots,
-        num_train_examples=num_train_examples,
-    )
-    val_examples = {"hyperbaton": 300}.get(dataset_id, -1)
-    protos = {
-        "hyperbaton": ["a|A", "b|B"],
-        "airline": ["positive|Positive", "negative|Negative", "neutral|Neutral"],
-        "navigate": ["yes|Yes", "no|No"],
-        "date_understanding": ["a|A", "b|B", "c|C", "d|D", "e|E", "f|F"],
-        "logical_deduction_seven_objects": [
-            "a|A",
-            "b|B",
-            "c|C",
-            "d|D",
-            "e|E",
-            "f|F",
-            "g|G",
-        ],
-    }.get(dataset_id, list(dataset.label_mapping.values()))
-    output_classes = OutputClasses(protos=protos)
+    # assert dataset_id in dataset_location, f"Dataset {dataset_id} not found"
+    if dataset_id in dataset_location:
+        dataset = Dataset(
+            dataset_location[dataset_id],
+            dataset_id,
+            seed,
+            n_few_shots=n_few_shots,
+            num_train_examples=num_train_examples,
+        )
+        val_examples = {"hyperbaton": 300}.get(dataset_id, -1)
+        protos = {
+            "hyperbaton": ["a|A", "b|B"],
+            "airline": ["positive|Positive", "negative|Negative", "neutral|Neutral"],
+            "navigate": ["yes|Yes", "no|No"],
+            "date_understanding": ["a|A", "b|B", "c|C", "d|D", "e|E", "f|F"],
+            "logical_deduction_seven_objects": [
+                "a|A",
+                "b|B",
+                "c|C",
+                "d|D",
+                "e|E",
+                "f|F",
+                "g|G",
+            ],
+        }.get(dataset_id, list(dataset.label_mapping.values()))
+        output_classes = OutputClasses(protos=protos)
+    if dataset_id == "gsm8k":
+        dataset = GSM8K(
+            dataset_path=data_dir,
+            dataset=dataset_id,
+            seed=seed,
+            n_few_shots=n_few_shots,
+            num_train_examples=num_train_examples,
+        )
+        val_examples = -1
+        output_classes = None
     return dataset, output_classes, val_examples
+
+
+from datasets import load_dataset, get_dataset_split_names
+
+
+class GSM8K(Dataset):
+
+    def __init__(
+        self,
+        dataset_path,
+        dataset,
+        seed=42,
+        use_label_mapping=False,  # not used for non-classification
+        append_options=False,  # not used for non-classification
+        n_few_shots=-1,
+        num_train_examples=-1,
+        instruction: str = "",
+    ):
+        self.data_path = dataset_path or "../../data/huggingface/datasets"
+        self.dataset_name = dataset
+        self.random_seed = seed
+        self.use_label_mapping = use_label_mapping
+        self.append_options = append_options
+        self.n_few_shots = n_few_shots
+        self.num_train_examples = num_train_examples
+        self.instruction = instruction
+
+        self.rng = np.random.RandomState(self.random_seed)  # move to baseclass
+        self.few_shot_rng = np.random.RandomState(self.random_seed)  # move to baseclass
+
+        self.dataset = self.load_dataset(
+            dataset_name=self.dataset_name,
+            config_name='main',
+            cache_dir=self.data_path,
+        )
+        self.reset()
+
+    @staticmethod
+    def _split_answer(answers):
+        steps = []
+        final_answers = []
+        for answer in answers:
+            s, a = answer.split("#### ")
+            steps.append(s)
+            final_answers.append(a)
+        return steps, final_answers
+
+    def load_dataset(self, dataset_name, config_name, cache_dir):
+        hf_dataset = load_dataset(
+            dataset_name, config_name, cache_dir=cache_dir
+        ).shuffle(seed=self.random_seed)
+        
+        dataset = dict(
+            train_per_class=dict(),
+            train=dict(sentence=[], label=[]),
+            dev=dict(sentence=[], label=[]),
+            test=dict(sentence=[], label=[]),
+        )
+
+        train_size = hf_dataset["train"].num_rows // 2
+        train_dataset = hf_dataset["train"][:train_size]
+        dev_dataset = hf_dataset["train"][train_size:]
+        test_dataset = hf_dataset['test']
+
+        dataset["train"]["sentence"] = train_dataset['question']
+        dataset["train"]["label"] = self._split_answer(train_dataset['answer'])[1]
+        dataset["dev"]["sentence"] = dev_dataset['question']
+        dataset["dev"]["label"] = self._split_answer(dev_dataset['answer'])[1]
+
+        dataset["test"]["sentence"] = test_dataset['question']
+        dataset["test"]["label"] = self._split_answer(test_dataset['answer'])[1]
+
+        return dataset

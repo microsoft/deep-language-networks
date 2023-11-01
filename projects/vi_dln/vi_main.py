@@ -431,7 +431,7 @@ def main(
     dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir, n_shots, num_train_examples)
     if result_data_path is None:
         result_data_path = os.path.join(out_dir, "result_data.log")
-    result_writer = ResultLogWriter(dataset, path=result_data_path, name=result_exp_name)
+    result_writer = ResultLogWriter(dataset.dataset_name, path=result_data_path)
 
     init_p1, init_p2 = init_prompts(dataset, init_p1, init_p2)
     if wandb_enabled:
