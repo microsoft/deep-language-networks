@@ -48,7 +48,6 @@ def option_shuffle(data_point, rng):
 # iterate
 # get_data
 # get_batch
-# name
 # instruction
 # output_classes
 
@@ -71,15 +70,13 @@ class Dataset:
         self.n_few_shots = n_few_shots
         self.dataset_info = self._load_config(
             pjoin(os.path.dirname(os.path.abspath(__file__)), "dataset_info.yaml")
-        )
-        self.label_mapping = self.dataset_info.get(
-            self.dataset_name, {}
-        ).get("label_mapping", {})
+        ).get(self.dataset_name, {})
+        self.label_mapping = self.dataset_info.get("label_mapping", {})
         self.use_label_mapping = use_label_mapping and self.label_mapping
         self.append_options = append_options
-        self.instruction = self.dataset_info.get(
-            self.dataset_name, {}
-        ).get("instruction", "")
+        self.instruction = self.dataset_info.get("instruction", "")
+        protos = self.dataset_info.get('protos', list(self.label_mapping.values()))
+        self.output_classes = OutputClasses(protos=protos) if protos else None
 
         self.rng = np.random.RandomState(self.random_seed)
         self.few_shot_rng = np.random.RandomState(self.random_seed)
@@ -104,10 +101,6 @@ class Dataset:
     @abstractmethod
     def load_dataset(self):
         pass
-
-    @property
-    def output_classes(self):
-        return None
 
     @staticmethod
     def _load_config(config_file):
@@ -334,20 +327,6 @@ def init_dataset(dataset_id, seed, data_dir, n_few_shots=-1, num_train_examples=
 
 class BBH(Dataset):
 
-    @property
-    def output_classes(self):
-        if getattr(self, "_output_classes", None) is None:
-            protos = {
-                "hyperbaton": ["a|A", "b|B"],
-                "navigate": ["yes|Yes", "no|No"],
-                "date_understanding": ["a|A", "b|B", "c|C", "d|D", "e|E", "f|F"],
-                "logical_deduction_seven_objects": [
-                    "a|A", "b|B", "c|C", "d|D", "e|E", "f|F", "g|G"
-                ],
-            }.get(self.dataset_name)
-            self._output_classes = OutputClasses(protos=protos)
-        return self._output_classes
-
     def load_dataset(self):
         self.data_path = os.path.join(self.data_path, "bb_minus_bbh")
         data_shuffling_rng = np.random.RandomState(self.random_seed)
@@ -408,15 +387,6 @@ class BBH(Dataset):
 
 class Leopard(Dataset):
 
-    @property
-    def output_classes(self):
-        if getattr(self, "_output_classes", None) is None:
-            protos = {
-                "airline": ["positive|Positive", "negative|Negative", "neutral|Neutral"],
-            }.get(self.dataset_name, list(self.label_mapping.values()))
-            self._output_classes = OutputClasses(protos=protos)
-        return self._output_classes
-
     def load_dataset(self):
         self.data_path = os.path.join(self.data_path, "leopard")
         data_shuffling_rng = np.random.RandomState(self.random_seed)
@@ -450,14 +420,6 @@ class Leopard(Dataset):
 
 
 class OrderedPrompt(Dataset):
-
-    @property
-    def output_classes(self):
-        if getattr(self, "_output_classes", None) is None:
-            self._output_classes = OutputClasses(
-                protos=list(self.label_mapping.values())
-            )
-        return self._output_classes
 
     def load_dataset(self):
         self.data_path = os.path.join(self.data_path, "ordered_prompt")
