@@ -34,11 +34,11 @@ def init_prompts(dataset, init_p1, init_p2):
     if init_p1 and init_p1.endswith(".json"):
         with open(init_p1) as f:
             best_weights = json.load(f)
-        init_p1 = best_weights[dataset.name]["best_weights"]
+        init_p1 = best_weights[dataset.dataset_name]["best_weights"]
     elif init_p2 and init_p2.endswith(".json"):
         with open(init_p2) as f:
             best_weights = json.load(f)
-        init_p2 = best_weights[dataset.name]["best_weights"]
+        init_p2 = best_weights[dataset.dataset_name]["best_weights"]
     elif init_p2 and init_p2.endswith(".log"):
         found = False
         with open(init_p2) as f:
@@ -60,7 +60,7 @@ def init_prompts(dataset, init_p1, init_p2):
     return init_p1, init_p2
 
 
-def validate(dataset, model, loss_fn, iteration, val_examples, val_scores, writer, result_writer):
+def validate(dataset, model, loss_fn, iteration, val_scores, writer, result_writer):
     log_message(colored("VALIDATING...", "red"))
     log_message("Current L1 weights:", model.encoder_l1.weight)
     log_message("Current L2 weights:", model.encoder_l2.weight)
@@ -73,12 +73,11 @@ def validate(dataset, model, loss_fn, iteration, val_examples, val_scores, write
         acc = 0.0
         tot = 0.0
         pbar = tqdm.tqdm(
-            total=dataset.get_size("dev") if val_examples < 0 else val_examples,
+            total=dataset.get_size("dev"),
             bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
             desc="Eval",
         )
         dataset.reset_pointer("dev")
-        num_examples = 0
         class_counter = Counter()
         total_counter = Counter()
 
@@ -89,7 +88,6 @@ def validate(dataset, model, loss_fn, iteration, val_examples, val_scores, write
             losses = loss_fn(y_hat, y)
             acc += len(y) - np.sum(losses)
             tot += len(y)
-            num_examples += len(y)
 
             for xi, yi, yhati, li in zip(x, y, y_hat, losses):
                 total_counter.update([yi])
@@ -98,9 +96,6 @@ def validate(dataset, model, loss_fn, iteration, val_examples, val_scores, write
 
             pbar.update(len(y))
             pbar.set_postfix_str(f"{acc / tot:.1%}")
-
-            if num_examples == val_examples:
-                break
 
         for k, v in class_counter.items():
             log_message(f"{k}: {float(v)/total_counter[k]}")
@@ -428,7 +423,7 @@ def main(
 
     writer = SummaryWriter(out_dir)
 
-    dataset, output_classes, val_examples = init_dataset(dataset, seed, data_dir, n_shots, num_train_examples)
+    dataset = init_dataset(dataset, seed, data_dir, n_shots, num_train_examples)
     if result_data_path is None:
         result_data_path = os.path.join(out_dir, "result_data.log")
     result_writer = ResultLogWriter(dataset.dataset_name, path=result_data_path)
@@ -474,7 +469,7 @@ def main(
         p_class=p_class,
         p_residual=p_residual,
         use_h_argmax=use_h_argmax,
-        output_classes=output_classes,
+        output_classes=dataset.output_classes,
         strip_options_for_hidden=strip_options_for_hidden,
         trust_factor=trust_factor,
         forward_use_classes=forward_use_classes,
@@ -507,7 +502,7 @@ def main(
 
         if (iteration == 0 and do_first_eval) or (iteration > 0 and iteration % val_freq == 0):
             dev_acc = validate(
-                dataset, model, loss_fn, iteration, val_examples, val_scores, writer, result_writer
+                dataset, model, loss_fn, iteration, val_scores, writer, result_writer
             )
             if wandb_enabled:
                 wandb.log({"dev/acc": dev_acc, "epoch": iteration})
