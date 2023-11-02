@@ -42,16 +42,6 @@ def option_shuffle(data_point, rng):
     return new_data_point
 
 
-# accessed outside dataset
-# get_size
-# reset_pointer
-# iterate
-# get_data
-# get_batch
-# instruction
-# output_classes
-
-
 class Dataset:
     def __init__(
         self,
