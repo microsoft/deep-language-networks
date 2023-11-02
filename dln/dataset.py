@@ -46,12 +46,12 @@ def option_shuffle(data_point, rng):
 # get_size
 # reset_pointer
 # iterate
-# prefix   ????
 # get_data
 # get_batch
 # name
 # instruction
 # output_classes
+
 
 class Dataset:
     def __init__(
@@ -400,8 +400,8 @@ class BBH(Dataset):
                 self.dataset["test"]["label"].append(target)
 
         # TODO: use a parameter instead
-        val_examples = {"hyperbaton": 300}.get(self.dataset_name, -1)
-        if val_examples > 0:
+        if self.dataset_name == "hyperbaton":
+            val_examples = 300
             self.dataset["dev"]["sentence"] = self.dataset["dev"]["sentence"][:val_examples]
             self.dataset["dev"]["label"] = self.dataset["dev"]["label"][:val_examples]
 

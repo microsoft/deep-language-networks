@@ -175,12 +175,6 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     help="Remove options from examples for the hidden layer.",
 )
 @click.option(
-    "--strip_prefix_for_hidden",
-    type=bool,
-    default=False,
-    help="Strip the prefix from the examples if it exists in some tasks, e.g. BBH.",
-)
-@click.option(
     "--trust_factor",
     default=0.0,
     help="Trust-region factor for prompt update. Ensures KL divergence between the old and new prompt is small.",
@@ -369,7 +363,6 @@ def main(
     num_p_samples,
     num_h_samples,
     strip_options_for_hidden,
-    strip_prefix_for_hidden,
     trust_factor,
     use_memory,
     init_p1,
@@ -481,7 +474,6 @@ def main(
         p1_max_tokens=p1_max_tokens,
         p2_max_tokens=p2_max_tokens,
         posterior_temp=posterior_temp,
-        strip_prefix_for_hidden=dataset.prefix if strip_prefix_for_hidden else None,
         output_scoring_function=output_scoring_function,
         hidden_scoring_function=hidden_scoring_function,
         num_p1_steps=num_p1_steps,
