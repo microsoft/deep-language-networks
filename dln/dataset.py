@@ -318,10 +318,10 @@ def init_dataset(dataset_id, seed, data_dir, n_few_shots=-1, num_train_examples=
 class BBH(Dataset):
 
     def load_dataset(self):
-        self.data_path = os.path.join(self.data_path, "bb_minus_bbh")
+        self.data_path = os.path.join(self.data_path, "bbh")
         data_shuffling_rng = np.random.RandomState(self.random_seed)
         train_valid_file_path = os.path.join(
-            self.data_path,
+            self.data_path.replace("bbh", "bb_minus_bbh"),
             self.dataset_name + ".json",
         )
         with open(train_valid_file_path) as fin:
