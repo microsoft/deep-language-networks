@@ -319,7 +319,7 @@ class BBH(Dataset):
 
     def load_dataset(self):
         self.data_path = os.path.join(self.data_path, "bbh")
-        data_shuffling_rng = np.random.RandomState(self.random_seed)
+        data_shuffling_rng = np.random.RandomState(42)
         train_valid_file_path = os.path.join(
             self.data_path.replace("bbh", "bb_minus_bbh"),
             self.dataset_name + ".json",
@@ -379,7 +379,7 @@ class Leopard(Dataset):
 
     def load_dataset(self):
         self.data_path = os.path.join(self.data_path, "leopard")
-        data_shuffling_rng = np.random.RandomState(self.random_seed)
+        data_shuffling_rng = np.random.RandomState(42)
         assert self.dataset_name in ("disaster", "airline"), self.dataset_name
         file_path = os.path.join(
             self.data_path, self.dataset_name, self.dataset_name + "_eval.json"
@@ -413,7 +413,7 @@ class OrderedPrompt(Dataset):
 
     def load_dataset(self):
         self.data_path = os.path.join(self.data_path, "ordered_prompt")
-        data_shuffling_rng = np.random.RandomState(self.random_seed)
+        data_shuffling_rng = np.random.RandomState(42)
         assert self.dataset_name in ("mpqa", "trec", "subj"), self.dataset_name
 
         for split in ["train", "dev", "test"]:
@@ -494,7 +494,7 @@ class GSM8K(Dataset):
         self.data_path = os.path.join(self.data_path, "huggingface/datasets")
         hf_dataset = hf_load_dataset(
             self.dataset_name, 'main', cache_dir=self.data_path
-        ).shuffle(seed=self.random_seed)
+        ).shuffle(seed=42)
 
         train_size = hf_dataset["train"].num_rows // 2
         train_dataset = hf_dataset["train"][:train_size]
