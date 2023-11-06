@@ -11,7 +11,7 @@ from termcolor import colored
 from torch.utils.tensorboard import SummaryWriter
 
 from dln.dataset import init_dataset
-from dln.loss import ZeroOneLoss
+from dln.loss import LLoss
 from dln.operator import instantiate_model
 from dln.postprocessing import postprocess_prediction
 from dln.score import LogProbsScore
@@ -253,6 +253,12 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     default="logprobs",
     help="Use logprobs to score hidden states",
 )
+@click.options(
+    "--loss_function",
+    type=str,
+    default="ZeroOneLoss",
+    help="Loss function. One of: ZeroOneLoss, NumberPresenceLoss",
+)
 @click.option(
     "--posterior_sharpening_include_prior",
     type=bool,
@@ -326,13 +332,6 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     help="The path of the file where the result logs json are stored",
 )
 @click.option(
-    "--result_exp_name",
-    type=str,
-    default=None,
-    help="(Optional) Name of the experiment run to be saved in the result logs json file."
-    "Useful when running multiple experiments with the same dataset name.",
-)
-@click.option(
     "--enable_wandb",
     is_flag=True,
     help="Enable wandb logging. Requires wandb to be installed.",
@@ -370,6 +369,7 @@ def main(
     tolerance,
     output_scoring_function,
     hidden_scoring_function,
+    loss_function,
     posterior_sharpening_include_prior,
     posterior_sharpening_use_mi_regularization,
     forward_use_classes,
@@ -388,7 +388,6 @@ def main(
     num_p1_steps,
     use_nce,
     result_data_path,
-    result_exp_name,
     enable_wandb,
 ):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S.%f")
@@ -442,7 +441,10 @@ def main(
         stop=None,
     )
 
-    loss_fn = ZeroOneLoss(postproc=postprocess_prediction)
+    postproc = None
+    if loss_function == "ZeroOneLoss":
+        postproc = postprocess_prediction
+    loss_fn = LLoss.instantiate(loss_function, postproc)
     prompt_sampler = PromptSampler(bwd_model, q_prompt)
     posterior_sampler = PosteriorSampler(bwd_model, q_hidden)
     logprobs_score = LogProbsScore(fwd_model)
