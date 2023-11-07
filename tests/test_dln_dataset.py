@@ -1,3 +1,4 @@
+from collections import defaultdict
 import json
 import re
 from unittest.mock import MagicMock, patch
@@ -228,7 +229,7 @@ def test_init_dataset_gsm8k(tmp_path):
 
 
 def test_init_dataset_not_found():
-    with pytest.raises(AssertionError, match=r"Dataset test not found"):
+    with pytest.raises(ValueError, match=r"Dataset test not found"):
         init_dataset("test", 42, "./data")
 
 
@@ -246,3 +247,56 @@ def test_option_shuffle():
     target_option = [i for i in options if target_input in i][0]
     assert len(options) == 4
     assert new_data_point["target"] in target_option
+
+
+def test_max_size_balanced(tmp_path):
+    data_size = 1000
+    dataset = HFDataset.from_dict({
+        "question": [f"question {i}" for i in range(data_size)],
+        "answer": [f"answer #### {i % 4}" for i in range(data_size)],  # 4 labels
+    })
+    dataset_splits = dataset.train_test_split(test_size=0.4)
+    dataset_dict = HFDatasetDict({
+        'train': dataset_splits['train'],
+        'test': dataset_splits['test'],
+    })
+    with patch("dln.dataset.hf_load_dataset", MagicMock(return_value=dataset_dict)):
+        dataset = init_dataset(
+            "gsm8k",
+            42,
+            tmp_path,
+            max_train_size=100,
+            max_dev_size=40,
+            max_test_size=200,
+            n_few_shots=5
+        )
+    assert dataset.train_size == 100
+    assert dataset.dev_size == 40
+    assert dataset.test_size == 200
+    for split in ("train", "dev", "test"):
+        _, labels = dataset.get_data(split)
+        label_counts = {label: labels.count(label) for label in set(labels)}
+        assert len(set(label_counts.values())) <= 1
+
+
+def test_get_balanced_batch(tmp_path):
+    data_size = 1000
+    dataset = HFDataset.from_dict({
+        "question": [f"question {i}" for i in range(data_size)],
+        "answer": [f"answer #### {i % 4}" for i in range(data_size)],
+    })
+    dataset_splits = dataset.train_test_split(test_size=0.4)
+    dataset_dict = HFDatasetDict({  
+        'train': dataset_splits['train'],  
+        'test': dataset_splits['test'],
+    })
+    with patch("dln.dataset.hf_load_dataset", MagicMock(return_value=dataset_dict)):
+        dataset = init_dataset("gsm8k", 42, tmp_path, n_few_shots=8)
+    x, y, few_shot = dataset.get_batch("test", 12, random_sample=True, balance=True)
+    assert len(x) == 12
+    assert len(y) == 12
+    y_counts = {l: y.count(l) for l in set(y)}
+    assert y_counts == {'0': 3, '1': 3, '2': 3, '3': 3}
+    few_shot_labels = [l for s, l in few_shot]
+    few_shot_counts = {f: few_shot_labels.count(f) for f in few_shot_labels}
+    assert few_shot_counts == {'0': 2, '1': 2, '2': 2, '3': 2}

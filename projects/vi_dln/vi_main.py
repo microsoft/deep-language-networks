@@ -73,7 +73,7 @@ def validate(dataset, model, loss_fn, iteration, val_scores, writer, result_writ
         acc = 0.0
         tot = 0.0
         pbar = tqdm.tqdm(
-            total=dataset.get_size("dev"),
+            total=dataset.dev_size,
             bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
             desc="Eval",
         )
@@ -116,7 +116,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     all_accs = []
 
     pbar = tqdm.tqdm(
-        total=dataset.get_size("test"),
+        total=dataset.test_size,
         bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
         desc="Eval",
     )
@@ -148,7 +148,9 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option("--seed", default=42, help="Random seed.")
 @click.option("--out_dir", default="log/")
 @click.option("--data_dir", default="../../data")
-@click.option("--num_train_examples", default=-1, type=int, help="Use only so many train examples.")
+@click.option("--max_train_size", default=-1, type=int, help="Use only so many train examples.")
+@click.option("--max_dev_size", default=-1, type=int, help="Use only so many dev examples.")
+@click.option("--max_test_size", default=-1, type=int, help="Use only so many test examples.")
 @click.option("--val_freq", default=2)
 @click.option("--do_first_eval", is_flag=True)
 @click.option("--do_zero_shot", is_flag=True)
@@ -340,7 +342,9 @@ def main(
     seed,
     out_dir,
     data_dir,
-    num_train_examples,
+    max_train_size,
+    max_dev_size,
+    max_test_size,
     val_freq,
     cost_only,
     do_first_eval,
@@ -415,7 +419,16 @@ def main(
 
     writer = SummaryWriter(out_dir)
 
-    dataset = init_dataset(dataset, seed, data_dir, n_shots, num_train_examples)
+    dataset = init_dataset(
+        dataset_id=dataset,
+        seed=seed,
+        data_dir=data_dir,
+        n_few_shots=n_shots,
+        max_train_size=max_train_size,
+        max_dev_size=max_dev_size,
+        max_test_size=max_test_size,
+    )
+
     if result_data_path is None:
         result_data_path = os.path.join(out_dir, "result_data.log")
     result_writer = ResultLogWriter(dataset.dataset_name, path=result_data_path)

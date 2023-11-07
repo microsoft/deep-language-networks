@@ -45,18 +45,19 @@ def option_shuffle(data_point, rng):
 class Dataset:
     def __init__(
         self,
-        dataset_path,
-        dataset,
-        seed,
-        use_label_mapping=True,
-        append_options=True,
-        n_few_shots=-1,
-        num_train_examples=-1,
+        dataset_path: str,
+        dataset: str,
+        seed: int,
+        use_label_mapping: bool = True,
+        append_options: bool = True,
+        n_few_shots: int = -1,
+        max_train_size: int = -1,
+        max_dev_size: int = -1,
+        max_test_size: int = -1,
     ):
         self.dataset_name = dataset
         self.data_path = dataset_path
         self.random_seed = seed
-        self.num_train_examples = num_train_examples
         self.n_few_shots = n_few_shots
         self.dataset_info = self._load_config(
             pjoin(os.path.dirname(os.path.abspath(__file__)), "dataset_info.yaml")
@@ -79,11 +80,11 @@ class Dataset:
             test=dict(sentence=[], label=[]),
         )
         self.load_dataset()
-        self.compute_train_per_class()
+        self.resize_and_compute_per_class(max_train_size, max_dev_size, max_test_size)
         self.reset()
 
-        print("loaded dataset from %s ..." % self.data_path)
-        print(
+        log_message("loaded dataset from %s ..." % self.data_path)
+        log_message(
             "we have %s training, %s dev, and %s test data points."
             % (self.train_size, self.dev_size, self.test_size)
         )
@@ -138,49 +139,43 @@ class Dataset:
             y = [self.dataset["train"]["label"][i] for i in indices]
         return list(zip(x, y))
 
-    def resize(self, split, size):
-        indices = np.random.permutation(np.arange(len(self.dataset[split]["label"])))[
-            :size
-        ]
-        self.dataset[split]["label"] = [
-            self.dataset[split]["label"][i] for i in indices
-        ]
-        self.dataset[split]["sentence"] = [
-            self.dataset[split]["sentence"][i] for i in indices
-        ]
+    def resize_and_compute_per_class(self, max_train_size, max_dev_size, max_test_size):
+        for split, max_size in zip(
+            ("train", "dev", "test"),
+            (max_train_size, max_dev_size, max_test_size),
+        ):
+            split_per_class = f"{split}_per_class"
+            per_class = defaultdict(list)
+            for index, label in enumerate(self.dataset[split]["label"]):
+                per_class[label].append(index)
+            self.dataset[split_per_class] = per_class
 
-    def compute_train_per_class(self):
-        train_per_class = defaultdict(list)
-        for index, label in enumerate(self.dataset["train"]["label"]):
-            train_per_class[label].append(index)
-        self.dataset["train_per_class"] = train_per_class
+            if max_size > 0:
+                log_message(f"Cutting {split} dataset to {max_size} examples.")
+                indices = []
+                pick_order = self.rng.choice(
+                    list(self.dataset[split_per_class].keys()),
+                    len(self.dataset[split_per_class].keys()),
+                    replace=False,
+                )
 
-        if self.num_train_examples > 0:
-            log_message(f"Cutting dataset to {self.num_train_examples} examples.")
-            indices = []
-            pick_order = self.rng.choice(
-                list(self.dataset["train_per_class"].keys()),
-                len(self.dataset["train_per_class"].keys()),
-                replace=False,
-            )
+                i = 0
+                while len(indices) < max_size:
+                    indices += self.rng.choice(
+                        self.dataset[split_per_class][
+                            pick_order[i % len(pick_order)]
+                        ],
+                        1,
+                    ).tolist()
+                    i += 1
 
-            i = 0
-            while len(indices) < self.num_train_examples:
-                indices += self.rng.choice(
-                    self.dataset["train_per_class"][
-                        pick_order[i % len(pick_order)]
-                    ],
-                    1,
-                ).tolist()
-                i += 1
+                self.dataset[split]["sentence"] = [self.dataset[split]["sentence"][i] for i in indices]
+                self.dataset[split]["label"] = [self.dataset[split]["label"][i] for i in indices]
 
-            self.dataset["train"]["sentence"] = [self.dataset["train"]["sentence"][i] for i in indices]
-            self.dataset["train"]["label"] = [self.dataset["train"]["label"][i] for i in indices]
-
-            train_per_class = defaultdict(list)
-            for index, label in enumerate(self.dataset["train"]["label"]):
-                train_per_class[label].append(index)
-            self.dataset["train_per_class"] = train_per_class
+                per_class = defaultdict(list)
+                for index, label in enumerate(self.dataset[split]["label"]):
+                    per_class[label].append(index)
+                self.dataset[split_per_class] = per_class
 
     def reset(self):
         self.train_pointer, self.dev_pointer, self.test_pointer = 0, 0, 0
@@ -193,9 +188,14 @@ class Dataset:
         elif split == "test":
             self.test_pointer = 0
 
-    def get_batch(self, split, batch_size, random_sample=False, balance=False):
-        assert batch_size > 0
-        assert split in ["train", "dev", "test"]
+    def get_batch(self, split, batch_size, random_sample=False, balance=False, few_shots=False):
+        if balance is True and random_sample is False:
+            raise ValueError("Balance batch must be sampled randomly.")
+        if batch_size <= 0:
+            raise ValueError(f"Batch size must be positive, got {batch_size}")
+        if split not in ["train", "dev", "test"]:
+            raise ValueError(f"Invalid split: {split}")
+
         if split == "train":
             pointer = self.train_pointer
             data_size = self.train_size
@@ -272,10 +272,7 @@ class Dataset:
                 if split == "test" and self.test_pointer == 0:
                     return
 
-    def get_size(self, split):
-        return len(self.dataset[split]["label"])
-
-    def get_data(self, split="train", indices=None):
+    def get_data(self, split, indices=None):
         """get all data from a split"""
         assert split in self.dataset
         if indices is None:
@@ -290,7 +287,15 @@ class Dataset:
         return res_sentence, res_label
 
 
-def init_dataset(dataset_id, seed, data_dir, n_few_shots=-1, num_train_examples=-1):
+def init_dataset(
+    dataset_id,
+    seed,
+    data_dir,
+    n_few_shots=-1,
+    max_train_size=-1,
+    max_dev_size=-1,
+    max_test_size=-1,
+):
     datasets = {
         "subj": OrderedPrompt,
         "mpqa": OrderedPrompt,
@@ -303,14 +308,19 @@ def init_dataset(dataset_id, seed, data_dir, n_few_shots=-1, num_train_examples=
         "logical_deduction_seven_objects": BBH,
         "gsm8k": GSM8K,
     }
-    assert dataset_id in datasets, f"Dataset {dataset_id} not found"
-    dataset_class = datasets[dataset_id]
+    try:
+        dataset_class = datasets[dataset_id]
+    except KeyError:
+        raise ValueError(f"Dataset {dataset_id} not found")
+    
     dataset = dataset_class(
         dataset_path=data_dir,
         dataset=dataset_id,
         seed=seed,
         n_few_shots=n_few_shots,
-        num_train_examples=num_train_examples,
+        max_train_size=max_train_size,
+        max_dev_size=max_dev_size,
+        max_test_size=max_test_size,
     )
     return dataset
 
@@ -459,16 +469,18 @@ class GSM8K(Dataset):
 
     def __init__(
         self,
-        dataset_path,
-        dataset,
-        seed,
-        use_label_mapping=False,
-        append_options=False,
-        n_few_shots=-1,
-        num_train_examples=-1,
+        dataset_path: str,
+        dataset: str,
+        seed: int,
+        use_label_mapping: bool = False,
+        append_options: bool = False,
+        n_few_shots: int = -1,
+        max_train_size: int = -1,
+        max_dev_size: int = -1,
+        max_test_size: int = -1,
     ):
         if use_label_mapping or append_options:
-            log_message("GSM8K does not support label mapping or append opptions.")
+            log_message("GSM8K does not support label mapping or append options.")
 
         super().__init__(
             dataset_path=dataset_path,
@@ -477,7 +489,9 @@ class GSM8K(Dataset):
             use_label_mapping=False,
             append_options=False,
             n_few_shots=n_few_shots,
-            num_train_examples=num_train_examples,
+            max_train_size=max_train_size,
+            max_dev_size=max_dev_size,
+            max_test_size=max_test_size,
         )
 
     @staticmethod
