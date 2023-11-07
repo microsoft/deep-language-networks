@@ -1,4 +1,3 @@
-from collections import defaultdict
 import json
 import re
 from unittest.mock import MagicMock, patch

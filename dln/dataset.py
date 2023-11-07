@@ -80,7 +80,9 @@ class Dataset:
             test=dict(sentence=[], label=[]),
         )
         self.load_dataset()
-        self.resize_and_compute_per_class(max_train_size, max_dev_size, max_test_size)
+        self.resize_and_compute_per_class(
+            max_train_size, max_dev_size, max_test_size
+        )
         self.reset()
 
         log_message("loaded dataset from %s ..." % self.data_path)
@@ -312,7 +314,7 @@ def init_dataset(
         dataset_class = datasets[dataset_id]
     except KeyError:
         raise ValueError(f"Dataset {dataset_id} not found")
-    
+
     dataset = dataset_class(
         dataset_path=data_dir,
         dataset=dataset_id,
@@ -481,6 +483,7 @@ class GSM8K(Dataset):
     ):
         if use_label_mapping or append_options:
             log_message("GSM8K does not support label mapping or append options.")
+
 
         super().__init__(
             dataset_path=dataset_path,
