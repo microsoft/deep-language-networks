@@ -397,15 +397,3 @@ def test_strip_options(loss_fn):
     expected_output = np.array(["This is a test", "No options here", "Another test"])
     output_data = model.strip_options(input_data)
     assert np.array_equal(output_data, expected_output)
-
-
-def test_strip_prefix(loss_fn):
-    model = VILModel(
-        loss_fn, strip_prefix_for_hidden="PREFIX:"
-    )
-    input_data = np.array(
-        ["PREFIX: This is a test", "No prefix here", "PREFIX: Another test"]
-    )
-    expected_output = np.array(["This is a test", "No prefix here", "Another test"])
-    output_data = model.strip_prefix(input_data)
-    assert np.array_equal(output_data, expected_output)

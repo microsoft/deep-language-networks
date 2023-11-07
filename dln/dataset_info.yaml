@@ -48,6 +48,7 @@ date_understanding:
   prefix: "Infer the date from context."
   instruction: "Infer the date from context."
   output_type: "single word"
+  protos: ["a|A", "b|B", "c|C", "d|D", "e|E", "f|F"]
 
 hyperbaton:
   # output space: ["(A)", "(B)"]
@@ -57,6 +58,7 @@ hyperbaton:
   prefix: "Which sentence has the correct adjective order:\n"
   instruction: "Which sentence has the correct adjective order:"
   output_type: "single word"
+  protos: ["a|A", "b|B"]
 
 logical_deduction_seven_objects:
   # output space: ["(A)", "(B)", "(C)", "(D)", "(E)", "(F)", "(G)"]
@@ -66,6 +68,7 @@ logical_deduction_seven_objects:
   prefix: "The following paragraphs each describe a set of seven objects arranged in a fixed order. The statements are logically consistent within each paragraph."
   instruction: "A seven-object logical deduction task which requires deducing the order of a sequence of objects."
   output_type: "single word"
+  protos: ["a|A", "b|B", "c|C", "d|D", "e|E", "f|F", "g|G"]
 
 navigate:
   # output space: ["Yes", "No"]
@@ -75,6 +78,7 @@ navigate:
   prefix: "If you follow these instructions, do you return to the starting point?"
   instruction: "Read the following sentence, then determine whether you return to the starting point."
   output_type: "single word"
+  protos: ["yes|Yes", "no|No"]
 
 ###
 # From Leopard
@@ -103,3 +107,4 @@ airline:
   label_mapping: {'positive': 'positive', 'negative': 'negative', 'neutral': 'neutral'}
   instruction: "Read the following sentence, then choose whether it is positive, negative, or neutral."
   output_type: "single word"
+  protos: ["positive|Positive", "negative|Negative", "neutral|Neutral"]

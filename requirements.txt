@@ -12,3 +12,4 @@ numpy
 requests==2.31.0
 pyyaml
 transformers
+datasets

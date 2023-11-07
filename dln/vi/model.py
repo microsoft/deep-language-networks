@@ -42,7 +42,6 @@ class VILModel:
         p1_max_tokens: int = 256,
         p2_max_tokens: int = 20,
         posterior_temp: float = 1.0,
-        strip_prefix_for_hidden: str = None,
         output_scoring_function: str = "logprobs",
         hidden_scoring_function: str = "logprobs",
         posterior_sharpening_include_prior: bool = True,
@@ -81,7 +80,6 @@ class VILModel:
             p1_max_tokens: max tokens for the residual layer
             p2_max_tokens: max tokens for the prior layer
             posterior_temp: posterior temperature
-            strip_prefix_for_hidden: strip prefix from the hidden state if the model generates it
             output_scoring_function: output scoring function, either "logprobs" or "accuracy"
             hidden_scoring_function: hidden scoring function, only "logprobs" is supported
             posterior_sharpening_include_prior: include prior in the posterior sharpening
@@ -110,7 +108,6 @@ class VILModel:
         self.q_sampler = posterior_sampler
         self.trust_factor = trust_factor
         self.strip_options_for_hidden = strip_options_for_hidden
-        self.strip_prefix_for_hidden = strip_prefix_for_hidden
         self.output_classes = output_classes
         self.two_layers = two_layers
         self.loss_fn = loss_fn
@@ -677,20 +674,6 @@ class VILModel:
             x_.append(x_i)
         return np.array(x_)
 
-    def strip_prefix(self, x):
-        """
-        Strip prefix from the hidden state if the model generates it.
-        """
-        x_ = []
-        for x_i in x:
-            if self.strip_prefix_for_hidden in x_i:
-                x_i = x_i[
-                    x_i.index(self.strip_prefix_for_hidden)
-                    + len(self.strip_prefix_for_hidden) :
-                ].strip()
-            x_.append(x_i)
-        return np.array(x_)
-
     def forward(self, x, y=None, infos=None, temperature=0.0, cost_only=False):
         """
         Args:
@@ -701,9 +684,6 @@ class VILModel:
                 x_stripped = self.strip_options(x)
             else:
                 x_stripped = x
-
-            if self.strip_prefix_for_hidden:
-                x_stripped = self.strip_prefix(x_stripped)
 
             h_1_out = self.encoder_l1(
                 x_stripped, temperature=temperature, max_tokens=self.p1_max_tokens
