@@ -347,10 +347,6 @@ class VLLM(LLM):
         return True
 
 
-def instantiate_model(model_type: str, **generation_options) -> LLM:
-    return LLMRegistry.instantiate_llm(model_type, **generation_options)
-
-
 def instantiate_tokenizer(model_name: str):
     if model_name in GPT.AVAILABLE_MODELS:
         import tiktoken
@@ -383,22 +379,18 @@ class LLMRegistry:
         """
         if model_type is None:
             model_type = model_name
-        llm = self.instantiate_llm(model_type, **generation_options)
+
+        if model_type in GPT.AVAILABLE_MODELS:
+            llm = GPT(model_type, **generation_options)
+        else:
+            llm = VLLM(model_type, **generation_options)
+
         self.models[model_name] = llm
         return llm
 
     @property
     def total_cost(self):
         return sum([llm.total_cost for llm in self.models.values()])
-
-    @classmethod
-    def instantiate_llm(cls, model_type: str, **generation_options) -> LLM:
-        """Instantiate a single LLM without registering it to a LLMRegistry."""
-        if model_type in GPT.AVAILABLE_MODELS:
-            llm = GPT(model_type, **generation_options)
-        else:
-            llm = VLLM(model_type, **generation_options)
-        return llm
 
     @classmethod
     def from_yaml(cls, path):
@@ -410,10 +402,7 @@ class LLMRegistry:
         for config in configs:
             name = config.pop("name")  # how you refer to the model
             model = config.pop("model", name)  # the api model name
-            self.models[name] = self.instantiate_llm(
-                model,
-                **config,
-            )
+            self.register(name, model, **config)
 
     def __len__(self) -> int:
         return len(self.models)

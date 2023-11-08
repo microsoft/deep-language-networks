@@ -203,7 +203,7 @@ def test_total_cost(gpt_api_config, llama_api_config):
 
 
 def test_compute_cost_manager(gpt_api_config, mock_openai_api):
-    llm = LLMRegistry.instantiate_llm("text-davinci-003", **gpt_api_config)
+    llm = LLMRegistry().register("text-davinci-003", **gpt_api_config)
     assert llm.total_cost == 0.0
     with isolated_cost(llm):  # add_cost_to_total=False by default
         prompt = "What is the largest city in Quebec?"
@@ -221,8 +221,9 @@ def test_compute_cost_manager(gpt_api_config, mock_openai_api):
 
 
 def test_compute_cost_manager_many_llms(gpt_api_config, mock_openai_api):
-    gpt2 = LLMRegistry.instantiate_llm("text-davinci-002", **gpt_api_config)
-    gpt3 = LLMRegistry.instantiate_llm("text-davinci-003", **gpt_api_config)
+    registry = LLMRegistry()
+    gpt2 = registry.register("text-davinci-002", **gpt_api_config)
+    gpt3 = registry.register("text-davinci-003", **gpt_api_config)
     assert gpt2.total_cost == 0.0
     assert gpt3.total_cost == 0.0
     with isolated_cost([gpt2, gpt3]):
