@@ -74,14 +74,14 @@ class LLM(ABC):
     def __call__(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
         is_echo_enabled = kwargs.get("echo") or self.generation_options.get("echo")
         if not is_echo_enabled:
-            self.total_cost += self.compute_cost(inputs)
+            self.compute_cost(inputs)
+
         outputs = self.generate(inputs, **kwargs)
+
         if kwargs.get("return_logprobs"):
-            self.total_cost += self.compute_cost(
-                [out[0] for out in outputs]
-            )
+            self.compute_cost([out[0] for out in outputs])
         else:
-            self.total_cost += self.compute_cost(outputs)
+            self.compute_cost(outputs)
         return outputs
 
     @abstractmethod
@@ -98,7 +98,7 @@ class LLM(ABC):
         raise NotImplementedError
 
     def compute_cost(self, inputs: List[str]) -> float:
-        return np.sum(list([len(self.encode(input)) for input in inputs]))
+        self.total_cost += np.sum(list([len(self.encode(input)) for input in inputs]))
 
 
 class GPT(LLM):
@@ -373,7 +373,7 @@ class LLMRegistry:
             self._load_from_configs(config)
 
     def register(self, model_name: str, model_type: str = None, **generation_options) -> LLM:
-        """ Register a single model to the registry.
+        """Register a single model to the LLMRegistry.
         Args:
             model_name: how you refer to the model, for example: gpt-3.
             model_type: the api model name, for example: text-davinci-003. If not provided, use model_name as default.
@@ -393,6 +393,7 @@ class LLMRegistry:
 
     @classmethod
     def instantiate_llm(cls, model_type: str, **generation_options) -> LLM:
+        """Instantiate a single LLM without registering it to a LLMRegistry."""
         if model_type in GPT.AVAILABLE_MODELS:
             llm = GPT(model_type, **generation_options)
         else:

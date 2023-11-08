@@ -12,7 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from dln.dataset import init_dataset
 from dln.loss import ZeroOneLoss
-from dln.operator import instantiate_model, isolated_cost
+from dln.operator import LLMRegistry, isolated_cost
 from dln.postprocessing import postprocess_prediction
 from dln.score import LogProbsScore
 from dln.vi.model import VILModel, log_message
@@ -120,7 +120,6 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
         bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
         desc="Eval",
     )
-    log_message("TOKEN COST BEFORE TEST:", model.forward_evaluate.total_cost)
     with isolated_cost(model.forward_evaluate, add_cost_to_total=True):
         dataset.reset_pointer("test")
         for batch in dataset.iterate("test", batch_size=20):
@@ -142,7 +141,6 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     # for sig-test purposes
     log_message("ALL ACCS:", all_accs)
     log_message("TEST TOKEN COST:", test_cost)
-    log_message("TOKEN COST AFTER TEST:", model.forward_evaluate.total_cost)
     return test_acc
 
 
@@ -429,15 +427,21 @@ def main(
     log_message("Init P1: ", init_p1)
     log_message("Init P2: ", init_p2)
 
-    bwd_model_type = bwd_model_type or fwd_model_type  # Use the same model type if bwd is not specified.
-    fwd_model = instantiate_model(
+    # Use the same model type if bwd is not specified.
+    bwd_model_type = bwd_model_type or fwd_model_type
+
+    llm_registry = LLMRegistry()
+
+    fwd_model = llm_registry.register(
+        "fwd_model",
         fwd_model_type,
         temperature=0.0,
         max_tokens=fwd_max_tokens,
         stop=None,
     )
 
-    bwd_model = instantiate_model(
+    bwd_model = llm_registry.register(
+        "bwd_model",
         bwd_model_type,
         temperature=bwd_temp,
         max_tokens=bwd_max_tokens,
@@ -593,8 +597,7 @@ def main(
     log_message("Best L1 weights:", model.encoder_l1.weight)
     log_message("Best L2 weights:", model.encoder_l2.weight)
 
-    log_message("TRAINING TOKEN COST:", fwd_model.total_cost + bwd_model.total_cost)
-
+    log_message("TRAINING TOKEN COST:", llm_registry.total_cost)
     test_acc = test(dataset, model, loss_fn, iteration, writer, cost_only=cost_only)
 
     if wandb_enabled:
@@ -602,6 +605,7 @@ def main(
 
     log_message(colored("DEV ACC: {}".format(best_dev), "green"))
     log_message(colored("TEST ACC: {}".format(test_acc), "green"))
+    log_message("TOTAL TOKEN COST:", llm_registry.total_cost)
 
     result_writer.save_to_json_file()
     writer.close()
