@@ -255,11 +255,11 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     default="logprobs",
     help="Use logprobs to score hidden states",
 )
-@click.options(
+@click.option(
     "--loss_function",
     type=str,
     default="ZeroOneLoss",
-    help="Loss function. One of: ZeroOneLoss, NumberPresenceLoss",
+    help=f"Loss function. One of {LLoss.available_losses()}",
 )
 @click.option(
     "--posterior_sharpening_include_prior",

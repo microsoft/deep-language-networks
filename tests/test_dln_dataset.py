@@ -10,7 +10,6 @@ from datasets import DatasetDict as HFDatasetDict
 from dln.dataset import init_dataset, option_shuffle
 
 
-
 @pytest.fixture
 def mock_bbh_data():
     def build_bbh_data(data_path, dataset_name, bbh_size=10, bb_minus_bbh_size=10):
@@ -285,8 +284,8 @@ def test_get_balanced_batch(tmp_path):
         "answer": [f"answer #### {i % 4}" for i in range(data_size)],
     })
     dataset_splits = dataset.train_test_split(test_size=0.4)
-    dataset_dict = HFDatasetDict({  
-        'train': dataset_splits['train'],  
+    dataset_dict = HFDatasetDict({
+        'train': dataset_splits['train'],
         'test': dataset_splits['test'],
     })
     with patch("dln.dataset.hf_load_dataset", MagicMock(return_value=dataset_dict)):

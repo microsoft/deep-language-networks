@@ -1,20 +1,30 @@
-from abc import ABC, abstractmethod
+from abc import ABC, ABCMeta, abstractmethod
 import re
 from typing import Callable, Iterable, Optional, Union
 
 import numpy as np
 
 
-class LLoss(ABC):
+class LLossMeta(ABCMeta):
+    """"Automatically registry all subclasses of LLoss"""
+    def __init__(cls, name, bases, attrs):
+        super(LLossMeta, cls).__init__(name, bases, attrs)
+        if not hasattr(cls, '_available_losses'):
+            cls._available_losses = {}
+        else:
+            cls._available_losses[name] = cls
+
+
+class LLoss(ABC, metaclass=LLossMeta):
+
+    @classmethod
+    def available_losses(cls):
+        return list(cls._available_losses.keys())
 
     @classmethod
     def instantiate(cls, loss_type: str, postproc: Optional[Callable] = None) -> "LLoss":
-        losses = {
-            "ZeroOneLoss": ZeroOneLoss,
-            "NumberPresenceLoss": NumberPresenceLoss,
-        }
         try:
-            return losses[loss_type](postproc)
+            return cls._available_losses[loss_type](postproc)
         except KeyError:
             raise ValueError(f'Unknown loss type: {loss_type}')
 
@@ -89,6 +99,15 @@ class NumberPresenceLoss(LLoss):
     def loss(self, inputs: Iterable[str], targets: Iterable[str]) -> np.array:
         losses = []
         for i, t in zip(inputs, targets):
-            pattern = fr'(^|\s|=|#)0*{t}($|\s|=|#)'
-            losses.append(1 if re.search(pattern, i) is None else 0)
+            # Convert the target to float
+            number = float(str(t).replace(",", ""))
+            # Extract all numbers from the input
+            numbers_in_text = re.findall(r'\b\d*\.?\d+\b', i.replace(",", ""))
+            # Try to convert each extracted string into a float and compare it to the number
+            # we can match just the last number if we consider that the last number is the answer
+            _loss = 1
+            for num_str in numbers_in_text:
+                if float(num_str) == number:
+                    _loss = 0
+            losses.append(_loss)
         return np.array(losses).astype("float32")

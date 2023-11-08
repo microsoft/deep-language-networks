@@ -2,6 +2,13 @@ import numpy as np
 import pytest
 from dln.loss import LLoss, NumberPresenceLoss, ZeroOneLoss
 
+
+def test_available_losses():
+    assert "NumberPresenceLoss" in LLoss.available_losses()
+    for loss in LLoss.available_losses():
+        assert isinstance(LLoss.instantiate(loss), LLoss)
+
+
 def test_instantiate_loss_from_str():
     loss = LLoss.instantiate("ZeroOneLoss")
     assert isinstance(loss, ZeroOneLoss)
@@ -67,10 +74,23 @@ def test_number_presence_loss_single_value():
     number_presence_loss = NumberPresenceLoss()
     assert not number_presence_loss("1234", 1234)
     assert not number_presence_loss("01234", "1234")
+    assert not number_presence_loss("1234.0", 1234)
+    assert not number_presence_loss("1234", 1234.0)
+    assert not number_presence_loss("01234,000", 1234000)
     assert not number_presence_loss("Answer 1234 in it.", "1234")
     assert not number_presence_loss("Answer\n1234", 1234)
     assert not number_presence_loss("Answer 01234 in it.", 1234)
+    assert not number_presence_loss("Answer 01234,000 in it.", 1234000)
+    assert not number_presence_loss("Answer 01234.0 in it.", 1234)
+    assert not number_presence_loss("Answer 01234 in it.", 1234.0)
+    assert not number_presence_loss("Answer 01234 in it.", 1234.0)
+    assert not number_presence_loss("Answer=01234.", 1234)
+    assert not number_presence_loss("$1234.00", 1234)
+    assert not number_presence_loss("$1234.50", 1234.5)
+    assert number_presence_loss("$1234.50", 1234)
+    assert number_presence_loss("$12.34", 1234)
     assert number_presence_loss("12340", "1234")
     assert number_presence_loss("Answer 12340 not in it.", 1234)
     assert number_presence_loss("Answer test_1234 not in it.", "1234")
     assert number_presence_loss("Answer 101234 not in it.", 1234)
+    assert number_presence_loss("Answer 0123.4 not in it.", 1234)
