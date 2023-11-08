@@ -69,15 +69,15 @@ class ResultLogEntry():
 
 
 class ResultLogWriter(object):
-    def __init__(self, dataset: str, path: str, name: str = None):
+    def __init__(self, name: str, path: str):
         """
         Args:
-            dataset: The name of the dataset (used as name if save_name is None)
-            save_name: Dictionary key to save the results under
+            name: File name
+            path: File location
         Returns:
             A ResultLogWriter object
         """
-        self.name = name if name is not None else dataset.dataset_name
+        self.name = name
         self.path = path
         self.result_dict = {}
         self.result_dict[self.name] = {'training': [], 'examples': []}
