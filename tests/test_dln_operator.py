@@ -194,7 +194,7 @@ def test_total_cost(gpt_api_config, llama_api_config):
 
     with patch("dln.operator.instantiate_tokenizer"):
         llm_registry = LLMRegistry(config=config)
-    
+
     assert llm_registry.total_cost == 0.0
     llm_registry["gpt-3"].total_cost = 2.0
     assert llm_registry.total_cost == 2.0

@@ -33,9 +33,9 @@ def mock_llm_func():
             @property
             def has_logprobs(self):
                 return True
-        
+
         return MockLLM(model_name)
-    
+
     return instantiate_llm
 
 
@@ -121,8 +121,8 @@ def top_logprobs():
         }
         ordered_log_p = [logprobs[context[:5]] for context in contexts]
         return [
-            [0, [ordered_log_p[0]], 2],
-            [0, [ordered_log_p[1]], 2],
+            ["0", [ordered_log_p[0]], 2],
+            ["0", [ordered_log_p[1]], 2],
         ]
 
     return logprobs_fn
