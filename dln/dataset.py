@@ -190,7 +190,7 @@ class Dataset:
         elif split == "test":
             self.test_pointer = 0
 
-    def get_batch(self, split, batch_size, random_sample=False, balance=False, few_shots=False):
+    def get_batch(self, split, batch_size, random_sample=False, balance=False):
         if balance is True and random_sample is False:
             raise ValueError("Balance batch must be sampled randomly.")
         if batch_size <= 0:
