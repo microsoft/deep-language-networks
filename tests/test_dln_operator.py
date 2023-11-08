@@ -218,3 +218,50 @@ def test_compute_cost_manager(gpt_api_config, mock_openai_api):
         assert response == ["Montreal"]
         assert llm.total_cost == 37.0
     assert llm.total_cost == 37.0
+
+
+def test_compute_cost_manager_many_llms(gpt_api_config, mock_openai_api):
+    gpt2 = LLMRegistry.instantiate_llm("text-davinci-002", **gpt_api_config)
+    gpt3 = LLMRegistry.instantiate_llm("text-davinci-003", **gpt_api_config)
+    assert gpt2.total_cost == 0.0
+    assert gpt3.total_cost == 0.0
+    with isolated_cost([gpt2, gpt3]):
+        response = gpt2("What is the largest city in Quebec?")
+        assert response == ["Montreal"]
+        response = gpt3("What is the second-largest city in Canada?")
+        assert gpt2.total_cost == 37.0
+        assert gpt3.total_cost == 44.0
+    assert gpt2.total_cost == 0.0
+    assert gpt3.total_cost == 0.0
+    with isolated_cost([gpt2, gpt3], add_cost_to_total=True):
+        response = gpt2("What is the largest city in Quebec?")
+        assert response == ["Montreal"]
+        response = gpt3("What is the second-largest city in Canada?")
+        assert gpt2.total_cost == 37.0
+        assert gpt3.total_cost == 44.0
+    assert gpt2.total_cost == 37.0
+    assert gpt3.total_cost == 44.0
+
+
+def test_compute_cost_manager_registry(gpt_api_config, mock_openai_api):
+    registry = LLMRegistry()
+    gpt2 = registry.register("text-davinci-002", **gpt_api_config)
+    gpt3 = registry.register("text-davinci-003", **gpt_api_config)
+    assert gpt2.total_cost == 0.0
+    assert gpt3.total_cost == 0.0
+    with isolated_cost(registry):
+        response = gpt2("What is the largest city in Quebec?")
+        assert response == ["Montreal"]
+        response = gpt3("What is the second-largest city in Canada?")
+        assert gpt2.total_cost == 37.0
+        assert gpt3.total_cost == 44.0
+    assert gpt2.total_cost == 0.0
+    assert gpt3.total_cost == 0.0
+    with isolated_cost(registry, add_cost_to_total=True):
+        response = gpt2("What is the largest city in Quebec?")
+        assert response == ["Montreal"]
+        response = gpt3("What is the second-largest city in Canada?")
+        assert gpt2.total_cost == 37.0
+        assert gpt3.total_cost == 44.0
+    assert gpt2.total_cost == 37.0
+    assert gpt3.total_cost == 44.0

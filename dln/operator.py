@@ -101,20 +101,6 @@ class LLM(ABC):
         return np.sum(list([len(self.encode(input)) for input in inputs]))
 
 
-@contextmanager
-def isolated_cost(llm: LLM, add_cost_to_total: bool = False):
-    # TODO: accept a list of llms / entire registry
-    previous_cost = llm.total_cost
-    try:
-        llm.total_cost = 0.0
-        yield
-    finally:
-        if add_cost_to_total:
-            llm.total_cost += previous_cost
-        else:
-            llm.total_cost = previous_cost
-
-
 class GPT(LLM):
 
     CHAT_COMPLETION_MODELS = [
@@ -441,3 +427,23 @@ class LLMRegistry:
         if model_name in self:
             return self[model_name]
         return default
+
+
+@contextmanager
+def isolated_cost(llms: Union[LLMRegistry, LLM, List[LLM]], add_cost_to_total: bool = False):
+    if isinstance(llms, LLM):
+        llms = [llms]
+    elif isinstance(llms, LLMRegistry):
+        llms = list(llms.models.values())
+
+    previous_costs = {llm: llm.total_cost for llm in llms}
+    try:
+        for llm in llms:
+            llm.total_cost = 0.0
+        yield
+    finally:
+        for llm in llms:
+            if add_cost_to_total:
+                llm.total_cost += previous_costs[llm]
+            else:
+                llm.total_cost = previous_costs[llm]
