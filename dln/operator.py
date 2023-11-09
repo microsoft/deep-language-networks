@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
+import re
 from typing import Dict, List, Union
 import asyncio
 import numpy as np
@@ -395,7 +396,7 @@ class LLMRegistry:
     @classmethod
     def from_yaml(cls, path):
         with open(path, "r") as f:
-            config = yaml.safe_load(f)
+            config = _replace_env_vars(yaml.safe_load(f))
         return cls(config=config)
 
     def _load_from_configs(self, configs: List[Dict]):
@@ -437,3 +438,19 @@ def isolated_cost(llms: Union[LLMRegistry, LLM, List[LLM]], add_cost_to_total: b
                 llm.total_cost += previous_costs[llm]
             else:
                 llm.total_cost = previous_costs[llm]
+
+
+def _replace_env_vars(data):
+    pattern = re.compile(r'\$\{(.*)\}')
+    if isinstance(data, dict):
+        for key in data:
+            data[key] = _replace_env_vars(data[key])
+    elif isinstance(data, list):
+        for i in range(len(data)):
+            data[i] = _replace_env_vars(data[i])
+    elif isinstance(data, str):
+        match = pattern.search(data)
+        if match:
+            var = match.group(1)
+            data = data.replace('${' + var + '}', os.getenv(var))
+    return data
