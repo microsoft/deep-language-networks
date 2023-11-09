@@ -1,9 +1,10 @@
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import openai
 import pytest
 
-from dln.operator import GPT, VLLM, LLMRegistry, isolated_cost
+from dln.operator import GPT, VLLM, LLMRegistry, _replace_env_vars, isolated_cost
 
 
 @pytest.fixture
@@ -102,6 +103,16 @@ def test_registry_llm(gpt_api_config):
     assert another_llm.engine == "llama2"
 
 
+def test_registry_llm_duplicated_name(gpt_api_config):
+    registry = LLMRegistry()
+    registry.register("text-davinci-003", **gpt_api_config)
+    with pytest.raises(
+        ValueError,
+        match="Model text-davinci-003 already registered"
+    ):
+        registry.register("text-davinci-003", **gpt_api_config)
+
+
 def test_load_llms_from_config(gpt_api_config, llama_api_config):
     config = [
         {
@@ -175,6 +186,41 @@ def test_load_llms_from_yaml(tmp_path):
     assert isinstance(gpt, GPT)
     assert isinstance(llama, VLLM)
     assert gpt.generation_options["api_key"] == "gpt3-key"
+    assert llama.generation_options["api_key"] == "llama-key"
+
+
+@patch.dict(os.environ, {"TEST": "123", "FOO": "BAR"})
+def test_load_llms_from_yaml(tmp_path):
+    llms_yaml_content = """
+    - name: gpt-3
+      model: text-davinci-003
+      api_key: gpt3-key
+      api_base: ${TEST}
+      api_type: TEST
+      api_version: ${FOO}
+    - name: llama2
+      api_key: llama-key
+      api_base: https://llama-api.com
+      api_type: null
+      api_version: null
+    """
+
+    llms_yaml_path = tmp_path / "llms.yaml"
+    llms_yaml_path.write_text(llms_yaml_content)
+
+    with patch("dln.operator.instantiate_tokenizer"):
+        llm_registry = LLMRegistry.from_yaml(llms_yaml_path)
+
+    assert len(llm_registry) == 2
+
+    gpt = llm_registry.get("gpt-3")
+    llama = llm_registry.get("llama2")
+
+    assert isinstance(gpt, GPT)
+    assert isinstance(llama, VLLM)
+    assert gpt.generation_options["api_base"] == "123"
+    assert gpt.generation_options["api_type"] == "TEST"
+    assert gpt.generation_options["api_version"] == "BAR"
     assert llama.generation_options["api_key"] == "llama-key"
 
 
@@ -266,3 +312,35 @@ def test_compute_cost_manager_registry(gpt_api_config, mock_openai_api):
         assert gpt3.total_cost == 44.0
     assert gpt2.total_cost == 37.0
     assert gpt3.total_cost == 44.0
+
+
+@patch.dict(os.environ, {"TEST": "123"})
+def test_replace_env_vars_str():
+    assert _replace_env_vars("${TEST}") == "123"
+
+
+@patch.dict(os.environ, {"TEST": "123"})
+def test_replace_env_vars_list():
+    assert _replace_env_vars(["${TEST}", "${TEST}"]) == ["123", "123"]
+
+
+@patch.dict(os.environ, {"TEST": "123"})
+def test_replace_env_vars_dict():
+    assert _replace_env_vars(
+        {"key1": "${TEST}", "key2": "${TEST}"}
+    ) == {"key1": "123", "key2": "123"}
+
+
+@patch.dict(os.environ, {"TEST": "123"})
+def test_replace_env_vars_nested():
+    assert _replace_env_vars(
+        {"key1": ["${TEST}", "${TEST}"], "key2": "${TEST}"}
+    ) == {"key1": ["123", "123"], "key2": "123"}
+
+
+def test_replace_env_vars_no_env():
+    assert _replace_env_vars("No env var here") == "No env var here"
+
+
+def test_replace_env_vars_empty_string():
+    assert _replace_env_vars("") == ""
