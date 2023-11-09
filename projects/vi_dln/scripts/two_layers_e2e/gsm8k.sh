@@ -4,7 +4,7 @@ set -x  # print commands to terminal
 fwd_model_type="text-davinci-003"
 bwd_model_type="text-davinci-003"
 dataset="gsm8k"
-loss_function="NumberPresenceLoss"
+loss_function="number_presence_loss"
 output_scoring_function="accuracy"
 max_train_size=300
 max_dev_size=300

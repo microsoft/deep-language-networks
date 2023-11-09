@@ -1,19 +1,19 @@
 import numpy as np
 import pytest
-from dln.loss import LLoss, NumberPresenceLoss, ZeroOneLoss
+from dln.loss import LLoss, LossRegistry, NumberPresenceLoss, ZeroOneLoss
 
 
 def test_available_losses():
-    assert "NumberPresenceLoss" in LLoss.available_losses()
-    for loss in LLoss.available_losses():
-        assert isinstance(LLoss.instantiate(loss), LLoss)
+    assert "number_presence_loss" in LossRegistry.available_losses()
+    for loss in LossRegistry.available_losses():
+        assert isinstance(LossRegistry.instantiate(loss), LLoss)
 
 
 def test_instantiate_loss_from_str():
-    loss = LLoss.instantiate("ZeroOneLoss")
+    loss = LossRegistry.instantiate("zero_one_loss")
     assert isinstance(loss, ZeroOneLoss)
     with pytest.raises(ValueError, match="Unknown loss type: UnknownLoss"):
-        LLoss.instantiate("UnknownLoss")
+        LossRegistry.instantiate("UnknownLoss")
 
 
 def test_zero_one_loss():

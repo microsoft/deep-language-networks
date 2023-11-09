@@ -11,7 +11,7 @@ from termcolor import colored
 from torch.utils.tensorboard import SummaryWriter
 
 from dln.dataset import init_dataset
-from dln.loss import LLoss
+from dln.loss import LossRegistry
 from dln.operator import instantiate_model
 from dln.postprocessing import postprocess_prediction
 from dln.score import LogProbsScore
@@ -258,8 +258,8 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option(
     "--loss_function",
     type=str,
-    default="ZeroOneLoss",
-    help=f"Loss function. One of {LLoss.available_losses()}",
+    default="zero_one_loss",
+    help=f"Loss function. One of {LossRegistry.available_losses()}",
 )
 @click.option(
     "--posterior_sharpening_include_prior",
@@ -455,9 +455,9 @@ def main(
     )
 
     postproc = None
-    if loss_function == "ZeroOneLoss":
+    if loss_function == "zero_one_loss":
         postproc = postprocess_prediction
-    loss_fn = LLoss.instantiate(loss_function, postproc)
+    loss_fn = LossRegistry.instantiate(loss_function, postproc)
     prompt_sampler = PromptSampler(bwd_model, q_prompt)
     posterior_sampler = PosteriorSampler(bwd_model, q_hidden)
     logprobs_score = LogProbsScore(fwd_model)
