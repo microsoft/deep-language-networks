@@ -1,21 +1,20 @@
-from abc import ABC, ABCMeta, abstractmethod
+from abc import ABC, abstractmethod
 import re
 from typing import Callable, Iterable, Optional, Union
 
 import numpy as np
 
 
-class LLossMeta(ABCMeta):
-    """"Automatically registry all subclasses of LLoss"""
-    def __init__(cls, name, bases, attrs):
-        super(LLossMeta, cls).__init__(name, bases, attrs)
-        if not hasattr(cls, '_available_losses'):
-            cls._available_losses = {}
-        else:
-            cls._available_losses[name] = cls
+class LossRegistry:
 
+    _available_losses = {}
 
-class LLoss(ABC, metaclass=LLossMeta):
+    @classmethod
+    def register(cls, loss_type: str):
+        def inner(lloss):
+            cls._available_losses[loss_type] = lloss
+            return lloss
+        return inner
 
     @classmethod
     def available_losses(cls):
@@ -27,6 +26,9 @@ class LLoss(ABC, metaclass=LLossMeta):
             return cls._available_losses[loss_type](postproc)
         except KeyError:
             raise ValueError(f'Unknown loss type: {loss_type}')
+
+
+class LLoss(ABC):
 
     def __init__(self, postproc: Optional[Callable] = None):
         """
@@ -81,9 +83,10 @@ class LLoss(ABC, metaclass=LLossMeta):
         return losses
 
 
-class ZeroOneLoss(LLoss):
+@LossRegistry.register("exact_match_loss")
+class ExactMatchLoss(LLoss):
     """
-    Calculates the zero-one loss between the predicted and target outputs,
+    Calculates the exact match loss between the predicted and target outputs,
     where 0 indicates a correct prediction and 1 indicates an incorrect prediction.
     """
     def loss(self, inputs: Iterable[str], targets: Iterable[str]) -> np.array:
@@ -91,6 +94,7 @@ class ZeroOneLoss(LLoss):
         return losses
 
 
+@LossRegistry.register("number_presence_loss")
 class NumberPresenceLoss(LLoss):
     """
     Calculates the loss based on the presence of a number in a string.
