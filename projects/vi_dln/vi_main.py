@@ -11,7 +11,7 @@ from termcolor import colored
 from torch.utils.tensorboard import SummaryWriter
 
 from dln.dataset import init_dataset
-from dln.loss import ZeroOneLoss
+from dln.loss import LossRegistry
 from dln.operator import instantiate_model
 from dln.postprocessing import postprocess_prediction
 from dln.score import LogProbsScore
@@ -73,7 +73,7 @@ def validate(dataset, model, loss_fn, iteration, val_scores, writer, result_writ
         acc = 0.0
         tot = 0.0
         pbar = tqdm.tqdm(
-            total=dataset.get_size("dev"),
+            total=dataset.dev_size,
             bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
             desc="Eval",
         )
@@ -116,7 +116,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     all_accs = []
 
     pbar = tqdm.tqdm(
-        total=dataset.get_size("test"),
+        total=dataset.test_size,
         bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
         desc="Eval",
     )
@@ -148,7 +148,9 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option("--seed", default=42, help="Random seed.")
 @click.option("--out_dir", default="log/")
 @click.option("--data_dir", default="../../data")
-@click.option("--num_train_examples", default=-1, type=int, help="Use only so many train examples.")
+@click.option("--max_train_size", default=-1, type=int, help="Use only so many train examples.")
+@click.option("--max_dev_size", default=-1, type=int, help="Use only so many dev examples.")
+@click.option("--max_test_size", default=-1, type=int, help="Use only so many test examples.")
 @click.option("--val_freq", default=2)
 @click.option("--do_first_eval", is_flag=True)
 @click.option("--do_zero_shot", is_flag=True)
@@ -254,6 +256,12 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     help="Use logprobs to score hidden states",
 )
 @click.option(
+    "--loss_function",
+    type=str,
+    default="exact_match_loss",
+    help=f"Loss function. One of {LossRegistry.available_losses()}",
+)
+@click.option(
     "--posterior_sharpening_include_prior",
     type=bool,
     default=True,
@@ -326,13 +334,6 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     help="The path of the file where the result logs json are stored",
 )
 @click.option(
-    "--result_exp_name",
-    type=str,
-    default=None,
-    help="(Optional) Name of the experiment run to be saved in the result logs json file."
-    "Useful when running multiple experiments with the same dataset name.",
-)
-@click.option(
     "--enable_wandb",
     is_flag=True,
     help="Enable wandb logging. Requires wandb to be installed.",
@@ -341,7 +342,9 @@ def main(
     seed,
     out_dir,
     data_dir,
-    num_train_examples,
+    max_train_size,
+    max_dev_size,
+    max_test_size,
     val_freq,
     cost_only,
     do_first_eval,
@@ -370,6 +373,7 @@ def main(
     tolerance,
     output_scoring_function,
     hidden_scoring_function,
+    loss_function,
     posterior_sharpening_include_prior,
     posterior_sharpening_use_mi_regularization,
     forward_use_classes,
@@ -388,7 +392,6 @@ def main(
     num_p1_steps,
     use_nce,
     result_data_path,
-    result_exp_name,
     enable_wandb,
 ):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S.%f")
@@ -416,7 +419,16 @@ def main(
 
     writer = SummaryWriter(out_dir)
 
-    dataset = init_dataset(dataset, seed, data_dir, n_shots, num_train_examples)
+    dataset = init_dataset(
+        dataset_id=dataset,
+        seed=seed,
+        data_dir=data_dir,
+        n_few_shots=n_shots,
+        max_train_size=max_train_size,
+        max_dev_size=max_dev_size,
+        max_test_size=max_test_size,
+    )
+
     if result_data_path is None:
         result_data_path = os.path.join(out_dir, "result_data.log")
     result_writer = ResultLogWriter(dataset.dataset_name, path=result_data_path)
@@ -442,7 +454,10 @@ def main(
         stop=None,
     )
 
-    loss_fn = ZeroOneLoss(postproc=postprocess_prediction)
+    postproc = None
+    if loss_function == "exact_match_loss":
+        postproc = postprocess_prediction
+    loss_fn = LossRegistry.instantiate(loss_function, postproc)
     prompt_sampler = PromptSampler(bwd_model, q_prompt)
     posterior_sampler = PosteriorSampler(bwd_model, q_hidden)
     logprobs_score = LogProbsScore(fwd_model)
