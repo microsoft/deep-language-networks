@@ -3,7 +3,6 @@ from collections import Counter
 import numpy as np
 from termcolor import colored
 
-from dln.postprocessing import postprocess_prediction
 from dln.loss import LLoss
 from dln.operator import LLM
 from dln.score import LogProbsScore, OutputClasses
@@ -228,7 +227,7 @@ class VILModel:
                 prompts=np.array([eval[2] for eval in evals]),
                 num_samples=self.num_acc_mc_samples,
                 max_tokens=10,
-                postprocess_prediction=postprocess_prediction,
+                loss=self.loss_fn,
             )
             acc = acc.reshape(batch_size, p_tilde_2.shape[0]).mean(0)
 
@@ -349,7 +348,7 @@ class VILModel:
                     inputs=residual_h_tilde_1.flatten(),
                     targets=y_repeat.flatten(),
                     num_samples=self.num_acc_mc_samples,
-                    postprocess_prediction=postprocess_prediction,
+                    loss=self.loss_fn,
                 ).reshape(batch_size, num_h_samples)
         else:
             logits = np.zeros((batch_size, num_h_samples))
@@ -518,7 +517,7 @@ class VILModel:
                         targets=np.array([eval[1] for eval in evals]),
                         prompts=np.array([eval[2] for eval in evals]),
                         num_samples=self.num_acc_mc_samples,
-                        postprocess_prediction=postprocess_prediction,
+                        loss=self.loss_fn,
                     )
                     scores = scores.reshape(
                         eval_batch_size, num_h_samples, p_tilde_2.shape[0]
