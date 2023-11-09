@@ -11,8 +11,10 @@ from termcolor import colored
 from torch.utils.tensorboard import SummaryWriter
 
 from dln.dataset import init_dataset
+
 from dln.loss import LLoss
-from dln.operator import instantiate_model
+from dln.operator import LLMRegistry, isolated_cost
+
 from dln.postprocessing import postprocess_prediction
 from dln.score import LogProbsScore
 from dln.vi.model import VILModel, log_message
@@ -120,17 +122,17 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
         bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
         desc="Eval",
     )
-
-    model.cost = 0.
-    dataset.reset_pointer("test")
-    for batch in dataset.iterate("test", batch_size=20):
-        x, y, infos = batch
-        y_hat = model.forward(np.array(x), infos=infos, cost_only=cost_only)
-        all_accs += (1. - loss_fn(y_hat, y)).tolist()
-        acc += len(y) - np.sum(loss_fn(y_hat, y))
-        tot += len(y)
-        pbar.update(len(y))
-        pbar.set_postfix_str(f"{acc / tot:.1%}")
+    with isolated_cost(model.forward_evaluate, add_cost_to_total=True):
+        dataset.reset_pointer("test")
+        for batch in dataset.iterate("test", batch_size=20):
+            x, y, infos = batch
+            y_hat = model.forward(np.array(x), infos=infos, cost_only=cost_only)
+            all_accs += (1. - loss_fn(y_hat, y)).tolist()
+            acc += len(y) - np.sum(loss_fn(y_hat, y))
+            tot += len(y)
+            pbar.update(len(y))
+            pbar.set_postfix_str(f"{acc / tot:.1%}")
+        test_cost = model.forward_evaluate.total_cost
 
     test_acc = acc / tot
     if iteration == 0:
@@ -140,7 +142,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     writer.add_scalar("test/acc", (test_acc), iteration)
     # for sig-test purposes
     log_message("ALL ACCS:", all_accs)
-    log_message("TOKEN COST:", model.cost)
+    log_message("TEST TOKEN COST:", test_cost)
     return test_acc
 
 
@@ -439,15 +441,21 @@ def main(
     log_message("Init P1: ", init_p1)
     log_message("Init P2: ", init_p2)
 
-    bwd_model_type = bwd_model_type or fwd_model_type  # Use the same model type if bwd is not specified.
-    fwd_model = instantiate_model(
+    # Use the same model type if bwd is not specified.
+    bwd_model_type = bwd_model_type or fwd_model_type
+
+    llm_registry = LLMRegistry()
+
+    fwd_model = llm_registry.register(
+        "fwd_model",
         fwd_model_type,
         temperature=0.0,
         max_tokens=fwd_max_tokens,
         stop=None,
     )
 
-    bwd_model = instantiate_model(
+    bwd_model = llm_registry.register(
+        "bwd_model",
         bwd_model_type,
         temperature=bwd_temp,
         max_tokens=bwd_max_tokens,
@@ -606,6 +614,7 @@ def main(
     log_message("Best L1 weights:", model.encoder_l1.weight)
     log_message("Best L2 weights:", model.encoder_l2.weight)
 
+    log_message("TRAINING TOKEN COST:", llm_registry.total_cost)
     test_acc = test(dataset, model, loss_fn, iteration, writer, cost_only=cost_only)
 
     if wandb_enabled:
@@ -613,6 +622,7 @@ def main(
 
     log_message(colored("DEV ACC: {}".format(best_dev), "green"))
     log_message(colored("TEST ACC: {}".format(test_acc), "green"))
+    log_message("TOTAL TOKEN COST:", llm_registry.total_cost)
 
     result_writer.save_to_json_file()
     writer.close()
