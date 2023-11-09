@@ -103,6 +103,16 @@ def test_registry_llm(gpt_api_config):
     assert another_llm.engine == "llama2"
 
 
+def test_registry_llm_duplicated_name(gpt_api_config):
+    registry = LLMRegistry()
+    registry.register("text-davinci-003", **gpt_api_config)
+    with pytest.raises(
+        ValueError,
+        match="Model text-davinci-003 already registered"
+    ):
+        registry.register("text-davinci-003", **gpt_api_config)
+
+
 def test_load_llms_from_config(gpt_api_config, llama_api_config):
     config = [
         {

@@ -378,6 +378,9 @@ class LLMRegistry:
         Returns:
             the instantiated model
         """
+        if model_name in self.models:
+            raise ValueError(f"Model {model_name} already registered")
+
         if model_type is None:
             model_type = model_name
 
