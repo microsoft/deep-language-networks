@@ -3,7 +3,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from dln.loss import ZeroOneLoss
+from dln.loss import ExactMatchLoss
 from dln.postprocessing import postprocess_prediction
 from dln.score import LogProbs, OutputClasses
 from dln.vi.layers import PriorLayer, ResidualPriorLayer
@@ -12,7 +12,7 @@ from dln.vi.model import VILModel
 
 @pytest.fixture
 def loss_fn():
-    loss_fn = ZeroOneLoss(postproc=postprocess_prediction)
+    loss_fn = ExactMatchLoss(postproc=postprocess_prediction)
     return loss_fn
 
 

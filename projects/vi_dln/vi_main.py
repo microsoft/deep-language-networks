@@ -258,7 +258,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option(
     "--loss_function",
     type=str,
-    default="zero_one_loss",
+    default="exact_match_loss",
     help=f"Loss function. One of {LossRegistry.available_losses()}",
 )
 @click.option(
@@ -455,7 +455,7 @@ def main(
     )
 
     postproc = None
-    if loss_function == "zero_one_loss":
+    if loss_function == "exact_match_loss":
         postproc = postprocess_prediction
     loss_fn = LossRegistry.instantiate(loss_function, postproc)
     prompt_sampler = PromptSampler(bwd_model, q_prompt)

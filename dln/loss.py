@@ -83,10 +83,10 @@ class LLoss(ABC):
         return losses
 
 
-@LossRegistry.register("zero_one_loss")
-class ZeroOneLoss(LLoss):
+@LossRegistry.register("exact_match_loss")
+class ExactMatchLoss(LLoss):
     """
-    Calculates the zero-one loss between the predicted and target outputs,
+    Calculates the exact match loss between the predicted and target outputs,
     where 0 indicates a correct prediction and 1 indicates an incorrect prediction.
     """
     def loss(self, inputs: Iterable[str], targets: Iterable[str]) -> np.array:
