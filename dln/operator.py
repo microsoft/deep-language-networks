@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import List, Union
+from contextlib import contextmanager
+import re
+from typing import Dict, List, Union
 import asyncio
 import numpy as np
 import openai
@@ -11,6 +13,7 @@ from tenacity import (
     wait_exponential,
     retry_if_exception_type,
 )
+import yaml
 
 
 openai.util.logger.setLevel(logging.WARNING)
@@ -67,9 +70,20 @@ class LLM(ABC):
     def __init__(self, model_name: str, **generation_options):
         self.generation_options = generation_options
         self.engine = model_name
+        self.total_cost = 0.0
 
     def __call__(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
-        return self.generate(inputs, **kwargs)
+        is_echo_enabled = kwargs.get("echo") or self.generation_options.get("echo")
+        if not is_echo_enabled:
+            self.compute_cost(inputs)
+
+        outputs = self.generate(inputs, **kwargs)
+
+        if kwargs.get("return_logprobs"):
+            self.compute_cost([out[0] for out in outputs])
+        else:
+            self.compute_cost(outputs)
+        return outputs
 
     @abstractmethod
     def generate(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
@@ -83,9 +97,9 @@ class LLM(ABC):
     @abstractmethod
     def has_logprobs(self) -> bool:
         raise NotImplementedError
-    
+
     def compute_cost(self, inputs: List[str]) -> float:
-        return np.sum(list([len(self.encode(input)) for input in inputs]))
+        self.total_cost += np.sum(list([len(self.encode(input)) for input in inputs]))
 
 
 class GPT(LLM):
@@ -334,12 +348,6 @@ class VLLM(LLM):
         return True
 
 
-def instantiate_model(model_name: str, **generation_options) -> LLM:
-    if model_name in GPT.AVAILABLE_MODELS:
-        return GPT(model_name, **generation_options)
-    return VLLM(model_name, **generation_options)
-
-
 def instantiate_tokenizer(model_name: str):
     if model_name in GPT.AVAILABLE_MODELS:
         import tiktoken
@@ -352,3 +360,100 @@ def instantiate_tokenizer(model_name: str):
             pretrained_path = model_name
         encoder = AutoTokenizer.from_pretrained(pretrained_path)
     return encoder
+
+
+class LLMRegistry:
+
+    def __init__(self, config=None):
+        self.models : Dict[str, LLM] = {}
+        if config is not None:
+            self._load_from_configs(config)
+
+    def register(self, model_name: str, model_type: str = None, **generation_options) -> LLM:
+        """Register a single model to the LLMRegistry.
+        Args:
+            model_name: how you refer to the model, for example: gpt-3.
+            model_type: the api model name, for example: text-davinci-003. If not provided, use model_name as default.
+            **generation_options: generation options, for example: api_key, api_base, api_type, api_version, max_tokens, temperature, etc.
+        Returns:
+            the instantiated model
+        """
+        if model_name in self.models:
+            raise ValueError(f"Model {model_name} already registered")
+
+        if model_type is None:
+            model_type = model_name
+
+        if model_type in GPT.AVAILABLE_MODELS:
+            llm = GPT(model_type, **generation_options)
+        else:
+            llm = VLLM(model_type, **generation_options)
+
+        self.models[model_name] = llm
+        return llm
+
+    @property
+    def total_cost(self):
+        return sum([llm.total_cost for llm in self.models.values()])
+
+    @classmethod
+    def from_yaml(cls, path):
+        with open(path, "r") as f:
+            config = _replace_env_vars(yaml.safe_load(f))
+        return cls(config=config)
+
+    def _load_from_configs(self, configs: List[Dict]):
+        for config in configs:
+            name = config.pop("name")  # how you refer to the model
+            model = config.pop("model", name)  # the api model name
+            self.register(name, model, **config)
+
+    def __len__(self) -> int:
+        return len(self.models)
+
+    def __getitem__(self, model_name):
+        return self.models[model_name]
+
+    def __contains__(self, model_name):
+        return model_name in self.models
+
+    def get(self, model_name, default=None):
+        if model_name in self:
+            return self[model_name]
+        return default
+
+
+@contextmanager
+def isolated_cost(llms: Union[LLMRegistry, LLM, List[LLM]], add_cost_to_total: bool = False):
+    if isinstance(llms, LLM):
+        llms = [llms]
+    elif isinstance(llms, LLMRegistry):
+        llms = list(llms.models.values())
+
+    previous_costs = {llm: llm.total_cost for llm in llms}
+    try:
+        for llm in llms:
+            llm.total_cost = 0.0
+        yield
+    finally:
+        for llm in llms:
+            if add_cost_to_total:
+                llm.total_cost += previous_costs[llm]
+            else:
+                llm.total_cost = previous_costs[llm]
+
+
+def _replace_env_vars(data):
+    pattern = re.compile(r'\$\{(.*)\}')
+    if isinstance(data, dict):
+        for key in data:
+            data[key] = _replace_env_vars(data[key])
+    elif isinstance(data, list):
+        for i in range(len(data)):
+            data[i] = _replace_env_vars(data[i])
+    elif isinstance(data, str):
+        match = pattern.search(data)
+        if match:
+            var = match.group(1)
+            data = data.replace('${' + var + '}', os.getenv(var))
+    return data
