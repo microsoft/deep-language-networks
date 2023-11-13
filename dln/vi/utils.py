@@ -2,7 +2,7 @@ import logging
 import os
 import copy
 import json
-from typing import Dict
+from typing import Optional
 
 import numpy as np
 
@@ -32,7 +32,10 @@ class ResultLogEntry():
         self.metrics = {}
         self.outputs = []
 
-    def log_metric(self, metric: str, value: float):
+    def log_metric(self, metric: str, value: Optional[float]):
+        if value is not None:
+            value = float(value)
+
         self.metrics[metric] = value
 
     def log_outputs(self, outputs):
@@ -53,7 +56,7 @@ class ResultLogEntry():
             for i in range(p_tilde_1.shape[0]):
                 self.candidates[0].append({
                     "layer": p_tilde_1[i],
-                    "score": p1_elbo[i],
+                    "score": float(p1_elbo[i]),
                 })
             p2_ind = 1
         else:
@@ -61,20 +64,20 @@ class ResultLogEntry():
         for i in range(p_tilde_2.shape[0]):
             self.candidates[p2_ind].append({
                 "layer": p_tilde_2[i],
-                "score": p2_elbo[i],
+                "score": float(p2_elbo[i]),
             })
 
 
 class ResultLogWriter(object):
-    def __init__(self, dataset: str, path: str, name: str = None):
+    def __init__(self, name: str, path: str):
         """
         Args:
-            dataset: The name of the dataset (used as name if save_name is None)
-            save_name: Dictionary key to save the results under
+            name: File name
+            path: File location
         Returns:
             A ResultLogWriter object
         """
-        self.name = name if name is not None else dataset
+        self.name = name
         self.path = path
         self.result_dict = {}
         self.result_dict[self.name] = {'training': [], 'examples': []}

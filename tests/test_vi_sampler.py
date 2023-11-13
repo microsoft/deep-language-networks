@@ -7,9 +7,9 @@ import pytest
 from dln.vi.sampler import PosteriorSampler, PromptSampler
 
 
-def test_sample_q_p(backward_info):
+def test_sample_q_p(backward_info, mock_llm):
     inputs, y, y_hat, losses = backward_info
-    sampler = PromptSampler()
+    sampler = PromptSampler(mock_llm)
     mock_eval_fn = MagicMock(return_value=["new prompt 1", "new prompt 2"])
     sampler.evaluate_func = mock_eval_fn
     prompt = "test prompt"
@@ -40,9 +40,9 @@ def test_sample_q_p(backward_info):
     )
 
 
-def test_sample_q_p_hold_out_half(backward_info):
+def test_sample_q_p_hold_out_half(backward_info, mock_llm):
     inputs, y, y_hat, losses = backward_info
-    sampler = PromptSampler()
+    sampler = PromptSampler(mock_llm)
     mock_eval_fn = MagicMock(return_value=["new prompt 1", "new prompt 2"])
     sampler.evaluate_func = mock_eval_fn
     prompt = "test prompt"
@@ -72,11 +72,11 @@ def test_sample_q_p_hold_out_half(backward_info):
     )
 
 
-def test_sample_q_h(backward_info):
+def test_sample_q_h(backward_info, mock_llm):
     inputs, y, _, _ = backward_info
     h = ["test 1", "test2", "test 3", "test4"]
     num_samples = 2
-    sampler = PosteriorSampler("suffix_forward_tbs")
+    sampler = PosteriorSampler(mock_llm, "suffix_forward_tbs")
     mock_eval_fn = MagicMock(
         # h * num_samples
         return_value=[

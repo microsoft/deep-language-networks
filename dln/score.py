@@ -4,7 +4,7 @@ from typing import Any, List
 
 import numpy as np
 
-from dln.operator import forward_evaluate
+from dln.operator import LLM
 
 
 @dataclass
@@ -33,19 +33,15 @@ class OutputClasses:
 
 @dataclass
 class LogProbs:
-    targets: np.ndarray
-    contexts: np.ndarray
+    logp_targets: np.ndarray
+    distribution: np.ndarray
 
 
 class LogProbsScore:
-    def __init__(self, encoder=None):
-        if encoder is None:
-            import tiktoken
 
-            from dln.operator import forward_interpreter
-
-            encoder = tiktoken.encoding_for_model(forward_interpreter.engine)
-        self.encoder = encoder
+    def __init__(self, forward_evaluate: LLM):
+        self.forward_evaluate = forward_evaluate
+        self.cache = {}
 
     def score_requests(self, requests, output_classes=None, agg="max") -> LogProbs:
         # create the batched inputs for the model
@@ -72,30 +68,40 @@ class LogProbsScore:
             "raw_logprobs": False,
             "top_logprobs": 100,
         }
+        
+        output_logprobs = []
+        output_distribs = []
 
-        unique_contexts = list(set(contexts))
-        context_to_position = {context: i for i, context in enumerate(unique_contexts)}
-        to_eval = [f"{context}\n" for context in unique_contexts]
+        to_eval = []
+        for context in contexts:
+            if context not in self.cache:
+                context_ = f"{context}\n"
+                to_eval.append(context_)
 
         print("# Scoring requests = {}".format(len(contexts)))
-        print("# Scoring unique requests = {}".format(len(unique_contexts)))
-        eval_results = forward_evaluate(
+        print("# Scoring non cached requests = {}".format(len(to_eval)))
+
+        partial_results = self.forward_evaluate(
             to_eval,
             async_generation=True,
             **eval_kwargs,
         )
+        for context, result in zip(to_eval, partial_results):
+            assert context not in self.cache
+            self.cache[context.strip()] = result
+
+        eval_results = []
+        for context in contexts:
+            eval_results.append(self.cache[context])
 
         top_logprobs = []
-        for context in contexts:
-            position = context_to_position[context]
-            context_top_logprobs = eval_results[position][1][0]
+        for context, result in zip(contexts, eval_results):
+            context_top_logprobs = result[1][0]
             top_logprobs.append(dict(context_top_logprobs))
 
         output_logprobs = []
         output_distribs = []
         for context, target, context_top_logprobs in zip(contexts, targets, top_logprobs):
-            position = context_to_position[context]
-
             # make this fixed
             if context_top_logprobs:
                 min_prob = np.exp(np.min(list(context_top_logprobs.values())))
@@ -105,9 +111,13 @@ class LogProbsScore:
             output_classes_scores = np.asarray([min_prob for _ in output_classes])
             # accumulate probability mass for each class verbalizer
             # the class verbalizer can be either " a" or "a" (with or without space)
+            extenders = [
+                " ",  # gpt case, regular space
+                "▁",  # llama case, this is not an underscore ord("_") -> 95, but a special character ord("▁") -> 9601
+            ]
             for i in range(len(output_classes)):
                 verbalizers = output_classes.verbalizers(i)
-                verbalizers.extend([f" {v}" for v in verbalizers])
+                verbalizers.extend([f"{e}{v}" for v in verbalizers for e in extenders])
                 verbalizers = set(verbalizers)
                 verbalizers_scores = [0.]
                 for verbalizer in verbalizers:
@@ -123,7 +133,7 @@ class LogProbsScore:
             output_class_index = [i for i, output_class in enumerate(output_classes) if target in output_class.split("|")]
             assert (
                 len(output_class_index) == 1
-            ), "The target shouldn't appear in two output classes!"
+            ), "The target shouldn't appear in two output classes! {}".format(target)
             # accuracy here
             output_classes_scores = output_classes_scores / output_classes_scores.sum()
             output_logprobs.append(np.log(output_classes_scores[output_class_index[0]]))
@@ -132,7 +142,6 @@ class LogProbsScore:
 
     def _forward_logprobs_score_api(self, contexts, targets) -> LogProbs:
         logging.info("# Scoring requests = {}".format(len(contexts)))
-
         eval_kwargs = {
             "temperature": 0,
             "max_tokens": 0,
@@ -150,7 +159,7 @@ class LogProbsScore:
         # only perform unique evals
         unique_keys = list(set(eval_batch))
         unique_keys_to_positions = {key: i for i, key in enumerate(unique_keys)}
-        unique_eval_results = forward_evaluate(
+        unique_eval_results = self.forward_evaluate(
             unique_keys,
             async_generation=True,
             **eval_kwargs,
@@ -165,7 +174,7 @@ class LogProbsScore:
         output_logprobs = []
         context_logprobs = []
         for context, token_log_probs in zip(contexts, log_probs):
-            num_tokens_prompt = len(self.encoder.encode(context))
+            num_tokens_prompt = len(self.forward_evaluate.encode(context))
             target_log_probs = token_log_probs[num_tokens_prompt:]
             context_log_probs = token_log_probs[1:num_tokens_prompt]
             output_logprobs.append(sum(target_log_probs) / (len(target_log_probs) + 1e-5))

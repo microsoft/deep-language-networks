@@ -34,7 +34,7 @@ for i in range(len(data)):
     if input in bbh_dict:
         in_bbh += 1
         continue
-    res_input = [input]
+    res_input = [input, "Options:"]
     res_target = ""
     for j, key in enumerate(target):
         if target[key] == 1:

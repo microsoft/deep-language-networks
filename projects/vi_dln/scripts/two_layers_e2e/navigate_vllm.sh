@@ -1,27 +1,34 @@
 set -x  # print commands to terminal
 dataset=navigate
 p_class_tpl="classify_forward:3.0"
-iters=20
-batch_size=10
+iters=10
+batch_size=5
 num_p_samples=10
 bwd_temp=0.7
 held_out_prompt_ranking=True
-use_memory=5
+use_memory=2
 tolerance=2
-num_h_samples=10
+num_h_samples=5
 q_prompt_tpl="q_action_prompt:v3.5"
 logp_penalty=2.
 posterior_temp=1.
 trust_factor=5.
 p_hidden_tpl="suffix_forward_tbs"
 q_hidden_tpl="suffix_forward_tbs_y|suffix_forward_tbs"
+fwd_model_type="meta-llama/Llama-2-70b-chat-hf"
+fwd_max_tokens=512
+bwd_max_tokens=1024
+p1_max_tokens=512
+p2_max_tokens=512
 
-dir=log/two_layers_e2e/${dataset}
-/bin/rm -rf ${dir}
+dir=log/{fwd_model_type}/two_layers_e2e/${dataset}
 
-for seed in 13 42 25; do
+
+for seed in 42; do
     python vi_main.py \
+        --do_first_eval \
         --balance_batch \
+        --fwd_model_type ${fwd_model_type} \
         --num_p_samples ${num_p_samples} \
         --num_h_samples ${num_h_samples} \
         --bwd_temp ${bwd_temp} \
@@ -43,5 +50,9 @@ for seed in 13 42 25; do
         --forward_use_classes True \
         --logp_penalty ${logp_penalty} \
         --posterior_temp ${posterior_temp} \
+        --fwd_max_tokens ${fwd_max_tokens} \
+        --bwd_max_tokens ${bwd_max_tokens} \
+        --p1_max_tokens ${p1_max_tokens} \
+        --p2_max_tokens ${p2_max_tokens} \
         --strip_options_for_hidden True
 done

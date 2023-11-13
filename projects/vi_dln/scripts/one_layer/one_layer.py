@@ -40,7 +40,7 @@ def main(dataset):
             "--tolerance", tolerance,
             "--use_memory", use_memory,
             "--held_out_prompt_ranking", held_out_prompt_ranking,
-            "--one_layer",
+            "--one_layer", True,
             "--do_first_eval",
         ]))
         print(' '.join(command))

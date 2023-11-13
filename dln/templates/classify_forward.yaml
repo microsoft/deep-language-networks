@@ -5,3 +5,4 @@ v3.0:
     {{ input }}
 
     Answer:
+    {{ answer }}

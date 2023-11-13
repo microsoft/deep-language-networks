@@ -1,46 +1,29 @@
-# global interpreter
-from typing import List
+from abc import ABC, abstractmethod
+from contextlib import contextmanager
+import re
+from typing import Dict, List, Union
 import asyncio
 import numpy as np
 import openai
 import logging
+import os
 from tenacity import (
     retry,
     stop_after_attempt,
     wait_exponential,
     retry_if_exception_type,
 )
-
-forward_interpreter = None
-backward_interpreter = None
+import yaml
 
 
-class GPT:
-    AVAILABLE_MODELS = [
-        "text-davinci-003",
-        "text-davinci-002",
-        "code-davinci-002",
-        "text-curie-001",
-        "text-babbage-001",
-        "text-ada-001",
-        "gpt-3.5-turbo",
-        "gpt-35-turbo",
-        "gpt-4",
-        "gpt-4-32k",
-    ]
+openai.util.logger.setLevel(logging.WARNING)
 
-    def __init__(self, model_name="text-davinci-003", **generation_options):
-        if model_name not in self.AVAILABLE_MODELS:
-            raise ValueError(
-                f"model_name should be one of: {','.join(self.AVAILABLE_MODELS)}"
-            )
-        self.generation_options = generation_options
-        self.engine = model_name
 
-    @retry(
+def _retry_request(min_wait=4, max_wait=10, max_attempts=100):
+    return retry(
         reraise=True,
-        stop=stop_after_attempt(100),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
+        stop=stop_after_attempt(max_attempts),
+        wait=wait_exponential(multiplier=1, min=min_wait, max=max_wait),
         retry=(
             retry_if_exception_type(openai.error.Timeout)
             | retry_if_exception_type(openai.error.APIError)
@@ -49,7 +32,120 @@ class GPT:
             | retry_if_exception_type(openai.error.ServiceUnavailableError)
         ),
     )
-    async def aget_chat_completion_response(self, prompt, **kwargs):
+
+
+def _parse_openai_response(
+    response,
+    return_logprobs=False,
+    raw_logprobs=False,
+    top_logprobs=False,
+    **kwargs,
+):
+    output = []
+    nlls = []
+    lengths = []
+    for response in response["choices"]:
+        output.append(response["text"].strip())
+        if raw_logprobs:
+            nlls.append(response["logprobs"]["token_logprobs"])
+            lengths.append(response["logprobs"]["tokens"])
+        elif top_logprobs:
+            nlls.append(response["logprobs"]["top_logprobs"])
+            lengths.append(response["logprobs"]["tokens"])
+        else:
+            if "token_logprobs" in response["logprobs"]:
+                nlls.append(sum(response["logprobs"]["token_logprobs"]))
+                lengths.append(len(response["logprobs"]["token_logprobs"]))
+            else:
+                nlls.append(-np.inf)
+                lengths.append(1)
+
+    if return_logprobs:
+        output = list(zip(output, nlls, lengths))
+    return output
+
+
+class LLM(ABC):
+
+    def __init__(self, model_name: str, **generation_options):
+        self.generation_options = generation_options
+        self.engine = model_name
+        self.total_cost = 0.0
+
+    def __call__(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
+        is_echo_enabled = kwargs.get("echo") or self.generation_options.get("echo")
+        if not is_echo_enabled:
+            self.compute_cost(inputs)
+
+        outputs = self.generate(inputs, **kwargs)
+
+        if kwargs.get("return_logprobs"):
+            self.compute_cost([out[0] for out in outputs])
+        else:
+            self.compute_cost(outputs)
+        return outputs
+
+    @abstractmethod
+    def generate(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def encode(self, string: str) -> List[int]:
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def has_logprobs(self) -> bool:
+        raise NotImplementedError
+
+    def compute_cost(self, inputs: List[str]) -> float:
+        self.total_cost += np.sum(list([len(self.encode(input)) for input in inputs]))
+
+
+class GPT(LLM):
+
+    CHAT_COMPLETION_MODELS = [
+        "gpt-35-turbo",  # azure
+        "gpt-3.5-turbo",
+        "gpt-4",
+        "gpt-4-32k",
+        "gpt-4-0613",
+    ]
+
+    COMPLETION_MODELS = [
+        "text-davinci-003",
+        "text-davinci-002",
+        "code-davinci-002",
+        "text-curie-001",
+        "text-babbage-001",
+        "text-ada-001",
+    ]
+
+    AVAILABLE_MODELS = CHAT_COMPLETION_MODELS + COMPLETION_MODELS
+    LOGPROBS_MODELS = COMPLETION_MODELS.copy()
+
+    def __init__(self, model_name: str = "text-davinci-003", **generation_options):
+        if model_name not in self.AVAILABLE_MODELS:
+            raise ValueError(
+                f"GPT model_name should be one of: {','.join(self.AVAILABLE_MODELS)}"
+            )
+        super().__init__(model_name, **generation_options)
+        engine_for_encoder = self.engine
+        if engine_for_encoder == "gpt-35-turbo":
+            engine_for_encoder = "gpt-3.5-turbo"
+        self.encoder = instantiate_tokenizer(engine_for_encoder)
+        openai.api_version = os.environ.get('OPENAI_API_VERSION')
+        self._has_logprobs = self.engine in self.LOGPROBS_MODELS
+
+    def encode(self, string: str) -> List[int]:
+        return self.encoder.encode(string)
+
+    @property
+    def has_logprobs(self) -> bool:
+        return self._has_logprobs
+
+    @_retry_request(min_wait=4, max_wait=10, max_attempts=100)
+    async def _aget_chat_completion_response(self, prompt, **kwargs):
         """
         prompting chatgpt via openai api
         now batching only works for completion, not on chat
@@ -78,60 +174,8 @@ class GPT:
         output = response["choices"][0]["message"]["content"].strip()
         return output
 
-    @retry(
-        reraise=True,
-        stop=stop_after_attempt(100),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=(
-            retry_if_exception_type(openai.error.Timeout)
-            | retry_if_exception_type(openai.error.APIError)
-            | retry_if_exception_type(openai.error.APIConnectionError)
-            | retry_if_exception_type(openai.error.RateLimitError)
-            | retry_if_exception_type(openai.error.ServiceUnavailableError)
-        ),
-    )
-    def get_chat_completion_response(self, prompt, **kwargs):
-        """
-        prompting chatgpt via openai api
-        now batching only works for completion, not on chat
-        """
-        if openai.api_type == "azure":
-            try:
-                response = openai.ChatCompletion.create(
-                    deployment_id=self.engine,
-                    messages=[{"role": "user", "content": prompt}],
-                    **kwargs,
-                )
-            except openai.InvalidRequestError as e:
-                # Most likely a content filtering error from Azure.
-                logging.warn(str(e))
-                return str(e)
-        else:
-            response = openai.ChatCompletion.create(
-                model=self.engine,
-                messages=[{"role": "user", "content": prompt}],
-                **kwargs,
-            )
-
-        if "content" not in response["choices"][0]["message"]:
-            return ""
-
-        output = response["choices"][0]["message"]["content"].strip()
-        return output
-
-    @retry(
-        reraise=True,
-        stop=stop_after_attempt(100),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=(
-            retry_if_exception_type(openai.error.Timeout)
-            | retry_if_exception_type(openai.error.APIError)
-            | retry_if_exception_type(openai.error.APIConnectionError)
-            | retry_if_exception_type(openai.error.RateLimitError)
-            | retry_if_exception_type(openai.error.ServiceUnavailableError)
-        ),
-    )
-    def get_completion_response(
+    @_retry_request(min_wait=4, max_wait=10, max_attempts=100)
+    def _get_completion_response(
         self,
         prompt_batch,
         return_logprobs=False,
@@ -172,39 +216,22 @@ class GPT:
                         response["choices"].append(
                             {
                                 "text": str(e),
-                                "logprobs": {"token_logprobs": [0], "top_logprobs": [{}], "tokens": {}},
+                                "logprobs": {
+                                    "token_logprobs": [0],
+                                    "top_logprobs": [{}],
+                                    "tokens": {}
+                                },
                             }
                         )
             else:
                 raise e
 
-        output = []
-        nlls = []
-        lengths = []
-        for response in response["choices"]:
-            output.append(response["text"].strip())
-            if raw_logprobs:
-                nlls.append(response["logprobs"]["token_logprobs"])
-                lengths.append(response["logprobs"]["tokens"])
-            elif top_logprobs:
-                nlls.append(response["logprobs"]["top_logprobs"])
-                lengths.append(response["logprobs"]["tokens"])
-            else:
-                if "token_logprobs" in response["logprobs"]:
-                    nlls.append(sum(response["logprobs"]["token_logprobs"]))
-                    lengths.append(len(response["logprobs"]["token_logprobs"]))
-                else:
-                    nlls.append(-np.inf)
-                    lengths.append(1)
+        return _parse_openai_response(response, return_logprobs, raw_logprobs, top_logprobs)
 
-        if return_logprobs:
-            output = list(zip(output, nlls, lengths))
-        return output
-
-    async def gather_chat_response(self, inputs, **generation_options):
+    async def _gather_chat_response(self, inputs, **generation_options):
         outputs = await asyncio.gather(
             *[
-                self.aget_chat_completion_response(_input, **generation_options)
+                self._aget_chat_completion_response(_input, **generation_options)
                 for _input in inputs
             ]
         )
@@ -219,66 +246,214 @@ class GPT:
             input_batch = inputs[batch_size * i : batch_size * (i + 1)]
             yield input_batch
 
-    def generate(self, inputs, async_generation=True, batch_size=20, **kwargs):
-        if type(inputs) is not list:
+    def generate(
+        self,
+        inputs: Union[List[str], str],
+        async_generation: bool = True,
+        batch_size: int = 20,
+        **kwargs,
+    ) -> List[str]:
+        if not isinstance(inputs, list):
             inputs = [inputs]
-
-        kwargs.pop("output_space", None)
         generation_options = self.generation_options.copy()
         generation_options.update(**kwargs)
 
-        if self.engine in ("gpt-3.5-turbo", "gpt-35-turbo", "gpt-4", "gpt-4-32k"):
-            if "return_logprobs" in generation_options:
-                del generation_options["return_logprobs"]
+        if "return_logprobs" in generation_options and not self.has_logprobs:
+            logging.warn(
+                f"return_logprobs is not supported for model {self.engine}"
+            )
+            del generation_options["return_logprobs"]
 
+        if self.engine in self.CHAT_COMPLETION_MODELS:
             if async_generation is True:
                 # async call api, devide to mini batches to avoid call rate limit
                 outputs = []
                 for input_batch in self._mini_batch(inputs, batch_size=10):
                     outputs_batch = asyncio.run(
-                        self.gather_chat_response(input_batch, **generation_options)
+                        self._gather_chat_response(input_batch, **generation_options)
                     )
                     outputs = outputs + outputs_batch
             else:
                 # call api one by one
                 outputs = [
-                    self.get_chat_completion_response(_input, **generation_options)
+                    asyncio.run(
+                        self._aget_chat_completion_response(_input, **generation_options)
+                    )
                     for _input in inputs
                 ]
         else:
-            # devide to mini batches (max batch size = 20 according to openai)
+            # completion_models, devide to mini batches (max batch size = 20 according to openai)
             outputs = []
             for input_batch in self._mini_batch(inputs, batch_size=batch_size):
-                outputs_batch = self.get_completion_response(
+                outputs_batch = self._get_completion_response(
                     input_batch, **generation_options
                 )
                 outputs = outputs + outputs_batch
         return outputs
 
 
-def forward_instantiate(model_name="text-davinci-003", **generation_options):
-    global forward_interpreter
+class VLLM(LLM):
 
-    if forward_interpreter is None:
-        forward_interpreter = GPT(model_name, **generation_options)
+    def __init__(self, model_name: str, **generation_options):
+        super().__init__(model_name, **generation_options)
+        self.encoder = instantiate_tokenizer(model_name)
+
+    @_retry_request(min_wait=1, max_wait=1, max_attempts=100)
+    async def _aget_vllm_response(self, input, **kwargs):
+        response = await openai.Completion.acreate(
+            model=self.engine,
+            prompt=input,
+            logprobs=kwargs.get("top_logprobs") or 1,
+            **kwargs,
+        )
+        return _parse_openai_response(response, **kwargs)[0]
+
+    async def _gather_vllm_response(self, inputs, **kwargs):
+        outputs = await asyncio.gather(
+            *[
+                self._aget_vllm_response(_input, **kwargs)
+                for _input in inputs
+            ]
+        )
+        return outputs
+
+    def generate(
+        self,
+        inputs: Union[List[str], str],
+        async_generation: bool = True,
+        **kwargs
+    ) -> List[str]:
+        if not isinstance(inputs, list):
+            inputs = [inputs]
+        generation_options = self.generation_options.copy()
+        generation_options.update(**kwargs)
+        if async_generation:
+            outputs = asyncio.run(
+                self._gather_vllm_response(inputs, **generation_options)
+            )
+        else:
+            outputs = [
+                asyncio.run(
+                    self._aget_vllm_response(_input, **generation_options)
+                )
+                for _input in inputs
+            ]
+        return outputs
+
+    def encode(self, string: str) -> List[int]:
+        return self.encoder.encode(string)
+
+    @property
+    def has_logprobs(self) -> bool:
+        return True
+
+
+def instantiate_tokenizer(model_name: str):
+    if model_name in GPT.AVAILABLE_MODELS:
+        import tiktoken
+        encoder = tiktoken.encoding_for_model(model_name)
     else:
-        print("Forward interpreter already instantiated.")
-        pass
+        from transformers import AutoTokenizer
+        if model_name.startswith("/"):
+            pretrained_path = os.getenv("TOKENIZER_PATH")
+        else:
+            pretrained_path = model_name
+        encoder = AutoTokenizer.from_pretrained(pretrained_path)
+    return encoder
 
 
-def backward_instantiate(model_name="text-davinci-003", **generation_options):
-    global backward_interpreter
+class LLMRegistry:
 
-    if backward_interpreter is None:
-        backward_interpreter = GPT(model_name, **generation_options)
-    else:
-        print("Backward interpreter already instantiated.")
-        pass
+    def __init__(self, config=None):
+        self.models : Dict[str, LLM] = {}
+        if config is not None:
+            self._load_from_configs(config)
+
+    def register(self, model_name: str, model_type: str = None, **generation_options) -> LLM:
+        """Register a single model to the LLMRegistry.
+        Args:
+            model_name: how you refer to the model, for example: gpt-3.
+            model_type: the api model name, for example: text-davinci-003. If not provided, use model_name as default.
+            **generation_options: generation options, for example: api_key, api_base, api_type, api_version, max_tokens, temperature, etc.
+        Returns:
+            the instantiated model
+        """
+        if model_name in self.models:
+            raise ValueError(f"Model {model_name} already registered")
+
+        if model_type is None:
+            model_type = model_name
+
+        if model_type in GPT.AVAILABLE_MODELS:
+            llm = GPT(model_type, **generation_options)
+        else:
+            llm = VLLM(model_type, **generation_options)
+
+        self.models[model_name] = llm
+        return llm
+
+    @property
+    def total_cost(self):
+        return sum([llm.total_cost for llm in self.models.values()])
+
+    @classmethod
+    def from_yaml(cls, path):
+        with open(path, "r") as f:
+            config = _replace_env_vars(yaml.safe_load(f))
+        return cls(config=config)
+
+    def _load_from_configs(self, configs: List[Dict]):
+        for config in configs:
+            name = config.pop("name")  # how you refer to the model
+            model = config.pop("model", name)  # the api model name
+            self.register(name, model, **config)
+
+    def __len__(self) -> int:
+        return len(self.models)
+
+    def __getitem__(self, model_name):
+        return self.models[model_name]
+
+    def __contains__(self, model_name):
+        return model_name in self.models
+
+    def get(self, model_name, default=None):
+        if model_name in self:
+            return self[model_name]
+        return default
 
 
-def forward_evaluate(input: List[str], **kwargs):
-    return forward_interpreter.generate(input, **kwargs)
+@contextmanager
+def isolated_cost(llms: Union[LLMRegistry, LLM, List[LLM]], add_cost_to_total: bool = False):
+    if isinstance(llms, LLM):
+        llms = [llms]
+    elif isinstance(llms, LLMRegistry):
+        llms = list(llms.models.values())
+
+    previous_costs = {llm: llm.total_cost for llm in llms}
+    try:
+        for llm in llms:
+            llm.total_cost = 0.0
+        yield
+    finally:
+        for llm in llms:
+            if add_cost_to_total:
+                llm.total_cost += previous_costs[llm]
+            else:
+                llm.total_cost = previous_costs[llm]
 
 
-def backward_evaluate(input: List[str], **kwargs):
-    return backward_interpreter.generate(input, **kwargs)
+def _replace_env_vars(data):
+    pattern = re.compile(r'\$\{(.*)\}')
+    if isinstance(data, dict):
+        for key in data:
+            data[key] = _replace_env_vars(data[key])
+    elif isinstance(data, list):
+        for i in range(len(data)):
+            data[i] = _replace_env_vars(data[i])
+    elif isinstance(data, str):
+        match = pattern.search(data)
+        if match:
+            var = match.group(1)
+            data = data.replace('${' + var + '}', os.getenv(var))
+    return data

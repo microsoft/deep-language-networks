@@ -38,6 +38,18 @@ you need to set the OPENAI_API_TYPE, OPENAI_API_BASE and OPENAI_API_VERSION.
 The OPENAI_API_TYPE must be set to 'azure' and the others correspond to the properties of your endpoint.
 
 
+### Setup self-hosted models (vLLM)
+
+Export huggingface id or path to the tokenizer, for example `meta-llama/Llama-2-70b-chat-hf` from huggingface or `/path/to/Llama-2-70b-chat-hf` from your local machine.
+Then, export the openai env vars `OPENAI_API_BASE` and `OPENAI_API_KEY`. Remember to unset `OPENAI_API_TYPE` and `OPENAI_API_VERSION` if you have set them before.
+
+    export TOKENIZER_PATH=<PATH_TO_TOKENIZER>
+    export OPENAI_API_KEY=EMPTY
+    export OPENAI_API_BASE=http://127.0.0.1:8000/v1
+    unset OPENAI_API_TYPE
+    unset OPENAI_API_VERSION
+
+
 ## Running experiments
 
 Please see the [Variational Inference README](projects/vi_dln/README.md) for information on how to run experiments.
