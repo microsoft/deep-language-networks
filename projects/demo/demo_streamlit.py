@@ -2,9 +2,8 @@ import argparse
 import json
 import textwrap
 
-import streamlit as st
-
 import altair as alt
+import streamlit as st
 import numpy as np
 import pandas as pd
 from jinja2 import Template
@@ -87,12 +86,13 @@ def main(args):
     st.markdown("<h1 style='text-align: center; margin-bottom: 80px'>Deep Language Networks</h1>", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     with col1:
-        dataset_selectbox = st.selectbox("Dataset", datasets, index=2, format_func=lambda x: x[1])
+        # find navigate dataset index or default to 0
+        selectbox_index = next((i for i, (dataset_id, _) in enumerate(datasets)if dataset_id == 'navigate'), 0)
+        dataset_selectbox = st.selectbox("Dataset", datasets, index=selectbox_index, format_func=lambda x: x[1])
         dataset_selectbox = dataset_selectbox[0]
-        my_df, candidates, examples = load_data(
+        df, candidates, examples = load_data(
             args.logfile or "data.json", dataset_selectbox
         )
-        df = my_df
 
         highlight_example = st.selectbox("Example", [i for i in range(20)], format_func=lambda x: x + 1)
         highlight_step = st.slider("Step", 1, 20)
@@ -125,16 +125,16 @@ def main(args):
             ),
         )
 
-        # # Highlight a specific step  
+        # # Highlight a specific step
         # highlight_step = 10
-        # # Add a selection  
+        # # Add a selection
         # highlight_step = alt.selection_single(fields=['step'], on='click', nearest=True, init={'step': 10}, empty='none')
-        
-        # # Add a vertical rule at the specific step  
+
+        # # Add a vertical rule at the specific step
         highlight_rule = alt.Chart(pd.DataFrame({'step': [highlight_step]})).mark_rule(color='red').encode(x='step:Q')
-        # highlight_rule = alt.Chart().mark_rule(color='red').encode(x='step:Q').transform_filter(highlight_step)  
-        
-        # # Combine the line chart, vertical rule, and text label  
+        # highlight_rule = alt.Chart().mark_rule(color='red').encode(x='step:Q').transform_filter(highlight_step)
+
+        # # Combine the line chart, vertical rule, and text label
         alt_acc = alt.layer(
             combined_chart, highlight_rule, data=melted_df
         ).properties(height=500)
