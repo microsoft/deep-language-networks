@@ -1,5 +1,3 @@
 pandas
-plotly==5.14.1
-jupyter-dash # if you are using jupyter
-# dash  # if you are not using jupyter and want a leaner install
-dash_bootstrap_components
+altair
+streamlit
