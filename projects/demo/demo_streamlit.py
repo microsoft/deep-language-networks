@@ -94,8 +94,10 @@ def main(args):
             args.logfile or "data.json", dataset_selectbox
         )
 
-        highlight_example = st.selectbox("Example", [i for i in range(20)], format_func=lambda x: x + 1)
-        highlight_step = st.slider("Step", 1, 20)
+        # st.slider does not support non-uniform steps. Using an index slider and then index into steps.
+        steps = examples['step'].unique()
+        highlight_example = steps[st.selectbox("Example", [i for i in range(len(steps) - 1)], format_func=lambda x: x + 1)]
+        highlight_step = steps[st.slider("Step", 1, len(steps) - 1)]
 
         st.write("")
         table_data = []
@@ -116,7 +118,7 @@ def main(args):
         melted_df = df.melt(id_vars=['step'], value_vars=['acc', 'run_acc'], var_name='metric', value_name='value')
         melted_df['metric'] = melted_df['metric'].replace(['acc', 'run_acc'], ['Batch', 'Run Avg'])
         combined_chart = alt.Chart(melted_df).mark_line().encode(
-            y=alt.Y('value:Q', title="accuracy", scale=alt.Scale(domain=[0.4, 1.0])),
+            y=alt.Y('value:Q', title="accuracy", scale=alt.Scale(domain=[0, 1.0])),
             x='step:Q',
             color=alt.Color(
                 'metric:N',
@@ -125,14 +127,8 @@ def main(args):
             ),
         )
 
-        # # Highlight a specific step
-        # highlight_step = 10
-        # # Add a selection
-        # highlight_step = alt.selection_single(fields=['step'], on='click', nearest=True, init={'step': 10}, empty='none')
-
         # # Add a vertical rule at the specific step
         highlight_rule = alt.Chart(pd.DataFrame({'step': [highlight_step]})).mark_rule(color='red').encode(x='step:Q')
-        # highlight_rule = alt.Chart().mark_rule(color='red').encode(x='step:Q').transform_filter(highlight_step)
 
         # # Combine the line chart, vertical rule, and text label
         alt_acc = alt.layer(
