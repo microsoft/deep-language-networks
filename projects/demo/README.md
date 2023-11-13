@@ -1,20 +1,22 @@
 # Deep Language Networks Demo
-![Image showing DLN Demo](./dln_demo_sample.png)
 
 ## Install dependencies
+From the demo directory, run the following command to install the additional dependencies:
+
     pip install -r requirements.txt
 
-## (A) Generate plot for the given data.json file
-    python demo.py
+## Generate plot for the given data.json file
+    streamlit run demo.py
 
-## (B) Visualizing your own results
-1. Please see the [Variational Inference README](projects/vi_dln/README.md) for information on how to run experiments. e.g.,  
+## Visualizing your own results
+1. Please see the [Variational Inference README](projects/vi_dln/README.md) for information on how to run experiments.
+
+   Your results will be stored in the log directory by default (projects/vi_dln/log/rsult_data.json).
+
+   Alternatively, you can specify the output directory using the --result_data_path argument.
+
+2. Run the demo.py file to generate the plot for your results.
+
 ```
-python scripts/one_layer/one_layer.py --dataset subj
-bash scripts/two_layers_e2e/data_understanding.sh
-```
-2. This will update the result_data.json file with your results.
-3. Run the demo.py file to generate the plot for your results.
-```
-python demo.py result_data.json
+streamlit run demo.py <result_data_path>/result_data.json
 ```
