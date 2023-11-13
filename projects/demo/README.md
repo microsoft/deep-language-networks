@@ -29,7 +29,7 @@ streamlit run demo.py
 ## Serving from Docker
 Run the following commands to serve the demo from a Docker container:
 ```
-docker build -t streamlit-app .
-docker run -p 8001:8501 streamlit-app --restart unless-stopped
+docker build -t dln-demo .
+docker run --name dln-demo --restart unless-stopped -d -p 8001:8501 dln-demo
 ```
 Open your browser and navigate to http://localhost:8001.
