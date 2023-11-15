@@ -1,5 +1,8 @@
 # Deep Language Networks Demo
 
+![Image showing DLN Demo](./dln_demo_sample.png)
+
+
 ## Install dependencies
 From the demo directory, run the following command to install the additional dependencies:
 
