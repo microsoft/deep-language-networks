@@ -430,7 +430,7 @@ def main(
     )
 
     if result_data_path is None:
-        result_data_path = os.path.join(out_dir, "result_data.log")
+        result_data_path = os.path.join(out_dir, "result_data.json")
     result_writer = ResultLogWriter(dataset.dataset_name, path=result_data_path)
 
     init_p1, init_p2 = init_prompts(dataset, init_p1, init_p2)
