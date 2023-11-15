@@ -87,7 +87,7 @@ def main(args):
     col1, col2 = st.columns(2)
     with col1:
         # find navigate dataset index or default to 0
-        selectbox_index = next((i for i, (dataset_id, _) in enumerate(datasets)if dataset_id == 'navigate'), 0)
+        selectbox_index = next((i for i, (dataset_id, _) in enumerate(datasets) if dataset_id == 'navigate'), 0)
         dataset_selectbox = st.selectbox("Dataset", datasets, index=selectbox_index, format_func=lambda x: x[1])
         dataset_selectbox = dataset_selectbox[0]
         df, candidates, examples = load_data(
@@ -127,10 +127,10 @@ def main(args):
             ),
         )
 
-        # # Add a vertical rule at the specific step
+        # Add a vertical rule at the specific step
         highlight_rule = alt.Chart(pd.DataFrame({'step': [highlight_step]})).mark_rule(color='red').encode(x='step:Q')
 
-        # # Combine the line chart, vertical rule, and text label
+        # Combine the line chart, vertical rule, and text label
         alt_acc = alt.layer(
             combined_chart, highlight_rule, data=melted_df
         ).properties(height=500)

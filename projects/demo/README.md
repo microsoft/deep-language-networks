@@ -16,7 +16,7 @@ streamlit run demo.py
 ## Visualizing your own results
 1. Please see the [Variational Inference README](projects/vi_dln/README.md) for information on how to run experiments.
 
-   Your results will be stored in the log directory by default (projects/vi_dln/log/rsult_data.json).
+   Your results will be stored in the log directory by default (projects/vi_dln/log/result_data.json).
 
    Alternatively, you can specify the output directory using the --result_data_path argument.
 
