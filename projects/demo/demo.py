@@ -118,7 +118,9 @@ def main(args):
         melted_df = df.melt(id_vars=['step'], value_vars=['acc', 'run_acc'], var_name='metric', value_name='value')
         melted_df['metric'] = melted_df['metric'].replace(['acc', 'run_acc'], ['Batch', 'Run Avg'])
         combined_chart = alt.Chart(melted_df).mark_line().encode(
-            y=alt.Y('value:Q', title="accuracy", scale=alt.Scale(domain=[0, 1.0])),
+            y=alt.Y('value:Q', title="accuracy", scale=alt.Scale(
+                domain=[melted_df['value'].min(), melted_df['value'].max()]
+            )),
             x='step:Q',
             color=alt.Color(
                 'metric:N',
@@ -141,7 +143,9 @@ def main(args):
         if activate_elbo:
             elbo = df[["step", "run_elbo"]]
             elbo_chart = alt.Chart(elbo).mark_line().encode(
-                y=alt.Y('run_elbo:Q', title="run elbo"),
+                y=alt.Y('run_elbo:Q', title="run elbo", scale=alt.Scale(
+                    domain=[elbo['run_elbo'].min(), elbo['run_elbo'].max()]
+                )),
                 x='step:Q',
             )
             # Combine the elbo line chart and the highlight rule
