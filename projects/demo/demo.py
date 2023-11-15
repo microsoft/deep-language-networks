@@ -138,9 +138,17 @@ def main(args):
         st.altair_chart(alt_acc, use_container_width=True)
 
         activate_elbo = st.toggle("Elbo")
-        elbo = df[["run_elbo"]]
         if activate_elbo:
-            st.line_chart(elbo, height=500)
+            elbo = df[["step", "run_elbo"]]
+            elbo_chart = alt.Chart(elbo).mark_line().encode(
+                y=alt.Y('run_elbo:Q', title="run elbo"),
+                x='step:Q',
+            )
+            # Combine the elbo line chart and the highlight rule
+            alt_elbo = alt.layer(
+                elbo_chart, highlight_rule, data=elbo
+            ).properties(height=500)
+            st.altair_chart(alt_elbo, use_container_width=True)
 
     prompt_candidates = st.toggle("Prompt Candidates")
     if prompt_candidates:
