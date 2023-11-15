@@ -141,16 +141,23 @@ def main(args):
 
         activate_elbo = st.toggle("Elbo")
         if activate_elbo:
-            elbo = df[["step", "run_elbo"]]
-            elbo_chart = alt.Chart(elbo).mark_line().encode(
-                y=alt.Y('run_elbo:Q', title="run elbo", scale=alt.Scale(
-                    domain=[elbo['run_elbo'].min(), elbo['run_elbo'].max()]
+            # elbo = df[["step", "elbo", "run_elbo"]]
+            melted_elbo = df.melt(id_vars=['step'], value_vars=['elbo', 'run_elbo'], var_name='metric', value_name='value')
+            melted_elbo['metric'] = melted_elbo['metric'].replace(['elbo', 'run_elbo'], ['Batch', 'Run Avg'])
+            elbo_chart = alt.Chart(melted_elbo).mark_line().encode(
+                y=alt.Y('value:Q', title="elbo", scale=alt.Scale(
+                    domain=[melted_elbo['value'].min(), melted_elbo['value'].max()]
                 )),
                 x='step:Q',
+                color=alt.Color(
+                    'metric:N',
+                    scale=alt.Scale(domain=['Batch', 'Run Avg'], range=['steelblue', 'lightblue']),
+                    legend=alt.Legend(title="Train Elbo")
+                ),
             )
             # Combine the elbo line chart and the highlight rule
             alt_elbo = alt.layer(
-                elbo_chart, highlight_rule, data=elbo
+                elbo_chart, highlight_rule, data=melted_elbo
             ).properties(height=500)
             st.altair_chart(alt_elbo, use_container_width=True)
 
