@@ -105,8 +105,8 @@ class NumberPresenceLoss(LLoss):
         for i, t in zip(inputs, targets):
             # Convert the target to float
             number = float(str(t).replace(",", ""))
-            # Extract all numbers from the input
-            numbers_in_text = re.findall(r'\b\d*\.?\d+\b', i.replace(",", ""))
+            # Extract all numbers from the input. dln.Value requires a conversion to str
+            numbers_in_text = re.findall(r'\b\d*\.?\d+\b', str(i).replace(",", ""))
             # Try to convert each extracted string into a float and compare it to the number
             # we can match just the last number if we consider that the last number is the answer
             _loss = 1
