@@ -8,6 +8,12 @@ from dln.template import load_template
 
 
 @dataclass
+class LogProbs:
+    logp_targets: np.ndarray
+    distribution: np.ndarray
+
+
+@dataclass
 class Info:
     input: str = None
     output: str = None
@@ -134,11 +140,15 @@ class Node(ModuleMixin):
                 raise ValueError(f"Invalid input type: {type(i)}")
         return prev
 
-    def __call__(self, x, **kwargs):
+    def render_template(self, x):
         tpl_inputs = [
             self.forward_template.render(input=i, prompt=self.prompt)
             for i in x
         ]
+        return tpl_inputs
+
+    def __call__(self, x, **kwargs):
+        tpl_inputs = self.render_template(x)
         fwd_outputs = self.forward_evaluate(
             tpl_inputs,
             stop=self.forward_template.stop_tokens,
@@ -164,6 +174,7 @@ class BaseLayer(ModuleMixin, ABC):
         forward_evaluate: LLM,
         forward_template: str,
         prompt_sampler: "Sampler",
+        prompt_scorer: "Scorer",
         hidden_sampler: "Sampler",
         init: Optional[List[str]] = None,
         # num_nodes: Optional[int] = None,
@@ -184,16 +195,16 @@ class BaseLayer(ModuleMixin, ABC):
         ]
         self.forward_evaluate = forward_evaluate # TODO: do we need this?
         self.prompt_sampler = prompt_sampler
+        self.prompt_scorer = prompt_scorer
         self.hidden_sampler = hidden_sampler
-
-        # self._forward_lm = None
-        # self._backward_lm = None
-        # self._scoring_lm = None
-        # self._prompt_sampler = None
-        # self._hidden_sampler = None
+        self.hidden_scorer = hidden_sampler
 
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
+
+    @property
+    def prompts(self):
+        return [n.prompt for n in self.nodes]
 
     def forward(self, inputs: Iterable[str], **kwargs) -> np.asarray:
         self.inputs = inputs
@@ -202,9 +213,14 @@ class BaseLayer(ModuleMixin, ABC):
         return np.asarray(outputs)
 
     def backward(self, losses):
-        prompts = [n.prompt for n in self.nodes]
-        new_prompts = self.prompt_sampler(prompts, losses)
-        return new_prompts
+        # select the one that maximizes the probability of the target
+        # use the selected prompt to update all layer.nodes.prompt
+
+        prompt_candidates = self.prompt_sampler(self.prompts, losses)
+        best_prompts = self.prompt_scorer(prompt_candidates, losses, self)
+        for n in self.nodes:
+            n.prompt = best_prompts[n]
+        return new_prompts  # return new outputs?
 
     def parameters(self):
         return [p for node in self.nodes for p in node.parameters()]
@@ -223,39 +239,6 @@ class AggregationLayer(BaseLayer):
 
     def backward(self, losses):
         super().backward(losses)
-        print("AggregationLayer backward")
-        for i, o, l in zip(self.inputs, self.outputs, losses):
-            print(f"input: {i}\noutput: {o}\nloss: {l}\n")
-        print("AggregationLayer backward")
-        # n_samples = 4
-        # local_losses_info = []
-        # for _input, loss in zip(self.inputs, losses):
-        #     concat_input = "\n".join((map(str, _input)))
-        #     local_losses_info.append(Info(
-        #         str(concat_input),
-        #         str(loss.output),
-        #         str(loss.target),
-        #         loss.loss,
-        #     ))
-
-        # # propose new prompts using agg_backward
-        # bwd_template = load_template(
-        #     "agg_backward",
-        #     template_directory="./templates"
-        # )
-        # tpl_inputs = [
-        #     bwd_template.render(prompt=self.nodes[0].prompt, backward_infos=losses)
-        #     for _ in range(n_samples)
-        # ]
-
-        # bwd_outputs = backward_evaluate(
-        #     tpl_inputs,
-        #     stop=bwd_template.stop_tokens,
-        #     # **kwargs,
-        # )
-
-        # select the one that maximizes the probability of the target
-        # use the selected prompt to update all layer.nodes.prompt
 
 
 class WideLayer(BaseLayer):
@@ -275,10 +258,6 @@ class WideLayer(BaseLayer):
 
     def backward(self, losses):
         super().backward(losses)
-        print("WideLayer backward")
-        for i, o, l in zip(self.inputs, self.outputs, losses):
-            print(f"input: {i}\noutput: {o}\nloss: {l}\n")
-        print("WideLayer backward")
 
 
 class LanguageNetwork(ModuleMixin, ABC):
@@ -299,24 +278,34 @@ class LanguageNetwork(ModuleMixin, ABC):
 
     def backward(self, losses):
         for l in self.backward_layers():
-            l.backward(losses)  # Do something with new prompts here?
+            l.backward(losses)
         self.zero_grad()
 
 
 class DeepWideNetwork(LanguageNetwork):
+
     def __init__(self, forward_evaluate, backward_evaluate):
         self.forward_evaluate = forward_evaluate
         self.backward_evaluate = backward_evaluate
 
         wide_sampler = PromptSampler(self.backward_evaluate, "wide_backward", num_samples=4)
-        hidden_sampler = Sampler(self.backward_evaluate, "wide_backward", num_samples=4)  # hidden_backward
+        hidden_sampler = PromptSampler(self.backward_evaluate, "wide_backward", num_samples=4)  # HiddenSampler hidden_backward
         agg_sampler = PromptSampler(self.backward_evaluate, "agg_backward", num_samples=4)
+        prompt_scorer = LogProbsScorer(self.forward_evaluate)
 
-        self.wide = WideLayer(forward_evaluate, "wide_forward", 2, prompt_sampler=wide_sampler, hidden_sampler=hidden_sampler)
+        self.wide = WideLayer(
+            forward_evaluate,
+            "wide_forward",
+            2,
+            prompt_sampler=wide_sampler,
+            prompt_scorer=prompt_scorer,
+            hidden_sampler=hidden_sampler,
+        )
         self.agg = AggregationLayer(
             forward_evaluate,
             "agg_forward",
             prompt_sampler=agg_sampler,
+            prompt_scorer=prompt_scorer,
             hidden_sampler=hidden_sampler,
             init="Therefore, the answer is:",
         )
@@ -327,12 +316,6 @@ class DeepWideNetwork(LanguageNetwork):
         self.h = self.wide(x)
         self.outputs = self.agg(self.h)
         return self.outputs
-
-        # any_out = self.outputs[0]
-        # prompt_layers = any_out.prompt_layers_backward()
-        # for l in prompt_layers:
-        #     l.backward(losses, self.backward_evaluate)
-        # self.zero_grad()
 
     def parameters(self):
         return self.wide.parameters() + self.agg.parameters()
@@ -352,14 +335,14 @@ class Sampler(ABC):
     def __call__(self, *args, **kwargs):
         return self.sample(*args, **kwargs)
 
-    # @abstractmethod
+    @abstractmethod
     def sample(self, *args, **kwargs):
         pass
 
 
 class PromptSampler(Sampler):
 
-    def sample(self, prompts, losses, *args, **kwargs):
+    def sample(self, prompts, losses, **kwargs):
         """ Sample new prompts using the backward template.
             Returns a numpy array of shape (len(prompts), self.num_samples)
         """
@@ -378,32 +361,96 @@ class PromptSampler(Sampler):
         )
         return np.asarray(new_prompts).reshape([len(prompts), self.num_samples])
 
-        # local_losses_info = []
-        # for _input, loss in zip(self.inputs, losses):
-        #     concat_input = "\n".join((map(str, _input)))
-        #     local_losses_info.append(Info(
-        #         str(concat_input),
-        #         str(loss.output),
-        #         str(loss.target),
-        #         loss.loss,
-        #     ))
 
-        # # propose new prompts using agg_backward
-        # bwd_template = load_template(
-        #     "agg_backward",
-        #     template_directory="./templates"
-        # )
-        # tpl_inputs = [
-        #     bwd_template.render(prompt=self.nodes[0].prompt, backward_infos=losses)
-        #     for _ in range(n_samples)
-        # ]
+class Scorer(ABC):
 
-        # bwd_outputs = backward_evaluate(
-        #     tpl_inputs,
-        #     stop=bwd_template.stop_tokens,
-        #     # **kwargs,
-        # )
+    def __init__(self, forward_evaluate, eval_kwargs=None):
+        self.forward_evaluate = forward_evaluate
+        self.eval_kwargs = eval_kwargs or {}
+
+    def __call__(self, *args, **kwargs):
+        return self.score(*args, **kwargs)
+
+    @abstractmethod
+    def score(self, *args, **kwargs):
+        pass
 
 
-class HiddenSampler(Sampler):
-    pass
+class LogProbsScorer(Scorer):
+
+    def __init__(self, forward_evaluate, eval_kwargs=None):
+        eval_kwargs = {
+            "temperature": 0,
+            "max_tokens": 0,
+            "echo": True,
+            "return_logprobs": True,
+            "raw_logprobs": True,
+        }
+        super().__init__(forward_evaluate, eval_kwargs)
+
+    def _eval_context(self, prompts, layer):
+        fwd_rendered_template = []
+        for node, candidates in zip(layer.nodes, prompts):
+            for prompt_candidate in candidates:
+                for i in layer.inputs:
+                    fwd_rendered = node.forward_template.render(input=i, prompt=prompt_candidate)
+                    fwd_rendered_template.append(fwd_rendered.replace('[END]', ''))  # TODO: clean prompt when generating, not here
+        return fwd_rendered_template
+
+    def _forward_unique_evals(self, eval_batch):
+        # there might be doubles in the eval_batch, so we need to only perform unique evals
+        unique_keys = list(set(eval_batch))
+        unique_keys_to_positions = {key: i for i, key in enumerate(unique_keys)}
+        unique_eval_results = self.forward_evaluate(
+            unique_keys,
+            async_generation=True,
+            **self.eval_kwargs,
+        )
+        # get the results in the same order as the eval_batch
+        eval_results = []
+        for eval_key in eval_batch:
+            eval_results.append(unique_eval_results[unique_keys_to_positions[eval_key]])
+        return eval_results
+
+    def _get_logprobs_results(self, contexts, eval_results):
+        log_probs = [e[1] for e in eval_results]
+        output_logprobs = []
+        context_logprobs = []
+
+        burn_in = 0
+        for context, token_log_probs in zip(contexts, log_probs):
+            num_tokens_prompt = len(self.forward_evaluate.encoder.encode(context))
+            target_log_probs = token_log_probs[num_tokens_prompt + burn_in:]
+            context_log_probs = token_log_probs[1:num_tokens_prompt]
+
+            if len(target_log_probs) == 0:
+                output_logprobs.append("empty")
+            else:
+                output_logprobs.append(
+                    sum(target_log_probs) / (len(target_log_probs) + 1e-5)
+                )
+
+            context_logprobs.append(
+                sum(context_log_probs) / (len(context_log_probs) + 1e-5)
+            )
+
+        non_empty = [o for o in output_logprobs if o != "empty"]
+        if len(non_empty) == 0:
+            min = 0
+        else:
+            min = np.min(non_empty)
+        output_logprobs = [o if o != "empty" else min for o in output_logprobs]
+        return LogProbs(np.asarray(output_logprobs), np.asarray(context_logprobs))  # TODO: reshape?
+
+
+    def score(self, prompts_candidates, losses, layer, **kwargs):
+        _, num_candidates = prompts_candidates.shape
+        contexts = self._eval_context(prompts_candidates, layer)
+        eval_batch = [f"{c}\n{l.target}" for c, l in zip(contexts, losses * num_candidates)]
+        eval_results = self._forward_unique_evals(eval_batch)
+        logprobs_results = self._get_logprobs_results(contexts, eval_results)
+        scores = logprobs_results.logp_targets.reshape(
+            len(layer.inputs), num_candidates
+        ).sum(1, keepdims=True)
+        best_index = np.argmax(scores)
+        return prompts_candidates[:, best_index]
