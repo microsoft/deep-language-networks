@@ -148,8 +148,6 @@ class Node(ModuleMixin):
             Value(o, self._build_prev(i), layer=self.layer, _op="output")
             for i, o in zip(x, fwd_outputs)
         ]
-        # build prompt and outputs backward
-
         return np.asarray(outputs)
 
     def parameters(self):
@@ -165,11 +163,14 @@ class BaseLayer(ModuleMixin, ABC):
         self,
         forward_evaluate: LLM,
         forward_template: str,
+        prompt_sampler: "Sampler",
+        hidden_sampler: "Sampler",
         init: Optional[List[str]] = None,
         # num_nodes: Optional[int] = None,
         **kwargs,
     ):
-        # TODO: raise an error if both init and num_nodes are None or if the init have different length than num_nodes
+        # TODO: raise an error if both init and num_nodes are None or
+        # if the init have different length than num_nodes
         forward_template = load_template(
             forward_template,
             template_directory="./templates"
@@ -182,6 +183,8 @@ class BaseLayer(ModuleMixin, ABC):
             Node(i, forward_template, forward_evaluate, self) for i in init
         ]
         self.forward_evaluate = forward_evaluate # TODO: do we need this?
+        self.prompt_sampler = prompt_sampler
+        self.hidden_sampler = hidden_sampler
 
         # self._forward_lm = None
         # self._backward_lm = None
@@ -197,6 +200,11 @@ class BaseLayer(ModuleMixin, ABC):
         outputs = [node(inputs, **kwargs) for node in self.nodes]
         self.outputs = outputs
         return np.asarray(outputs)
+
+    def backward(self, losses):
+        prompts = [n.prompt for n in self.nodes]
+        new_prompts = self.prompt_sampler(prompts, losses)
+        return new_prompts
 
     def parameters(self):
         return [p for node in self.nodes for p in node.parameters()]
@@ -214,6 +222,11 @@ class AggregationLayer(BaseLayer):
         return super().forward(inputs.T, **kwargs).reshape(-1)
 
     def backward(self, losses):
+        super().backward(losses)
+        print("AggregationLayer backward")
+        for i, o, l in zip(self.inputs, self.outputs, losses):
+            print(f"input: {i}\noutput: {o}\nloss: {l}\n")
+        print("AggregationLayer backward")
         # n_samples = 4
         # local_losses_info = []
         # for _input, loss in zip(self.inputs, losses):
@@ -243,10 +256,6 @@ class AggregationLayer(BaseLayer):
 
         # select the one that maximizes the probability of the target
         # use the selected prompt to update all layer.nodes.prompt
-        print("AggregationLayer backward")
-        for i, o, l in zip(self.inputs, self.outputs, losses):
-            print(f"input: {i}\noutput: {o}\nloss: {l}\n")
-        print("AggregationLayer backward")
 
 
 class WideLayer(BaseLayer):
@@ -265,6 +274,7 @@ class WideLayer(BaseLayer):
         super().__init__(forward_evaluate, forward_template, init=init, **kwargs)
 
     def backward(self, losses):
+        super().backward(losses)
         print("WideLayer backward")
         for i, o, l in zip(self.inputs, self.outputs, losses):
             print(f"input: {i}\noutput: {o}\nloss: {l}\n")
@@ -289,7 +299,7 @@ class LanguageNetwork(ModuleMixin, ABC):
 
     def backward(self, losses):
         for l in self.backward_layers():
-            l.backward(losses)
+            l.backward(losses)  # Do something with new prompts here?
         self.zero_grad()
 
 
@@ -297,10 +307,17 @@ class DeepWideNetwork(LanguageNetwork):
     def __init__(self, forward_evaluate, backward_evaluate):
         self.forward_evaluate = forward_evaluate
         self.backward_evaluate = backward_evaluate
-        self.wide = WideLayer(forward_evaluate, "wide_forward", 2)
+
+        wide_sampler = PromptSampler(self.backward_evaluate, "wide_backward", num_samples=4)
+        hidden_sampler = Sampler(self.backward_evaluate, "wide_backward", num_samples=4)  # hidden_backward
+        agg_sampler = PromptSampler(self.backward_evaluate, "agg_backward", num_samples=4)
+
+        self.wide = WideLayer(forward_evaluate, "wide_forward", 2, prompt_sampler=wide_sampler, hidden_sampler=hidden_sampler)
         self.agg = AggregationLayer(
             forward_evaluate,
             "agg_forward",
+            prompt_sampler=agg_sampler,
+            hidden_sampler=hidden_sampler,
             init="Therefore, the answer is:",
         )
         self.h = None
@@ -310,7 +327,6 @@ class DeepWideNetwork(LanguageNetwork):
         self.h = self.wide(x)
         self.outputs = self.agg(self.h)
         return self.outputs
-
 
         # any_out = self.outputs[0]
         # prompt_layers = any_out.prompt_layers_backward()
@@ -343,17 +359,24 @@ class Sampler(ABC):
 
 class PromptSampler(Sampler):
 
-    def sample(self, prompt, inputs, *args, **kwargs):
-        tpl_inputs = [
-            self.backward_template.render(prompt=prompt, input=i)
-            for i in inputs
-        ]
+    def sample(self, prompts, losses, *args, **kwargs):
+        """ Sample new prompts using the backward template.
+            Returns a numpy array of shape (len(prompts), self.num_samples)
+        """
+        tpl_inputs = []
+        for prompt in prompts:
+            for _ in range(self.num_samples):
+                tpl_inputs.append(
+                    self.backward_template.render(
+                        prompt=prompt, backward_infos=losses)
+                )
+
         new_prompts = self.backward_evaluate(
             tpl_inputs,
             stop=self.backward_template.stop_tokens,
             **kwargs,
         )
-        return new_prompts
+        return np.asarray(new_prompts).reshape([len(prompts), self.num_samples])
 
         # local_losses_info = []
         # for _input, loss in zip(self.inputs, losses):
