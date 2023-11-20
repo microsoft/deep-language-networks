@@ -9,7 +9,7 @@ from dln.loss import LossRegistry
 from dln.operator import LLMRegistry
 
 from dln.vi.model import log_message
-from layers import DeepWideNetwork
+from layers import DeepWideNetwork, loss_to_info
 
 
 # try:
@@ -24,7 +24,8 @@ def train(model, dataset: Dataset, loss_fn, batch_size, iters):
         x, y, _ = dataset.get_batch("train", batch_size, random_sample=True)
         y_hat = model.forward(x)
         losses = loss_fn(y_hat, y)
-        model.backward(losses)
+        losses_info = loss_to_info(x, y_hat, y, losses)
+        model.backward(losses_info)
         # [
         #     print(f"y_hat: {a}\n    y: {b}\n loss: {c}\n")
         #     for a, b, c in zip(y_hat, y, loss)
