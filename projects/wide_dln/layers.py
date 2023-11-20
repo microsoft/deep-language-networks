@@ -1,9 +1,26 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Iterable, List, Optional, Set
 import numpy as np
 
 from dln.operator import LLM
 from dln.template import load_template
+
+
+@dataclass
+class Info:
+    input: str = None
+    output: str = None
+    target: str = None
+    loss: float = 0.0
+
+
+def loss_to_info(inputs, outputs, targets, loss):
+    # TODO: move to loss.py
+    return [
+        Info(i, o, t, l)
+        for i, o, t, l in zip(inputs, outputs, targets, loss)
+    ]
 
 
 class Value:
@@ -23,9 +40,12 @@ class Value:
         if prev_values is None:
             prev_values = set()
         self.prev_values = set(prev_values)
+        self.set_prev_layers()
         self.next_values = set()  # is set by next layer
-        for v in self.prev_values:  # set next_values of prev_values
+        # set next_values of prev_values
+        for v in self.prev_values:
             v.next_values = v.next_values.union({self})
+            self.set_next_layers()
 
     def __str__(self):
         return str(self.data)
@@ -61,19 +81,23 @@ class Value:
                 layers.append(v.layer)
         return layers
 
-    def prev_layers(self):
-        prev_layers = set()
+    def set_prev_layers(self):
         for v in self.prev_values:
-            if v.layer is not None and v.layer != self.layer:
-                prev_layers.append(v.layer)
-        return set(prev_layers)
+            if (
+                v.layer is not None
+                and v.layer != self.layer
+                and v.layer not in self.layer.prev_layers
+            ):
+                self.layer.prev_layers.append(v.layer)
 
-    def next_layers(self):
-        next_layers = []
-        for v in self.next_values:
-            if v.layer is not None and v.layer != self.layer:
-                next_layers.append(v.layer)
-        return next_layers
+    def set_next_layers(self):
+        for v in self.prev_values:
+            if (
+                self.layer is not None
+                and self.layer != v.layer
+                and self.layer not in v.layer.next_layers
+            ):
+                v.layer.next_layers.append(self.layer)
 
 
 class ModuleMixin(ABC):
@@ -150,12 +174,14 @@ class BaseLayer(ModuleMixin, ABC):
             forward_template,
             template_directory="./templates"
         )
+        self.prev_layers = []
+        self.next_layers = []
+        self.inputs = []
+        self.outputs = []
         self.nodes: Node = [
             Node(i, forward_template, forward_evaluate, self) for i in init
         ]
         self.forward_evaluate = forward_evaluate # TODO: do we need this?
-        self.inputs = []
-        self.outputs = []
 
         # self._forward_lm = None
         # self._backward_lm = None
@@ -188,6 +214,38 @@ class AggregationLayer(BaseLayer):
         return super().forward(inputs.T, **kwargs).reshape(-1)
 
     def backward(self, losses):
+        # n_samples = 4
+        # local_losses_info = []
+        # for _input, loss in zip(self.inputs, losses):
+        #     concat_input = "\n".join((map(str, _input)))
+        #     local_losses_info.append(Info(
+        #         str(concat_input),
+        #         str(loss.output),
+        #         str(loss.target),
+        #         loss.loss,
+        #     ))
+
+        # # propose new prompts using agg_backward
+        # bwd_template = load_template(
+        #     "agg_backward",
+        #     template_directory="./templates"
+        # )
+        # tpl_inputs = [
+        #     bwd_template.render(prompt=self.nodes[0].prompt, backward_infos=losses)
+        #     for _ in range(n_samples)
+        # ]
+
+        # bwd_outputs = backward_evaluate(
+        #     tpl_inputs,
+        #     stop=bwd_template.stop_tokens,
+        #     # **kwargs,
+        # )
+
+        # select the one that maximizes the probability of the target
+        # use the selected prompt to update all layer.nodes.prompt
+        print("AggregationLayer backward")
+        for i, o, l in zip(self.inputs, self.outputs, losses):
+            print(f"input: {i}\noutput: {o}\nloss: {l}\n")
         print("AggregationLayer backward")
 
 
@@ -208,9 +266,34 @@ class WideLayer(BaseLayer):
 
     def backward(self, losses):
         print("WideLayer backward")
+        for i, o, l in zip(self.inputs, self.outputs, losses):
+            print(f"input: {i}\noutput: {o}\nloss: {l}\n")
+        print("WideLayer backward")
 
 
-class DeepWideNetwork(ModuleMixin):
+class LanguageNetwork(ModuleMixin, ABC):
+
+    def backward_layers(self):
+        if self.outputs is None:
+            raise ValueError("No outputs to backpropagate")
+        topo = []
+        visited = set()
+        def build_topo(v):
+            if v not in visited:
+                visited.add(v)
+                for prev in v.prev_layers:
+                    build_topo(prev)
+                topo.append(v)
+        build_topo(self.outputs[0].layer)
+        return reversed(topo)
+
+    def backward(self, losses):
+        for l in self.backward_layers():
+            l.backward(losses)
+        self.zero_grad()
+
+
+class DeepWideNetwork(LanguageNetwork):
     def __init__(self, forward_evaluate, backward_evaluate):
         self.forward_evaluate = forward_evaluate
         self.backward_evaluate = backward_evaluate
@@ -228,12 +311,76 @@ class DeepWideNetwork(ModuleMixin):
         self.outputs = self.agg(self.h)
         return self.outputs
 
-    def backward(self, losses):
-        self.zero_grad()
-        any_out = self.outputs[0]
-        prompt_layers = any_out.prompt_layers_backward()
-        for l in prompt_layers:
-            l.backward(losses)
+
+        # any_out = self.outputs[0]
+        # prompt_layers = any_out.prompt_layers_backward()
+        # for l in prompt_layers:
+        #     l.backward(losses, self.backward_evaluate)
+        # self.zero_grad()
 
     def parameters(self):
         return self.wide.parameters() + self.agg.parameters()
+
+
+
+class Sampler(ABC):
+
+    def __init__(self, backward_evaluate, backward_template, num_samples=4):
+        self.backward_evaluate = backward_evaluate
+        self.backward_template = load_template(
+            backward_template,
+            template_directory="./templates"
+        )
+        self.num_samples = num_samples
+
+    def __call__(self, *args, **kwargs):
+        return self.sample(*args, **kwargs)
+
+    # @abstractmethod
+    def sample(self, *args, **kwargs):
+        pass
+
+
+class PromptSampler(Sampler):
+
+    def sample(self, prompt, inputs, *args, **kwargs):
+        tpl_inputs = [
+            self.backward_template.render(prompt=prompt, input=i)
+            for i in inputs
+        ]
+        new_prompts = self.backward_evaluate(
+            tpl_inputs,
+            stop=self.backward_template.stop_tokens,
+            **kwargs,
+        )
+        return new_prompts
+
+        # local_losses_info = []
+        # for _input, loss in zip(self.inputs, losses):
+        #     concat_input = "\n".join((map(str, _input)))
+        #     local_losses_info.append(Info(
+        #         str(concat_input),
+        #         str(loss.output),
+        #         str(loss.target),
+        #         loss.loss,
+        #     ))
+
+        # # propose new prompts using agg_backward
+        # bwd_template = load_template(
+        #     "agg_backward",
+        #     template_directory="./templates"
+        # )
+        # tpl_inputs = [
+        #     bwd_template.render(prompt=self.nodes[0].prompt, backward_infos=losses)
+        #     for _ in range(n_samples)
+        # ]
+
+        # bwd_outputs = backward_evaluate(
+        #     tpl_inputs,
+        #     stop=bwd_template.stop_tokens,
+        #     # **kwargs,
+        # )
+
+
+class HiddenSampler(Sampler):
+    pass
