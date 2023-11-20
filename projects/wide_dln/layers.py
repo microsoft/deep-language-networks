@@ -1,22 +1,31 @@
 from abc import ABC, abstractmethod
-from typing import Any, Iterable, List, Optional, Set
+from typing import Iterable, List, Optional, Set
 import numpy as np
 
 from dln.operator import LLM
 from dln.template import load_template
-from dln.vi.utils import log_message
 
 
 class Value:
-    def __init__(self, data, _children: Optional[Set] = None, _op=""):
+    def __init__(
+        self,
+        data,
+        prev_values: Optional[Set] = None,
+        layer: "BaseLayer" = None,
+        _op="",
+    ):
         self.data = data
         self.grad = ""
+        self.layer = layer
+        self._op = _op # the op that produced this node, for debugging
         # internal variables used for autograd graph construction
         self._backward = lambda: None
-        if _children is None:
-            _children = set()
-        self._prev = set(_children)
-        self._op = _op # the op that produced this node, for debugging
+        if prev_values is None:
+            prev_values = set()
+        self.prev_values = set(prev_values)
+        self.next_values = set()  # is set by next layer
+        for v in self.prev_values:  # set next_values of prev_values
+            v.next_values = v.next_values.union({self})
 
     def __str__(self):
         return str(self.data)
@@ -24,19 +33,47 @@ class Value:
     def __repr__(self):
         return f"Value({self.data}, {self.grad}, {self._op})"
 
-    def backward(self):
-        # topological order all of the children in the graph
+    def _topological_order(self):
+        # topological order all of the values in the graph
+        # starting from the current value
         topo = []
         visited = set()
         def build_topo(v):
             if v not in visited:
                 visited.add(v)
-                for child in v._prev:
+                for child in v.prev_values:
                     build_topo(child)
                 topo.append(v)
         build_topo(self)
+        return topo
+
+    def backward(self):
+        topo = self._topological_order()
         for v in reversed(topo):
             v._backward()
+
+    def prompt_layers_backward(self):
+        """Returns all layers that have a prompt in the backward graph"""
+        topo = self._topological_order()
+        layers = []
+        for v in reversed(topo):
+            if v._op == "prompt" and v.layer is not None and v.layer not in layers:
+                layers.append(v.layer)
+        return layers
+
+    def prev_layers(self):
+        prev_layers = set()
+        for v in self.prev_values:
+            if v.layer is not None and v.layer != self.layer:
+                prev_layers.append(v.layer)
+        return set(prev_layers)
+
+    def next_layers(self):
+        next_layers = []
+        for v in self.next_values:
+            if v.layer is not None and v.layer != self.layer:
+                next_layers.append(v.layer)
+        return next_layers
 
 
 class ModuleMixin(ABC):
@@ -44,6 +81,8 @@ class ModuleMixin(ABC):
     def zero_grad(self):
         for p in self.parameters():
             p.grad = ""
+            p.layer.inputs = []
+            p.layer.outputs = []
 
     @abstractmethod
     def parameters(self):
@@ -52,10 +91,11 @@ class ModuleMixin(ABC):
 
 class Node(ModuleMixin):
 
-    def __init__(self, init, forward_template, forward_evaluate):
-        self.prompt = Value(init, _op="prompt")
+    def __init__(self, init, forward_template, forward_evaluate, layer):
+        self.prompt = Value(init, layer=layer, _op="prompt")
         self.forward_template = forward_template
         self.forward_evaluate = forward_evaluate
+        self.layer = layer
 
     def _build_prev(self, x):
         prev = {self.prompt}
@@ -63,7 +103,7 @@ class Node(ModuleMixin):
             x = [x]
         for i in x:
             if isinstance(i, str):
-                prev.add(Value(i, _op="input"))
+                prev.add(Value(i, layer=self.layer, _op="input"))
             elif isinstance(i, Value):
                 prev.add(i)
             else:
@@ -81,9 +121,11 @@ class Node(ModuleMixin):
             **kwargs,
         )
         outputs = [
-            Value(o, self._build_prev(i), _op="output")
+            Value(o, self._build_prev(i), layer=self.layer, _op="output")
             for i, o in zip(x, fwd_outputs)
         ]
+        # build prompt and outputs backward
+
         return np.asarray(outputs)
 
     def parameters(self):
@@ -109,15 +151,25 @@ class BaseLayer(ModuleMixin, ABC):
             template_directory="./templates"
         )
         self.nodes: Node = [
-            Node(i, forward_template, forward_evaluate) for i in init
+            Node(i, forward_template, forward_evaluate, self) for i in init
         ]
         self.forward_evaluate = forward_evaluate # TODO: do we need this?
+        self.inputs = []
+        self.outputs = []
+
+        # self._forward_lm = None
+        # self._backward_lm = None
+        # self._scoring_lm = None
+        # self._prompt_sampler = None
+        # self._hidden_sampler = None
 
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
 
     def forward(self, inputs: Iterable[str], **kwargs) -> np.asarray:
+        self.inputs = inputs
         outputs = [node(inputs, **kwargs) for node in self.nodes]
+        self.outputs = outputs
         return np.asarray(outputs)
 
     def parameters(self):
@@ -135,6 +187,9 @@ class AggregationLayer(BaseLayer):
     def forward(self, inputs: Iterable[str], **kwargs) -> np.asarray:
         return super().forward(inputs.T, **kwargs).reshape(-1)
 
+    def backward(self, losses):
+        print("AggregationLayer backward")
+
 
 class WideLayer(BaseLayer):
 
@@ -151,6 +206,9 @@ class WideLayer(BaseLayer):
         assert len(init) == width
         super().__init__(forward_evaluate, forward_template, init=init, **kwargs)
 
+    def backward(self, losses):
+        print("WideLayer backward")
+
 
 class DeepWideNetwork(ModuleMixin):
     def __init__(self, forward_evaluate, backward_evaluate):
@@ -163,41 +221,19 @@ class DeepWideNetwork(ModuleMixin):
             init="Therefore, the answer is:",
         )
         self.h = None
-        self.out = None
+        self.outputs = None
 
     def forward(self, x):
         self.h = self.wide(x)
-        self.out = self.agg(self.h)
-        return self.out
+        self.outputs = self.agg(self.h)
+        return self.outputs
 
-    def backward(self, loss):
+    def backward(self, losses):
         self.zero_grad()
-        for output in self.out:
-            output.backward()
-        pass
+        any_out = self.outputs[0]
+        prompt_layers = any_out.prompt_layers_backward()
+        for l in prompt_layers:
+            l.backward(losses)
 
     def parameters(self):
         return self.wide.parameters() + self.agg.parameters()
-
-
-    # p1s = sample_p1s()
-    # pi_1: prompt agg
-    # pi_0: prompt wide
-    # h1: hidden state
-    #
-    # pi_1 proposal:
-    # to update pi_1, we neet to sample agg prompt using
-    # pi_1s = LLM(Template_pi_1(loss, h1))
-    # pi_1_tild = argmax(score(llm(h1, c), y))
-    # Basically, we obtain a set of C of pi_1 proposals,
-    # and we select the one that maximizes the probability of the target.
-    #
-    # h1 proposal:
-    # h1s = LLM(Template_h1(loss, pi_1))
-    # h1_tild = argmax(score(llm(c, pi_1_tild), y))
-    # Basically, we obtain a set of C of h1 proposals,
-    # and we select the one that maximizes the probability of h1_tild.
-    #
-    # pi_0 proposal:
-    # pi_0s = LLM(Template_pi_0(h1, h1_tild, x))
-    # pi_0_tild = argmax(score(llm(x, c), h1_tild))

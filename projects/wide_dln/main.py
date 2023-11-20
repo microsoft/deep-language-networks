@@ -23,8 +23,8 @@ def train(model, dataset: Dataset, loss_fn, batch_size, iters):
     for _ in range(iters):
         x, y, _ = dataset.get_batch("train", batch_size, random_sample=True)
         y_hat = model.forward(x)
-        loss = loss_fn(y_hat, y)
-        model.backward(loss)
+        losses = loss_fn(y_hat, y)
+        model.backward(losses)
         # [
         #     print(f"y_hat: {a}\n    y: {b}\n loss: {c}\n")
         #     for a, b, c in zip(y_hat, y, loss)
