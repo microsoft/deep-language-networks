@@ -127,6 +127,9 @@ class Node(ModuleMixin):
         self.forward_evaluate = forward_evaluate
         self.layer = layer
 
+    def update_prompt(self, prompt):
+        self.prompt.data = prompt
+
     def _build_prev(self, x):
         prev = {self.prompt}
         if isinstance(x, str):
@@ -206,6 +209,10 @@ class BaseLayer(ModuleMixin, ABC):
     def prompts(self):
         return [n.prompt for n in self.nodes]
 
+    def _update_prompts(self, prompts):
+        for n, p in zip(self.nodes, prompts):
+            n.update_prompt(p)
+
     def forward(self, inputs: Iterable[str], **kwargs) -> np.asarray:
         self.inputs = inputs
         outputs = [node(inputs, **kwargs) for node in self.nodes]
@@ -218,9 +225,8 @@ class BaseLayer(ModuleMixin, ABC):
 
         prompt_candidates = self.prompt_sampler(self.prompts, losses)
         best_prompts = self.prompt_scorer(prompt_candidates, losses, self)
-        for n in self.nodes:
-            n.prompt = best_prompts[n]
-        return new_prompts  # return new outputs?
+        self._update_prompts(best_prompts)
+        return best_prompts  # return new outputs?
 
     def parameters(self):
         return [p for node in self.nodes for p in node.parameters()]
@@ -444,13 +450,16 @@ class LogProbsScorer(Scorer):
 
 
     def score(self, prompts_candidates, losses, layer, **kwargs):
-        _, num_candidates = prompts_candidates.shape
+        num_prompts, num_candidates = prompts_candidates.shape
+        # copy the losses for each candidate for each node
+        candidates_losses = losses * num_prompts * num_candidates
         contexts = self._eval_context(prompts_candidates, layer)
-        eval_batch = [f"{c}\n{l.target}" for c, l in zip(contexts, losses * num_candidates)]
+        eval_batch = [f"{c}\n{l.target}" for c, l in zip(contexts, candidates_losses)]
         eval_results = self._forward_unique_evals(eval_batch)
         logprobs_results = self._get_logprobs_results(contexts, eval_results)
         scores = logprobs_results.logp_targets.reshape(
-            len(layer.inputs), num_candidates
-        ).sum(1, keepdims=True)
-        best_index = np.argmax(scores)
-        return prompts_candidates[:, best_index]
+            num_prompts, num_candidates, len(layer.inputs)
+        ).sum(axis=-1)
+        best_indexes = scores.argmax(axis=-1)
+        best_prompts = prompts_candidates[np.arange(num_prompts), best_indexes]
+        return best_prompts
