@@ -28,9 +28,8 @@ def wrap_text(text, width=100):
     return "\n".join("\n".join(textwrap.wrap(line, width)) for line in text.split("\n"))
 
 
-def load_data(log_file, dataset):
-    with open(log_file) as f:
-        logs = json.load(f)[dataset]
+def load_data(logs, dataset):
+    logs = logs[dataset]
 
     flattened_data = []
     flattened_candidates = []
@@ -74,14 +73,23 @@ def load_data(log_file, dataset):
     )
 
 
-def load_dataset_names(log_file):
-    with open(log_file) as f:
-        logs = json.load(f)
+def load_logfiles(logfiles):
+    if not logfiles:
+        return None
+    logs = {}
+    for logfile in logfiles:
+        with open(logfile, "r") as f:
+            logs.update(json.load(f))
+    return logs
+
+
+def extract_dataset_names(logs):
     return [(x, x) for x in list(logs.keys())]
 
 
 def main(args):
-    datasets = load_dataset_names(args.logfile) if args.logfile else DATASETS
+    logs = load_logfiles(args.logfiles or ["data.json"])
+    datasets = extract_dataset_names(logs) if logs else DATASETS
     st.set_page_config(layout="wide")
     st.markdown("<h1 style='text-align: center; margin-bottom: 80px'>Deep Language Networks</h1>", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
@@ -90,24 +98,25 @@ def main(args):
         selectbox_index = next((i for i, (dataset_id, _) in enumerate(datasets) if dataset_id == 'navigate'), 0)
         dataset_selectbox = st.selectbox("Dataset", datasets, index=selectbox_index, format_func=lambda x: x[1])
         dataset_selectbox = dataset_selectbox[0]
-        df, candidates, examples = load_data(
-            args.logfile or "data.json", dataset_selectbox
-        )
+        df, candidates, examples = load_data(logs, dataset_selectbox)
 
         # st.slider does not support non-uniform steps. Using an index slider and then index into steps.
         steps = examples['step'].unique()
+        steps = df['step'].unique()
         highlight_example = steps[st.selectbox("Example", [i for i in range(len(steps) - 1)], format_func=lambda x: x + 1)]
         highlight_step = steps[st.slider("Step", 1, len(steps) - 1)]
 
+        show_example = any(examples['step'] == highlight_step)
+
         st.write("")
         table_data = []
-        table_data.append(f"| **Input:** | {examples[examples['step'] == highlight_step]['input'].iloc[highlight_example]}")
+        table_data.append(f"| **Input:** | {examples[examples['step'] == highlight_step]['input'].iloc[highlight_example] if show_example else 'N/A'}")
         table_data.append(f"| **Layer 1 prompt:** | {df[df['step'] == highlight_step]['layer_1'].values[0]}")
         if 'layer_2' in df.columns:
-            table_data.append(f"| **Hidden:** | {examples[examples['step'] == highlight_step]['hidden'].iloc[highlight_example]}")
+            table_data.append(f"| **Hidden:** | {examples[examples['step'] == highlight_step]['hidden'].iloc[highlight_example] if show_example else 'N/A'}")
             table_data.append(f"| **Layer 2 prompt:** | {df[df['step'] == highlight_step]['layer_2'].values[0]}")
-        table_data.append(f"| **Output:** | {examples[examples['step'] == highlight_step]['output'].iloc[highlight_example]}")
-        table_data.append(f"| **Label:** | {examples[examples['step'] == highlight_step]['label'].iloc[highlight_example]}")
+        table_data.append(f"| **Output:** | {examples[examples['step'] == highlight_step]['output'].iloc[highlight_example] if show_example else 'N/A'}")
+        table_data.append(f"| **Label:** | {examples[examples['step'] == highlight_step]['label'].iloc[highlight_example] if show_example else 'N/A'}")
         table_data = [x.replace('\n', '<br>') for x in table_data]
         table_data_str = "\n".join(table_data)
 
@@ -174,7 +183,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("logfile", nargs="?", help="Log file to use (JSON).")
+    parser.add_argument("logfiles", nargs="*", help="Log file to use (JSON).")
     args = parser.parse_args()
 
     main(args)
