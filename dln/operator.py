@@ -146,6 +146,15 @@ class GPT(LLM):
     def has_logprobs(self) -> bool:
         return self._has_logprobs
 
+    @staticmethod
+    def _log_filtering_error_message(error_message):
+        error_message = (
+            f"InvalidRequestError, most likely due to "
+            f"content filtering: {error_message}"
+        )
+        logging.warning(error_message)
+        print(colored(error_message, "red"))
+
     @_retry_request(min_wait=4, max_wait=10, max_attempts=100)
     async def _aget_chat_completion_response(self, prompt, **kwargs):
         """
@@ -153,24 +162,17 @@ class GPT(LLM):
         now batching only works for completion, not on chat
         """
         if openai.api_type == "azure":
-            try:
-                response = await openai.ChatCompletion.acreate(
-                    deployment_id=self.engine,
-                    messages=[{"role": "user", "content": prompt}],
-                    **kwargs,
-                )
-            except openai.InvalidRequestError as e:
-                # Most likely a content filtering error from Azure.
-                error_message = f"InvalidRequestError: {e}"
-                logging.warn(error_message)
-                print(colored(error_message, "red"))
-                return str(e)
+            kwargs["deployment_id"] = self.engine
         else:
+            kwargs["model"] = self.engine
+        try:
             response = await openai.ChatCompletion.acreate(
-                model=self.engine,
                 messages=[{"role": "user", "content": prompt}],
                 **kwargs,
             )
+        except openai.InvalidRequestError as e:
+            self._log_filtering_error_message(e)
+            raise
 
         if "content" not in response["choices"][0]["message"]:
             return ""
@@ -192,7 +194,6 @@ class GPT(LLM):
         now batching only works for completion, not on chat
         """
         logging.debug(kwargs)
-
         try:
             response = openai.Completion.create(
                 engine=self.engine,
@@ -201,37 +202,8 @@ class GPT(LLM):
                 **kwargs,
             )
         except openai.InvalidRequestError as e:
-            # Most likely a content filtering error from Azure.
-            if "filtering" in str(e):
-                logging.warn(str(e))
-                # Process each element in the batch individually.
-                response = {"choices": []}
-                for prompt in prompt_batch:
-                    try:
-                        response["choices"].append(
-                            openai.Completion.create(
-                                engine=self.engine,
-                                prompt=prompt,
-                                logprobs=top_logprobs or 1,
-                                **kwargs,
-                            )["choices"][0]
-                        )
-                    except openai.InvalidRequestError as e:
-                        error_message = f"InvalidRequestError: {e}"
-                        logging.warn(error_message)
-                        print(colored(error_message, "red"))
-                        response["choices"].append(
-                            {
-                                "text": str(e),
-                                "logprobs": {
-                                    "token_logprobs": [0],
-                                    "top_logprobs": [{}],
-                                    "tokens": {}
-                                },
-                            }
-                        )
-            else:
-                raise e
+            self._log_filtering_error_message(e)
+            raise
 
         return _parse_openai_response(response, return_logprobs, raw_logprobs, top_logprobs)
 
@@ -266,7 +238,7 @@ class GPT(LLM):
         generation_options.update(**kwargs)
 
         if "return_logprobs" in generation_options and not self.has_logprobs:
-            logging.warn(
+            logging.warning(
                 f"return_logprobs is not supported for model {self.engine}"
             )
             del generation_options["return_logprobs"]
