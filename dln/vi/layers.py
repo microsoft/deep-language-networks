@@ -36,6 +36,7 @@ class PriorLayer:
         temperature=0.0,
         strip_double_newlines=True,
         max_tokens=256,
+        return_logprobs=False,
     ) -> np.array:
         """Forward pass throught this layer.
 
@@ -46,6 +47,8 @@ class PriorLayer:
             strip_double_newlines: if True, strip any "\n\n" that might have been added
             max_tokens: cap the max length for the forward pass
         """
+        # allow logprobs only when there are no output classes for now
+        return_logprobs = return_logprobs and self.forward_evaluate.has_logprobs and output_classes is None
         if output_classes is None:
             tpl_inputs = [
                 self.forward_template.render(input=input, prompt=self.weight)
@@ -58,6 +61,7 @@ class PriorLayer:
                 temperature=temperature,
                 max_tokens=max_tokens,
                 async_generation=True,
+                return_logprobs=return_logprobs,
             )
         else:
             if self.forward_evaluate.has_logprobs:
@@ -91,10 +95,16 @@ class PriorLayer:
                     max_tokens=max_len,
                     logit_bias=logit_bias,
                 )
+        if return_logprobs:
+            outputs, logprobs, lenghts = zip(*outputs)
 
         # strip any "\n\n" that might have been added
         if strip_double_newlines:
             outputs = [o.replace("\n\n", "\n") for o in outputs]
+
+        if return_logprobs:
+            return np.asarray(outputs), np.asarray(logprobs), np.asarray(lenghts)
+
         return np.asarray(outputs)
 
     def log_p_request(self, input: str, target: str, prompt: str) -> ScoreRequest:
