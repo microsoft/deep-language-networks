@@ -67,6 +67,29 @@ def test_generate(mock_openai_api, async_generation):
     )
     assert response == ["Montreal", "Montreal"]
 
+@pytest.mark.parametrize("model_name", [
+    "gpt-35-turbo",
+    "gpt-3.5-turbo",
+    "gpt-35-turbo-instruct",
+    "gpt-3.5-turbo-instruct",
+])
+def test_gpt_35_name_variations_load_tokenizer(model_name):
+    gpt = GPT(model_name)
+    assert gpt.engine == model_name
+    assert gpt.encoder.name == "cl100k_base"
+
+
+def test_openai_invalid_request_error(monkeypatch):
+    mock_api = MagicMock()
+    mock_api.Completion.create.side_effect = openai.InvalidRequestError(
+        "Invalid request", "param"
+    )
+    monkeypatch.setattr(openai, "Completion", mock_api.Completion)
+    gpt = GPT("text-davinci-003")
+    prompt = "What is the largest city in Quebec?"
+    with pytest.raises(openai.InvalidRequestError, match="Invalid request"):
+        gpt.generate(prompt)
+
 
 @pytest.fixture
 def gpt_api_config():
