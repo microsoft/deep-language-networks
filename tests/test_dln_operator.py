@@ -67,6 +67,16 @@ def test_generate(mock_openai_api, async_generation):
     )
     assert response == ["Montreal", "Montreal"]
 
+@pytest.mark.parametrize("model_name", [
+    "gpt-35-turbo",
+    "gpt-3.5-turbo",
+    "gpt-35-turbo-instruct",
+    "gpt-3.5-turbo-instruct",
+])
+def test_gpt_35_name_variations_load_tokenizer(model_name):
+    gpt = GPT(model_name)
+    assert gpt.engine == model_name
+    assert gpt.encoder.name == "cl100k_base"
 
 @pytest.fixture
 def gpt_api_config():

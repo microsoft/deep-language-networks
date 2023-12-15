@@ -13,6 +13,7 @@ from tenacity import (
     wait_exponential,
     retry_if_exception_type,
 )
+from termcolor import colored
 import yaml
 
 
@@ -107,12 +108,15 @@ class GPT(LLM):
     CHAT_COMPLETION_MODELS = [
         "gpt-35-turbo",  # azure
         "gpt-3.5-turbo",
+        "gpt-4-turbo",
         "gpt-4",
         "gpt-4-32k",
         "gpt-4-0613",
     ]
 
     COMPLETION_MODELS = [
+        "gpt-35-turbo-instruct",  # azure
+        "gpt-3.5-turbo-instruct",
         "text-davinci-003",
         "text-davinci-002",
         "code-davinci-002",
@@ -130,9 +134,7 @@ class GPT(LLM):
                 f"GPT model_name should be one of: {','.join(self.AVAILABLE_MODELS)}"
             )
         super().__init__(model_name, **generation_options)
-        engine_for_encoder = self.engine
-        if engine_for_encoder == "gpt-35-turbo":
-            engine_for_encoder = "gpt-3.5-turbo"
+        engine_for_encoder = self.engine.replace("gpt-35", "gpt-3.5")
         self.encoder = instantiate_tokenizer(engine_for_encoder)
         openai.api_version = os.environ.get('OPENAI_API_VERSION')
         self._has_logprobs = self.engine in self.LOGPROBS_MODELS
@@ -159,7 +161,9 @@ class GPT(LLM):
                 )
             except openai.InvalidRequestError as e:
                 # Most likely a content filtering error from Azure.
-                logging.warn(str(e))
+                error_message = f"InvalidRequestError: {e}"
+                logging.warn(error_message)
+                print(colored(error_message, "red"))
                 return str(e)
         else:
             response = await openai.ChatCompletion.acreate(
@@ -213,6 +217,9 @@ class GPT(LLM):
                             )["choices"][0]
                         )
                     except openai.InvalidRequestError as e:
+                        error_message = f"InvalidRequestError: {e}"
+                        logging.warn(error_message)
+                        print(colored(error_message, "red"))
                         response["choices"].append(
                             {
                                 "text": str(e),
