@@ -172,7 +172,7 @@ class GPT(LLM):
             )
         except openai.InvalidRequestError as e:
             self._log_filtering_error_message(e)
-            raise
+            raise e
 
         if "content" not in response["choices"][0]["message"]:
             return ""
@@ -203,7 +203,7 @@ class GPT(LLM):
             )
         except openai.InvalidRequestError as e:
             self._log_filtering_error_message(e)
-            raise
+            raise e
 
         return _parse_openai_response(response, return_logprobs, raw_logprobs, top_logprobs)
 
