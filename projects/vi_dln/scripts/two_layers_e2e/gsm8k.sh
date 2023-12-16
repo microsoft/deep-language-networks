@@ -1,11 +1,11 @@
 #!/bin/bash
 set -x  # print commands to terminal
 
-fwd_model_type="text-davinci-003"
-bwd_model_type="text-davinci-003"
+fwd_model_type="gpt-35-turbo-instruct"
+bwd_model_type="gpt-35-turbo-instruct"
 dataset="gsm8k"
 loss_function="number_presence_loss"
-output_scoring_function="accuracy"
+output_scoring_function="logprobs"
 max_train_size=300
 max_dev_size=300
 max_test_size=300
@@ -25,14 +25,15 @@ logp_penalty=1.
 posterior_temp=1.
 p_hidden_tpl="suffix_forward_tbs"
 q_hidden_tpl="suffix_forward_tbs_y|suffix_forward_tbs"
-fwd_max_tokens=256
-bwd_max_tokens=512
+fwd_max_tokens=512
+bwd_max_tokens=1024
 
-dir=log/${fwd_model_type}_${bwd_model_type}/two_layers_e2e/${dataset}
+dir=log/longer_context/${fwd_model_type}_${bwd_model_type}/two_layers_e2e/${dataset}
 
 for seed in 13 42 25; do
     python vi_main.py \
         --do_first_eval \
+        --init_p2 "Solve the math word problem."\
         --fwd_model_type ${fwd_model_type} \
         --bwd_model_type ${bwd_model_type} \
         --dataset ${dataset} \
