@@ -1,6 +1,7 @@
 from typing import List
 
 import numpy as np
+from termcolor import colored
 
 from dln.loss import LLoss
 from dln.operator import LLM
@@ -54,7 +55,7 @@ class PriorLayer:
                 self.forward_template.render(input=input, prompt=self.weight)
                 for input in inputs
             ]
-            log_message(tpl_inputs[0])
+            log_message(colored(tpl_inputs[0], "yellow"))
             outputs = self.forward_evaluate(
                 tpl_inputs,
                 stop=self.forward_template.stop_tokens,
@@ -63,6 +64,7 @@ class PriorLayer:
                 async_generation=True,
                 return_logprobs=return_logprobs,
             )
+            log_message(colored(outputs[0][0] + "\n", "red"))
         else:
             if self.forward_evaluate.has_logprobs:
                 # compute log p of each output class, second return value is the p(class)

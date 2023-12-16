@@ -6,10 +6,9 @@ from typing import Optional
 
 import numpy as np
 
-
 # Use this function to log messages to the file
 def log_message(*messages):
-    print(*messages)
+    # print(*messages)
     logging.info(" ".join(map(str, messages)))
 
 
