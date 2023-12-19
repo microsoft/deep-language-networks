@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Any, List
 
 import numpy as np
+from termcolor import colored
 
 from dln.operator import LLM
 
@@ -147,7 +148,6 @@ class LogProbsScore:
         return LogProbs(np.asarray(output_logprobs), np.asarray(output_distribs))
 
     def _forward_logprobs_score_api(self, contexts, targets) -> LogProbs:
-        logging.info("# Scoring requests = {}".format(len(contexts)))
         eval_kwargs = {
             "temperature": 0,
             "max_tokens": 0,
@@ -167,6 +167,12 @@ class LogProbsScore:
 
         print("# Scoring requests = {}".format(len(contexts)))
         print("# Scoring non cached requests = {}".format(len(eval_keys)))
+
+        logging.info(
+            "Computing log prob of the red part:\n" +
+            colored(f"{contexts[0]}\n", "yellow") +
+            colored(f"{targets[0]}", "red")
+        )
 
         # there might be doubles in the eval_batch, so we need to
         # only perform unique evals
@@ -202,4 +208,5 @@ class LogProbsScore:
             output_logprobs.append(sum(target_log_probs) / (len(target_log_probs) + 1e-5))
             context_logprobs.append(sum(context_log_probs) / (len(context_log_probs) + 1e-5))
 
+        logging.info(colored(f"logp Context={context_logprobs[0]}\tTarget={output_logprobs[0]}", "cyan"))
         return LogProbs(np.asarray(output_logprobs), np.asarray(context_logprobs))
