@@ -174,6 +174,12 @@ class LogProbsScore:
             colored(f"{targets[0]}", "red")
         )
 
+        logging.info(
+            "Computing log prob of the red part:\n" +
+            colored(f"{contexts[0]}\n", "yellow") +
+            colored(f"{targets[0]}", "red")
+        )
+
         # there might be doubles in the eval_batch, so we need to
         # only perform unique evals
         eval_results = self.forward_evaluate(
