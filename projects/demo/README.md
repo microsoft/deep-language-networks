@@ -29,6 +29,12 @@ streamlit run demo.py
    streamlit run demo.py <result_data_path>/result_data.json
    ```
 
+   You can load multiple result_data.json files by specifying multiple paths.
+
+   ```
+   streamlit run demo.py <result_data_path_1>/result_data.json <result_data_path_2>/result_data.json
+   ```
+
 ## Serving from Docker
 Run the following commands to serve the demo from a Docker container:
 ```
