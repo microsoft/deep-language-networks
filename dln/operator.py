@@ -147,10 +147,10 @@ class GPT(LLM):
         return self._has_logprobs
 
     @staticmethod
-    def _log_filtering_error_message(error_message):
+    def _log_filtering_error_message(error_message, prompt):
         error_message = (
-            f"InvalidRequestError, most likely due to "
-            f"content filtering: {error_message}"
+            f"InvalidRequestError, most likely due to content filtering. "
+            f"Prompt: {prompt}. ErrorMessage: {error_message}"
         )
         logging.warning(error_message)
         print(colored(error_message, "red"))
@@ -171,7 +171,7 @@ class GPT(LLM):
                 **kwargs,
             )
         except openai.InvalidRequestError as e:
-            self._log_filtering_error_message(e)
+            self._log_filtering_error_message(e, prompt)
             raise e
 
         if "content" not in response["choices"][0]["message"]:
@@ -180,7 +180,7 @@ class GPT(LLM):
         output = response["choices"][0]["message"]["content"].strip()
         return output
 
-    @_retry_request(min_wait=4, max_wait=10, max_attempts=100)
+    @_retry_request(min_wait=4, max_wait=10, max_attempts=500)
     def _get_completion_response(
         self,
         prompt_batch,
@@ -202,7 +202,17 @@ class GPT(LLM):
                 **kwargs,
             )
         except openai.InvalidRequestError as e:
-            self._log_filtering_error_message(e)
+            # Retry one by one to find out which prompt is causing the error for debugging
+            try:
+                for prompt in prompt_batch:
+                    _ = openai.Completion.create(
+                        engine=self.engine,
+                        prompt=prompt,
+                        logprobs=top_logprobs or 1,
+                        **kwargs,
+                    )
+            except openai.InvalidRequestError as err:
+                self._log_filtering_error_message(err, prompt)
             raise e
 
         return _parse_openai_response(response, return_logprobs, raw_logprobs, top_logprobs)
@@ -247,7 +257,7 @@ class GPT(LLM):
             if async_generation is True:
                 # async call api, devide to mini batches to avoid call rate limit
                 outputs = []
-                for input_batch in self._mini_batch(inputs, batch_size=10):
+                for input_batch in self._mini_batch(inputs, batch_size=batch_size):
                     outputs_batch = asyncio.run(
                         self._gather_chat_response(input_batch, **generation_options)
                     )
