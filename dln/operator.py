@@ -155,7 +155,7 @@ class GPT(LLM):
         logging.warning(error_message)
         print(colored(error_message, "red"))
 
-    @_retry_request(min_wait=4, max_wait=10, max_attempts=100)
+    @_retry_request(min_wait=4, max_wait=10, max_attempts=500)
     async def _aget_chat_completion_response(self, prompt, **kwargs):
         """
         prompting chatgpt via openai api
@@ -257,7 +257,7 @@ class GPT(LLM):
             if async_generation is True:
                 # async call api, devide to mini batches to avoid call rate limit
                 outputs = []
-                for input_batch in self._mini_batch(inputs, batch_size=10):
+                for input_batch in self._mini_batch(inputs, batch_size=batch_size):
                     outputs_batch = asyncio.run(
                         self._gather_chat_response(input_batch, **generation_options)
                     )
