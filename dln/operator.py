@@ -211,8 +211,8 @@ class GPT(LLM):
                         logprobs=top_logprobs or 1,
                         **kwargs,
                     )
-            except openai.InvalidRequestError as e:
-                self._log_filtering_error_message(e, prompt)
+            except openai.InvalidRequestError as err:
+                self._log_filtering_error_message(err, prompt)
             raise e
 
         return _parse_openai_response(response, return_logprobs, raw_logprobs, top_logprobs)
