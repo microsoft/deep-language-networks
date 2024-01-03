@@ -147,10 +147,10 @@ class GPT(LLM):
         return self._has_logprobs
 
     @staticmethod
-    def _log_filtering_error_message(error_message):
+    def _log_filtering_error_message(error_message, prompt):
         error_message = (
-            f"InvalidRequestError, most likely due to "
-            f"content filtering: {error_message}"
+            f"InvalidRequestError, most likely due to content filtering. "
+            f"Prompt: {prompt}. ErrorMessage: {error_message}"
         )
         logging.warning(error_message)
         print(colored(error_message, "red"))
@@ -171,7 +171,7 @@ class GPT(LLM):
                 **kwargs,
             )
         except openai.InvalidRequestError as e:
-            self._log_filtering_error_message(e)
+            self._log_filtering_error_message(e, prompt)
             raise e
 
         if "content" not in response["choices"][0]["message"]:
@@ -202,7 +202,17 @@ class GPT(LLM):
                 **kwargs,
             )
         except openai.InvalidRequestError as e:
-            self._log_filtering_error_message(e)
+            # Retry one by one to find out which prompt is causing the error for debugging
+            try:
+                for prompt in prompt_batch:
+                    _ = openai.Completion.create(
+                        engine=self.engine,
+                        prompt=prompt,
+                        logprobs=top_logprobs or 1,
+                        **kwargs,
+                    )
+            except openai.InvalidRequestError as e:
+                self._log_filtering_error_message(e, prompt)
             raise e
 
         return _parse_openai_response(response, return_logprobs, raw_logprobs, top_logprobs)
