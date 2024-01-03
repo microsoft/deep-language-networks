@@ -155,7 +155,7 @@ class GPT(LLM):
         logging.warning(error_message)
         print(colored(error_message, "red"))
 
-    @_retry_request(min_wait=4, max_wait=10, max_attempts=500)
+    @_retry_request(min_wait=4, max_wait=10, max_attempts=100)
     async def _aget_chat_completion_response(self, prompt, **kwargs):
         """
         prompting chatgpt via openai api
@@ -180,7 +180,7 @@ class GPT(LLM):
         output = response["choices"][0]["message"]["content"].strip()
         return output
 
-    @_retry_request(min_wait=4, max_wait=10, max_attempts=100)
+    @_retry_request(min_wait=4, max_wait=10, max_attempts=500)
     def _get_completion_response(
         self,
         prompt_batch,
