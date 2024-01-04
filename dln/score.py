@@ -43,7 +43,8 @@ class LogProbsScore:
 
     def __init__(self, forward_evaluate: LLM):
         self.forward_evaluate = forward_evaluate
-        self.burn_in_ratio = 0.1
+        self.burn_in_ratio = 0.05
+        self.cache = {}
 
     def score_requests(self, requests, output_classes=None, agg="max") -> LogProbs:
         # create the batched inputs for the model

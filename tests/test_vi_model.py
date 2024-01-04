@@ -3,7 +3,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from dln.loss import ZeroOneLoss
+from dln.loss import ExactMatchLoss
 from dln.postprocessing import postprocess_prediction
 from dln.score import LogProbs, OutputClasses
 from dln.vi.layers import PriorLayer, ResidualPriorLayer
@@ -12,7 +12,7 @@ from dln.vi.model import VILModel
 
 @pytest.fixture
 def loss_fn():
-    loss_fn = ZeroOneLoss(postproc=postprocess_prediction)
+    loss_fn = ExactMatchLoss(postproc=postprocess_prediction)
     return loss_fn
 
 
@@ -248,6 +248,7 @@ def test_inference_vi(
 )
 def test_forward_two_layers(
     loss_fn,
+    mock_llm,
     backward_info,
     log_p_fn,
     mock_prompt_sampler,
@@ -268,6 +269,7 @@ def test_forward_two_layers(
     output_classes = OutputClasses(protos=["A", "B"])
     model = VILModel(
         loss_fn,
+        forward_evaluate=mock_llm,
         prompt_sampler_1=mock_prompt_sampler,
         prompt_sampler_2=mock_prompt_sampler,
         posterior_sampler=mock_posterior_sampler,
@@ -394,26 +396,4 @@ def test_strip_options(loss_fn):
     )
     expected_output = np.array(["This is a test", "No options here", "Another test"])
     output_data = model.strip_options(input_data)
-    assert np.array_equal(output_data, expected_output)
-
-
-def test_strip_answer(loss_fn):
-    model = VILModel(loss_fn)
-    input_data = np.array(
-        ["This is a test\nAnswer: A", "No answer here", "Another testAnswer:"]
-    )
-    expected_output = np.array(["This is a test", "No answer here", "Another test"])
-    output_data = model.strip_answer(input_data)
-    assert np.array_equal(output_data, expected_output)
-
-
-def test_strip_prefix(loss_fn):
-    model = VILModel(
-        loss_fn, strip_prefix_for_hidden="PREFIX:"
-    )
-    input_data = np.array(
-        ["PREFIX: This is a test", "No prefix here", "PREFIX: Another test"]
-    )
-    expected_output = np.array(["This is a test", "No prefix here", "Another test"])
-    output_data = model.strip_prefix(input_data)
     assert np.array_equal(output_data, expected_output)

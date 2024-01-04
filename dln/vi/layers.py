@@ -2,7 +2,7 @@ from typing import List
 
 import numpy as np
 
-from dln.loss import ZeroOneLoss
+from dln.loss import LLoss
 from dln.operator import LLM
 from dln.score import LogProbs, LogProbsScore, OutputClasses, ScoreRequest
 from dln.template import load_template
@@ -79,10 +79,9 @@ class PriorLayer:
                 max_len = 0
 
                 for i in range(len(output_classes)):
-                    for verbalizer in output_classes.verbalizers(i):
-                        token_ids = self.forward_evaluate.encode(verbalizer)
+                    for realization in output_classes.verbalizers(i):
+                        token_ids = self.forward_evaluate.encode(realization)
                         max_len = max(max_len, len(token_ids))
-                        assert max_len == 1
                         logit_bias[token_ids[0]] = 100
 
                 outputs = self.forward_evaluate(
@@ -127,10 +126,10 @@ class PriorLayer:
         self,
         inputs: List[str],
         targets: List[str],
+        loss: LLoss,
         prompts=None,
         num_samples=1,
         max_tokens=10,
-        postprocess_prediction=None,
     ) -> LogProbs:
         requests = []
 
@@ -149,8 +148,6 @@ class PriorLayer:
             max_tokens=max_tokens,
         )
         targets = np.array([t for t in targets] * num_samples)
-
-        loss = ZeroOneLoss(postprocess_prediction)
         losses = loss(outputs, targets).reshape(-1, num_samples)
         accuracy = (1. - losses).mean(1)
         return accuracy

@@ -2,15 +2,12 @@ import argparse
 import json
 import textwrap
 
-import dash
-import dash_bootstrap_components as dbc
+import altair as alt
+import streamlit as st
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-from dash import dcc, html
-from dash.dependencies import Input, Output
 from jinja2 import Template
-from plotly.subplots import make_subplots
+
 
 forward_template_L1 = Template(
     "{{ input }}\n\n{{ prompt }} Let's think step by step."
@@ -31,9 +28,8 @@ def wrap_text(text, width=100):
     return "\n".join("\n".join(textwrap.wrap(line, width)) for line in text.split("\n"))
 
 
-def load_data(log_file, dataset):
-    with open(log_file) as f:
-        logs = json.load(f)[dataset]
+def load_data(logs, dataset):
+    logs = logs[dataset]
 
     flattened_data = []
     flattened_candidates = []
@@ -53,8 +49,8 @@ def load_data(log_file, dataset):
         for layer, candidates in enumerate(item["candidates"], 1):
             for idx, candidate in enumerate(candidates):
                 candidate_data = candidates_data.setdefault(idx, {"step": item["step"]})
-                candidate_data[f"layer_{layer}_candidate"] = candidate["layer"]
-                candidate_data[f"layer_{layer}_score"] = candidate["score"]
+                candidate_data[f"Layer {layer} candidate"] = candidate["layer"]
+                candidate_data[f"Layer {layer} score"] = candidate["score"]
         flattened_candidates += list(candidates_data.values())
 
     flattened_examples = []
@@ -76,238 +72,118 @@ def load_data(log_file, dataset):
         pd.DataFrame(flattened_examples),
     )
 
-def load_dataset_names(log_file):
-    with open(log_file) as f:
-        logs = json.load(f)
+
+def load_logfiles(logfiles):
+    if not logfiles:
+        return None
+    logs = {}
+    for logfile in logfiles:
+        with open(logfile, "r") as f:
+            logs.update(json.load(f))
+    return logs
+
+
+def extract_dataset_names(logs):
     return [(x, x) for x in list(logs.keys())]
 
+
 def main(args):
-    datasets = load_dataset_names(args.logfile) if args.logfile else DATASETS
-    app = dash.Dash()
-    app.layout = html.Div(
-        [
-            html.H2(
-                "Deep Language Networks",
-                style={
-                    "textAlign": "center",
-                },
-            ),
-            dcc.Dropdown(
-                id="dataset_dropdown",
-                options=[
-                    {"label": f"{title}", "value": id_} for id_, title in datasets
-                ],
-                value=datasets[0][0],
-                multi=False,
-                style={
-                    "backgroundColor": "rgb(229, 236, 246)",
-                    "margin": "10px 0",
-                },
-            ),
-            dcc.Dropdown(
-                id="example_dropdown",
-                options=[
-                    {
-                        "label": f"Example {i}" if i > 0 else "Show only prompts",
-                        "value": i,
-                    }
-                    for i in range(0, 20 + 1)
-                ],
-                value=0,  # df['id'].iloc[0],
-                multi=False,
-                style={
-                    "backgroundColor": "rgb(229, 236, 246)",
-                    "margin": "10px 0",
-                },
-            ),
-            dcc.Graph(id="scatter-plot"),
-            html.Div(
-                id="table-container",
-                style={
-                    "backgroundColor": "rgb(229, 236, 246)",
-                    "margin": "10px 0",
-                    "padding": "10px",
-                },
-            ),
-        ]
-    )
+    logs = load_logfiles(args.logfiles or ["data.json"])
+    datasets = extract_dataset_names(logs) if logs else DATASETS
+    st.set_page_config(layout="wide")
+    st.markdown("<h1 style='text-align: center; margin-bottom: 80px'>Deep Language Networks</h1>", unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        # find navigate dataset index or default to 0
+        selectbox_index = next((i for i, (dataset_id, _) in enumerate(datasets) if dataset_id == 'navigate'), 0)
+        dataset_selectbox = st.selectbox("Dataset", datasets, index=selectbox_index, format_func=lambda x: x[1])
+        dataset_selectbox = dataset_selectbox[0]
+        df, candidates, examples = load_data(logs, dataset_selectbox)
 
-    # Create a callback to update the table-container
-    @app.callback(
-        Output("table-container", "children"),
-        [Input("scatter-plot", "hoverData"), Input("dataset_dropdown", "value")],
-    )  # coulbe be either clickData, hoverData
-    def update_table(callbackData, dataset_dropdown):
-        df, candidates, examples = load_data(
-            args.logfile or "data.json", dataset_dropdown
-        )
+        # st.slider does not support non-uniform steps. Using an index slider and then index into steps.
+        steps = examples['step'].unique()
+        steps = df['step'].unique()
+        highlight_example = steps[st.selectbox("Example", [i for i in range(len(steps) - 1)], format_func=lambda x: x + 1)]
+        highlight_step = steps[st.slider("Step", 1, len(steps) - 1)]
 
-        # Merge layers and examples
-        df = df.merge(examples, on="step", how="left")
+        show_example = any(examples['step'] == highlight_step)
 
-        step = callbackData["points"][0]["x"] if callbackData is not None else 0
-        filtered_df = candidates[candidates["step"] == step]
-        table = dbc.Table.from_dataframe(
-            filtered_df, striped=True, bordered=True, hover=True
-        )
-        return table
+        st.write("")
+        table_data = []
+        table_data.append(f"| **Input:** | {examples[examples['step'] == highlight_step]['input'].iloc[highlight_example] if show_example else 'N/A'}")
+        table_data.append(f"| **Layer 1 prompt:** | {df[df['step'] == highlight_step]['layer_1'].values[0]}")
+        if 'layer_2' in df.columns:
+            table_data.append(f"| **Hidden:** | {examples[examples['step'] == highlight_step]['hidden'].iloc[highlight_example] if show_example else 'N/A'}")
+            table_data.append(f"| **Layer 2 prompt:** | {df[df['step'] == highlight_step]['layer_2'].values[0]}")
+        table_data.append(f"| **Output:** | {examples[examples['step'] == highlight_step]['output'].iloc[highlight_example] if show_example else 'N/A'}")
+        table_data.append(f"| **Label:** | {examples[examples['step'] == highlight_step]['label'].iloc[highlight_example] if show_example else 'N/A'}")
+        table_data = [x.replace('\n', '<br>') for x in table_data]
+        table_data_str = "\n".join(table_data)
 
-    @app.callback(
-        Output("scatter-plot", "figure"),
-        [Input("example_dropdown", "value"), Input("dataset_dropdown", "value")],
-    )
-    def update_scatter_plot(example_dropdown, dataset_dropdown):
-        df, candidates, examples = load_data(
-            args.logfile or "data.json", dataset_dropdown
-        )
+        st.markdown(f"\n| | |\n| --- | --- |\n{table_data_str}", unsafe_allow_html=True)
+        st.write("")
 
-        # Merge layers and examples
-        df = df.merge(examples, on="step", how="left")
-
-        EXAMPLE_ID = example_dropdown or 1
-        dev_df = df
-        dev_df = df[df["id"] == EXAMPLE_ID]
-        dev_df = dev_df[dev_df["dev_acc"] >= 0]
-
-        NB_LAYERS = len([c for c in dev_df.columns if c.startswith("layer")])
-
-        if example_dropdown == 0:
-            if NB_LAYERS == 1:
-                layers_columns = [c for c in dev_df.columns if c.startswith("layer")]
-                for column in layers_columns:
-                    # Wrap text for display in hover
-                    dev_df[column] = dev_df[column].apply(
-                        lambda x: x.replace("\n", "<br>")
-                    )
-
-                hover_template = "<b> prompt:</b> %{customdata[0]}"
-
-            elif NB_LAYERS == 2:
-                layers_columns = [c for c in dev_df.columns if c.startswith("layer")]
-                for column in layers_columns:
-                    # Wrap text for display in hover
-                    dev_df[column] = dev_df[column].apply(
-                        lambda x: x.replace("\n", "<br>")
-                    )
-
-                hover_template = (
-                    "<b>Layer 1 prompt:</b> %{customdata[0]}"
-                    "<br><b>Layer 2 prompt:</b> %{customdata[1]}"
-                )
-        else:
-            if NB_LAYERS == 1:
-                layers_columns = [
-                    c for c in dev_df.columns if c.startswith("layer")
-                ] + ["input", "output", "label"]
-                for column in layers_columns:
-                    # Wrap text for display in hover
-                    dev_df[column] = dev_df[column].apply(
-                        lambda x: x.replace("\n", "<br>")
-                    )
-
-                hover_template = (
-                    "<b>Input:</b> %{customdata[1]}"
-                    "<br><b>Layer 1 prompt:</b> %{customdata[0]}"
-                    "<br><b>Output:</b> %{customdata[2]}"
-                    "<br><b>Label:</b> %{customdata[3]}"
-                )
-
-            elif NB_LAYERS == 2:
-                layers_columns = [
-                    c for c in dev_df.columns if c.startswith("layer")
-                ] + ["input", "hidden", "output", "label"]
-                for column in layers_columns:
-                    # Wrap text for display in hover
-                    dev_df[column] = dev_df[column].apply(
-                        lambda x: x.replace("\n", "<br>")
-                    )
-
-                hover_template = (
-                    "<b>Input:</b> %{customdata[2]}"
-                    "<br><b>Layer 1 prompt:</b> %{customdata[0]}"
-                    "<br><b>Hidden:</b> %{customdata[3]}"
-                    "<br><b>Layer 2 prompt:</b> %{customdata[1]}"
-                    "<br><b>Output:</b> %{customdata[4]}"
-                    "<br><b>Label:</b> %{customdata[5]}"
-                )
-            else:
-                raise NotImplementedError()
-
-        hover_config = {
-            "customdata": dev_df[layers_columns],
-            "hovertemplate": hover_template,
-        }
-
-        # Create figure with secondary y-axis
-        fig = make_subplots(specs=[[{"secondary_y": True}]])
-
-        # Make Figure taller
-        fig.update_layout(
-            autosize=False,
-            width=1900,
-            height=1000,
-            margin=dict(l=50, r=50, b=100, t=100, pad=4),
-        )
-
-        # Add traces
-        # text = ["Acc"] * len(df["step"])
-        fig.add_trace(
-            go.Scatter(
-                x=df["step"], y=df["run_acc"], name="Running acc", hoverinfo="none"
-            ),  # , text=text, **hover_config
-            secondary_y=False,
-        )
-
-        # text = ["Dev Acc"] * len(df["step"][df["dev_acc"] >= 0])
-        fig.add_trace(
-            go.Scatter(
-                x=dev_df["step"], y=dev_df["dev_acc"], name="Dev acc", **hover_config
-            ),
-            secondary_y=False,
-        )
-
-        # text = ["ELBO"] * len(df["step"])
-        fig.add_trace(
-            go.Scatter(
-                x=df["step"],
-                y=df["run_elbo"],
-                name="Running ELBO",
-                hoverinfo="none",
-                visible="legendonly",
-            ),  # , text=text, **hover_config),
-            secondary_y=True,
-        )
-
-        # Set x-axes title
-        fig.update_xaxes(title_text="steps", nticks=20)
-
-        # Set y-axes titles
-        fig.update_yaxes(title_text="<b>Accuracy</b>", secondary_y=False)
-        fig.update_yaxes(title_text="<b>ELBO</b>", secondary_y=True)
-
-        # Define hover text font and color.
-        fig.update_layout(hovermode="x")
-        fig.update_layout(
-            hoverlabel=dict(
-                bgcolor="rgba(255,255,255,0.75)",
-                font_size=16,
-                font_family="Rockwell",
+    with col2:
+        melted_df = df.melt(id_vars=['step'], value_vars=['acc', 'run_acc'], var_name='metric', value_name='value')
+        melted_df['metric'] = melted_df['metric'].replace(['acc', 'run_acc'], ['Batch', 'Run Avg'])
+        combined_chart = alt.Chart(melted_df).mark_line().encode(
+            y=alt.Y('value:Q', title="accuracy", scale=alt.Scale(
+                domain=[melted_df['value'].min(), melted_df['value'].max()]
+            )),
+            x='step:Q',
+            color=alt.Color(
+                'metric:N',
+                scale=alt.Scale(domain=['Batch', 'Run Avg'], range=['steelblue', 'lightblue']),
+                legend=alt.Legend(title="Train Accuracy")
             ),
         )
-        return fig
 
-    app.run_server(debug=args.debug, host=args.dash_host or "127.0.0.1")
+        # Add a vertical rule at the specific step
+        highlight_rule = alt.Chart(pd.DataFrame({'step': [highlight_step]})).mark_rule(color='red').encode(x='step:Q')
+
+        # Combine the line chart, vertical rule, and text label
+        alt_acc = alt.layer(
+            combined_chart, highlight_rule, data=melted_df
+        ).properties(height=500)
+
+        st.altair_chart(alt_acc, use_container_width=True)
+
+        activate_elbo = st.toggle("Elbo")
+        if activate_elbo:
+            # elbo = df[["step", "elbo", "run_elbo"]]
+            melted_elbo = df.melt(id_vars=['step'], value_vars=['elbo', 'run_elbo'], var_name='metric', value_name='value')
+            melted_elbo['metric'] = melted_elbo['metric'].replace(['elbo', 'run_elbo'], ['Batch', 'Run Avg'])
+            elbo_chart = alt.Chart(melted_elbo).mark_line().encode(
+                y=alt.Y('value:Q', title="elbo", scale=alt.Scale(
+                    domain=[melted_elbo['value'].min(), melted_elbo['value'].max()]
+                )),
+                x='step:Q',
+                color=alt.Color(
+                    'metric:N',
+                    scale=alt.Scale(domain=['Batch', 'Run Avg'], range=['steelblue', 'lightblue']),
+                    legend=alt.Legend(title="Train Elbo")
+                ),
+            )
+            # Combine the elbo line chart and the highlight rule
+            alt_elbo = alt.layer(
+                elbo_chart, highlight_rule, data=melted_elbo
+            ).properties(height=500)
+            st.altair_chart(alt_elbo, use_container_width=True)
+
+    prompt_candidates = st.toggle("Prompt Candidates")
+    if prompt_candidates:
+        # list all columns from candidates dataframe except the 'step' columns
+        cols = [col for col in candidates.columns if col != 'step']
+        st.dataframe(
+            candidates[candidates["step"] == highlight_step][cols],
+            hide_index=True,
+            use_container_width=True,
+        )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("logfile", nargs="?", help="Log file to use (JSON).")
-    parser.add_argument(
-        "--dash-host", help="Host for Dash (setting this, implies --dash)."
-    )
-    parser.add_argument(
-        "--debug", action=argparse.BooleanOptionalAction, help="Launch in debug mode."
-    )
+    parser.add_argument("logfiles", nargs="*", help="Log file to use (JSON).")
     args = parser.parse_args()
 
     main(args)

@@ -1,20 +1,44 @@
 # Deep Language Networks Demo
+
 ![Image showing DLN Demo](./dln_demo_sample.png)
 
+
 ## Install dependencies
-    pip install -r requirements.txt
+From the demo directory, run the following command to install the additional dependencies:
 
-## (A) Generate plot for the given data.json file
-    python demo.py
+```
+pip install -r requirements.txt
+```
 
-## (B) Visualizing your own results
-1. Please see the [Variational Inference README](projects/vi_dln/README.md) for information on how to run experiments. e.g.,  
+## Generate plot for the given data.json file
+
 ```
-python scripts/one_layer/one_layer.py --dataset subj
-bash scripts/two_layers_e2e/data_understanding.sh
+streamlit run demo.py
 ```
-2. This will update the result_data.json file with your results.
-3. Run the demo.py file to generate the plot for your results.
+
+## Visualizing your own results
+1. Please see the [Variational Inference README](projects/vi_dln/README.md) for information on how to run experiments.
+
+   Your results will be stored in the log directory by default (projects/vi_dln/log/result_data.json).
+
+   Alternatively, you can specify the output directory using the --result_data_path argument.
+
+2. Run the demo.py file to generate the plot for your results.
+
+   ```
+   streamlit run demo.py <result_data_path>/result_data.json
+   ```
+
+   You can load multiple result_data.json files by specifying multiple paths.
+
+   ```
+   streamlit run demo.py <result_data_path_1>/result_data.json <result_data_path_2>/result_data.json
+   ```
+
+## Serving from Docker
+Run the following commands to serve the demo from a Docker container:
 ```
-python demo.py result_data.json
+docker build -t dln-demo .
+docker run --name dln-demo --restart unless-stopped -d -p 8001:8501 dln-demo
 ```
+Open your browser and navigate to http://localhost:8001.

@@ -12,6 +12,7 @@ q_prompt_tpl="q_action_prompt:v3.5"
 logp_penalty=2.
 posterior_temp=1.
 fwd_model_type="gpt-4"
+one_layer=True
 
 # dataset
 for dataset in date_understanding logical_deduction_seven_objects subj navigate; do
@@ -26,10 +27,10 @@ if [ ! -f ${dir}/done.txt ]; then
     # seed
     for seed in 13 42 25; do
         python vi_main.py \
-            --compute_cost \
+            --cost_only \
             --balance_batch \
             --n_shots ${n_shot} \
-            --one_layer \
+            --one_layer ${one_layer} \
             --num_p_samples ${num_p_samples} \
             --bwd_temp ${bwd_temp} \
             --iters ${iters} \

@@ -3,7 +3,6 @@ from collections import Counter
 import numpy as np
 from termcolor import colored
 
-from dln.postprocessing import postprocess_prediction
 from dln.loss import LLoss
 from dln.operator import LLM
 from dln.score import LogProbsScore, OutputClasses
@@ -42,7 +41,6 @@ class VILModel:
         p1_max_tokens: int = 256,
         p2_max_tokens: int = 20,
         posterior_temp: float = 1.0,
-        strip_prefix_for_hidden: str = None,
         output_scoring_function: str = "logprobs",
         hidden_scoring_function: str = "logprobs",
         posterior_sharpening_include_prior: bool = True,
@@ -83,7 +81,6 @@ class VILModel:
             p1_max_tokens: max tokens for the residual layer
             p2_max_tokens: max tokens for the prior layer
             posterior_temp: posterior temperature
-            strip_prefix_for_hidden: strip prefix from the hidden state if the model generates it
             output_scoring_function: output scoring function, either "logprobs" or "accuracy"
             hidden_scoring_function: hidden scoring function, only "logprobs" is supported
             posterior_sharpening_include_prior: include prior in the posterior sharpening
@@ -91,6 +88,7 @@ class VILModel:
             num_p1_steps: number of optimization steps for p1
             use_nce: compute p1 elbo using NCE
         """
+        self.forward_evaluate = forward_evaluate
         self.encoder_l1 = ResidualPriorLayer(
             logprobs_score=logprobs_score,
             forward_evaluate=forward_evaluate,
@@ -114,7 +112,6 @@ class VILModel:
         self.q_sampler = posterior_sampler
         self.trust_factor = trust_factor
         self.strip_options_for_hidden = strip_options_for_hidden
-        self.strip_prefix_for_hidden = strip_prefix_for_hidden
         self.output_classes = output_classes
         self.two_layers = two_layers
         self.loss_fn = loss_fn
@@ -142,7 +139,6 @@ class VILModel:
             posterior_sharpening_use_mi_regularization
         )
         self.num_acc_mc_samples = 1
-        self.cost = 0.0
         self.use_nce = use_nce
         self.rewrite_loss_only = rewrite_loss_only
 
@@ -241,7 +237,7 @@ class VILModel:
                 prompts=np.array([eval[2] for eval in evals]),
                 num_samples=self.num_acc_mc_samples,
                 max_tokens=10,
-                postprocess_prediction=postprocess_prediction,
+                loss=self.loss_fn,
             )
             acc = acc.reshape(batch_size, p_tilde_2.shape[0]).mean(0)
 
@@ -388,7 +384,7 @@ class VILModel:
                     inputs=residual_h_tilde_1.flatten(),
                     targets=y_repeat.flatten(),
                     num_samples=self.num_acc_mc_samples,
-                    postprocess_prediction=postprocess_prediction,
+                    loss=self.loss_fn,
                 ).reshape(batch_size, num_h_samples)
         else:
             logits = np.zeros((batch_size, num_h_samples))
@@ -561,7 +557,7 @@ class VILModel:
                         targets=np.array([eval[1] for eval in evals]),
                         prompts=np.array([eval[2] for eval in evals]),
                         num_samples=self.num_acc_mc_samples,
-                        postprocess_prediction=postprocess_prediction,
+                        loss=self.loss_fn,
                     )
                     scores = scores.reshape(
                         eval_batch_size, num_h_samples, p_tilde_2.shape[0]
@@ -741,20 +737,6 @@ class VILModel:
             x_.append(x_i)
         return np.array(x_)
 
-    def strip_prefix(self, x):
-        """
-        Strip prefix from the hidden state if the model generates it.
-        """
-        x_ = []
-        for x_i in x:
-            if self.strip_prefix_for_hidden in x_i:
-                x_i = x_i[
-                    x_i.index(self.strip_prefix_for_hidden)
-                    + len(self.strip_prefix_for_hidden) :
-                ].strip()
-            x_.append(x_i)
-        return np.array(x_)
-
     def forward(self, x, y=None, infos=None, temperature=0.0, cost_only=False):
         """
         Args:
@@ -766,14 +748,9 @@ class VILModel:
             else:
                 x_stripped = x
 
-            if self.strip_prefix_for_hidden:
-                x_stripped = self.strip_prefix(x_stripped)
-
             h_1_out = self.encoder_l1(
                 x_stripped, temperature=temperature, max_tokens=self.p1_max_tokens
             )
-
-            self.cost += self.encoder_l2.forward_evaluate.compute_cost(x_stripped)
 
             # execute second template
             h_1 = self.encoder_l1.apply_residual(h_1_out, x)
@@ -808,10 +785,10 @@ class VILModel:
                 )
                 for x_ in x
             ]
-            self.cost += self.encoder_l2.forward_evaluate.compute_cost(x_)
 
             # only compute cost! save inference
             if cost_only:
+                self.encoder_l2.forward_evaluate.compute_cost(x_)
                 return ["" for _ in x]
 
             y_hat = self.encoder_l2(

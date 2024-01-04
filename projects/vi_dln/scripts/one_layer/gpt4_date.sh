@@ -13,6 +13,7 @@ q_prompt_tpl="q_action_prompt:v3.5"
 logp_penalty=2.
 posterior_temp=1.
 fwd_model_type="gpt-4"
+one_layer=True
 
 dir=log/one_layer_gpt_4_temp_0.7_new/${dataset}
 /bin/rm -rf ${dir}
@@ -20,7 +21,7 @@ dir=log/one_layer_gpt_4_temp_0.7_new/${dataset}
 for seed in 13 42 25; do
     python vi_main.py \
         --balance_batch \
-        --one_layer \
+        --one_layer ${one_layer} \
         --num_p_samples ${num_p_samples} \
         --bwd_temp ${bwd_temp} \
         --iters ${iters} \
