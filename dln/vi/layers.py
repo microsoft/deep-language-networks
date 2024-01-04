@@ -79,10 +79,11 @@ class PriorLayer:
                 max_len = 0
 
                 for i in range(len(output_classes)):
-                    token_ids = self.forward_evaluate.encode(output_classes.prototype(i))
-                    max_len = max(max_len, len(token_ids))
-                    assert max_len == 1
-                    logit_bias[token_ids[0]] = 100
+                    for verbalizer in output_classes.verbalizers(i):
+                        token_ids = self.forward_evaluate.encode(verbalizer)
+                        max_len = max(max_len, len(token_ids))
+                        assert max_len == 1
+                        logit_bias[token_ids[0]] = 100
 
                 outputs = self.forward_evaluate(
                     tpl_inputs,
@@ -91,6 +92,7 @@ class PriorLayer:
                     max_tokens=max_len,
                     logit_bias=logit_bias,
                 )
+
         # strip any "\n\n" that might have been added
         if strip_double_newlines:
             outputs = [o.replace("\n\n", "\n") for o in outputs]
