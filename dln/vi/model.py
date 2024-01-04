@@ -87,6 +87,7 @@ class VILModel:
             posterior_sharpening_use_mi_regularization: use MI regularization in the posterior sharpening
             num_p1_steps: number of optimization steps for p1
             use_nce: compute p1 elbo using NCE
+            rewrite_loss_only: only rewrite hidden states that had a loss
         """
         self.forward_evaluate = forward_evaluate
         self.encoder_l1 = ResidualPriorLayer(

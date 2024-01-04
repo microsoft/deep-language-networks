@@ -395,6 +395,7 @@ def main(
     output_scoring_function,
     hidden_scoring_function,
     loss_function,
+    rewrite_loss_only,
     posterior_sharpening_include_prior,
     posterior_sharpening_correct_weighting,
     posterior_sharpening_use_mi_regularization,
@@ -529,6 +530,7 @@ def main(
         posterior_sharpening_correct_weighting=posterior_sharpening_correct_weighting,
         posterior_sharpening_use_mi_regularization=posterior_sharpening_use_mi_regularization,
         use_nce=use_nce,
+        rewrite_loss_only=rewrite_loss_only,
     )
 
     running_acc = 0.0
