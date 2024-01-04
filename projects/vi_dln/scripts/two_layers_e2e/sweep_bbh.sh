@@ -10,7 +10,13 @@ p_class_tpl="classify_forward:v3.0"
 q_prompt_tpl="q_action_prompt:v3.5"
 p_hidden_tpl="suffix_forward_tbs"
 q_hidden_tpl='"suffix_forward_tbs_y|suffix_forward_tbs"'
-p1_max_tokens=256
+
+# if dataset == logical_deduction_seven_objects, set this to 512
+if [ ${dataset} == "logical_deduction_seven_objects" ]; then
+    p1_max_tokens=512
+else
+    p1_max_tokens=256
+fi
 
 # sweep space
 bwd_temps=(0.7)
