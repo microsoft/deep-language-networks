@@ -285,7 +285,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option(
     "--posterior_sharpening_correct_weighting",
     type=bool,
-    default=True,
+    default=False,
     help="Correct importance sampling weighting for sharpening.",
 )
 @click.option(
