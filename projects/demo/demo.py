@@ -79,7 +79,13 @@ def load_logfiles(logfiles):
     logs = {}
     for logfile in logfiles:
         with open(logfile, "r") as f:
-            logs.update(json.load(f))
+            data = json.load(f)
+            assert len(data.keys()) == 1
+            new_key = key = list(data.keys())[0]
+            if key in logs:
+                new_key = f"{key} ({len([1 for k in logs if k.startswith(key)]) + 1})"
+            logs[new_key] = data[key]
+
     return logs
 
 
@@ -104,7 +110,7 @@ def main(args):
         steps = examples['step'].unique()
         steps = df['step'].unique()
         highlight_example = steps[st.selectbox("Example", [i for i in range(len(steps) - 1)], format_func=lambda x: x + 1)]
-        highlight_step = steps[st.slider("Step", 1, len(steps) - 1)]
+        highlight_step = steps[st.slider("Step", 0, len(steps) - 1)]
 
         show_example = any(examples['step'] == highlight_step)
 
@@ -124,8 +130,8 @@ def main(args):
         st.write("")
 
     with col2:
-        melted_df = df.melt(id_vars=['step'], value_vars=['acc', 'run_acc'], var_name='metric', value_name='value')
-        melted_df['metric'] = melted_df['metric'].replace(['acc', 'run_acc'], ['Batch', 'Run Avg'])
+        melted_df = df.melt(id_vars=['step'], value_vars=['acc', 'run_acc', 'dev_acc'], var_name='metric', value_name='value')
+        melted_df['metric'] = melted_df['metric'].replace(['acc', 'run_acc', 'dev_acc'], ['Train Batch', 'Train Run Avg', 'Dev Avg'])
         combined_chart = alt.Chart(melted_df).mark_line().encode(
             y=alt.Y('value:Q', title="accuracy", scale=alt.Scale(
                 domain=[melted_df['value'].min(), melted_df['value'].max()]
@@ -133,9 +139,11 @@ def main(args):
             x='step:Q',
             color=alt.Color(
                 'metric:N',
-                scale=alt.Scale(domain=['Batch', 'Run Avg'], range=['steelblue', 'lightblue']),
-                legend=alt.Legend(title="Train Accuracy")
+                scale=alt.Scale(domain=['Train Batch', 'Train Run Avg', 'Dev Avg'], range=['steelblue', 'lightblue', 'orange']),
+                legend=alt.Legend(title="Train/Dev Accuracy")
             ),
+        ).transform_filter(  # Marked NaN values as invalid so they can be ignored. Ref: https://stackoverflow.com/a/72306402
+            'isValid(datum.value)'
         )
 
         # Add a vertical rule at the specific step
