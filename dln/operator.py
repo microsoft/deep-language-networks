@@ -1,10 +1,14 @@
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
+import os
 import re
 from typing import Dict, List, Union
 import asyncio
 import numpy as np
+
 import openai
+from openai import AzureOpenAI, AsyncAzureOpenAI
+
 import logging
 import os
 from tenacity import (
@@ -17,7 +21,10 @@ from termcolor import colored
 import yaml
 
 
-openai.util.logger.setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
+
+client = AzureOpenAI(api_version=os.environ.get('OPENAI_API_VERSION'))
+aclient = AsyncAzureOpenAI(api_version=os.environ.get('OPENAI_API_VERSION'))
 
 
 def _retry_request(min_wait=4, max_wait=10, max_attempts=100):
@@ -26,11 +33,12 @@ def _retry_request(min_wait=4, max_wait=10, max_attempts=100):
         stop=stop_after_attempt(max_attempts),
         wait=wait_exponential(multiplier=1, min=min_wait, max=max_wait),
         retry=(
-            retry_if_exception_type(openai.error.Timeout)
-            | retry_if_exception_type(openai.error.APIError)
-            | retry_if_exception_type(openai.error.APIConnectionError)
-            | retry_if_exception_type(openai.error.RateLimitError)
-            | retry_if_exception_type(openai.error.ServiceUnavailableError)
+            retry_if_exception_type(openai.Timeout)
+            | retry_if_exception_type(openai.APIError)
+            | retry_if_exception_type(openai.APIConnectionError)
+            | retry_if_exception_type(openai.RateLimitError)
+            # | retry_if_exception_type(openai.ServiceUnavailableError)  # Removed and replaced by APIStatusError with status_code == 503
+            | retry_if_exception_type(openai.APIStatusError)  # https://github.com/openai/openai-python/discussions/631#discussioncomment-7512314
         ),
     )
 
@@ -136,7 +144,6 @@ class GPT(LLM):
         super().__init__(model_name, **generation_options)
         engine_for_encoder = self.engine.replace("gpt-35", "gpt-3.5")
         self.encoder = instantiate_tokenizer(engine_for_encoder)
-        openai.api_version = os.environ.get('OPENAI_API_VERSION')
         self._has_logprobs = self.engine in self.LOGPROBS_MODELS
 
     def encode(self, string: str) -> List[int]:
@@ -149,7 +156,7 @@ class GPT(LLM):
     @staticmethod
     def _log_filtering_error_message(error_message, prompt):
         error_message = (
-            f"InvalidRequestError, most likely due to content filtering. "
+            f"BadRequestError, most likely due to content filtering. "
             f"Prompt: {prompt}. ErrorMessage: {error_message}"
         )
         logging.warning(error_message)
@@ -161,23 +168,18 @@ class GPT(LLM):
         prompting chatgpt via openai api
         now batching only works for completion, not on chat
         """
-        if openai.api_type == "azure":
-            kwargs["deployment_id"] = self.engine
-        else:
-            kwargs["model"] = self.engine
+        kwargs["model"] = self.engine
         try:
-            response = await openai.ChatCompletion.acreate(
-                messages=[{"role": "user", "content": prompt}],
-                **kwargs,
-            )
-        except openai.InvalidRequestError as e:
+            response = await aclient.chat.completions.create(messages=[{"role": "user", "content": prompt}],
+            **kwargs)
+        except openai.BadRequestError as e:
             self._log_filtering_error_message(e, prompt)
             raise e
 
-        if "content" not in response["choices"][0]["message"]:
-            return ""
+        #if "content" not in response.choices[0].message:  # TODO: when will this happen?
+        #    return ""
 
-        output = response["choices"][0]["message"]["content"].strip()
+        output = response.choices[0].message.content.strip()
         return output
 
     @_retry_request(min_wait=4, max_wait=10, max_attempts=500)
@@ -195,23 +197,19 @@ class GPT(LLM):
         """
         logging.debug(kwargs)
         try:
-            response = openai.Completion.create(
-                engine=self.engine,
-                prompt=prompt_batch,
-                logprobs=top_logprobs or 1,
-                **kwargs,
-            )
-        except openai.InvalidRequestError as e:
+            response = client.completions.create(model=self.model,
+            prompt=prompt_batch,
+            logprobs=top_logprobs or 1,
+            **kwargs)
+        except openai.BadRequestError as e:
             # Retry one by one to find out which prompt is causing the error for debugging
             try:
                 for prompt in prompt_batch:
-                    _ = openai.Completion.create(
-                        engine=self.engine,
-                        prompt=prompt,
-                        logprobs=top_logprobs or 1,
-                        **kwargs,
-                    )
-            except openai.InvalidRequestError as err:
+                    _ = client.completions.create(model=self.model,
+                    prompt=prompt,
+                    logprobs=top_logprobs or 1,
+                    **kwargs)
+            except openai.BadRequestError as err:
                 self._log_filtering_error_message(err, prompt)
             raise e
 
@@ -289,12 +287,10 @@ class VLLM(LLM):
 
     @_retry_request(min_wait=1, max_wait=1, max_attempts=100)
     async def _aget_vllm_response(self, input, **kwargs):
-        response = await openai.Completion.acreate(
-            model=self.engine,
-            prompt=input,
-            logprobs=kwargs.get("top_logprobs") or 1,
-            **kwargs,
-        )
+        response = await aclient.completions.create(model=self.model,
+        prompt=input,
+        logprobs=kwargs.get("top_logprobs") or 1,
+        **kwargs)
         return _parse_openai_response(response, **kwargs)[0]
 
     async def _gather_vllm_response(self, inputs, **kwargs):
