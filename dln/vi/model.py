@@ -763,8 +763,6 @@ class VILModel:
                 temperature=temperature,
                 max_tokens=self.p2_max_tokens,
             )
-
-            self.cost += self.encoder_l2.forward_evaluate.compute_cost(h_1)
         else:
             h_1_out, h_1 = None, None
 

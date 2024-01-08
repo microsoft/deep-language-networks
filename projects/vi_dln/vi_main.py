@@ -151,12 +151,6 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option("--seed", default=42, help="Random seed.")
 @click.option("--out_dir", default="log/")
 @click.option("--data_dir", default="../../data")
-@click.option(
-    "--num_train_examples",
-    default=-1,
-    type=int,
-    help="Use only so many train examples.",
-)
 @click.option("--max_train_size", default=-1, type=int, help="Use only so many train examples.")
 @click.option("--max_dev_size", default=-1, type=int, help="Use only so many dev examples.")
 @click.option("--max_test_size", default=-1, type=int, help="Use only so many test examples.")
