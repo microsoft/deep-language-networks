@@ -76,13 +76,18 @@ class LLM(ABC):
         self.total_cost = 0.0
 
     def __call__(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
+        """Generate outputs for the given inputs. Use this method instead of calling _generate directly.
+        In addition to calling LLM._generate, this method generates a random seed per request
+        if the LLM was instantiated with a seed, and calculates the cost of the generation.
+        If a seed is provided in the kwargs, it will be used instead of generating a random one.
+        """
         is_echo_enabled = kwargs.get("echo") or self.generation_options.get("echo")
         if not is_echo_enabled:
             self.compute_cost(inputs)
         # if LLM has a seed generator, and no seed is provided, generate a random seed
         if kwargs.get("seed") is None and self.rng is not None:
             kwargs["seed"] = self._gen_random_seed()
-        outputs = self.generate(inputs, **kwargs)
+        outputs = self._generate(inputs, **kwargs)
 
         if kwargs.get("return_logprobs"):
             self.compute_cost([out[0] for out in outputs])
@@ -91,7 +96,11 @@ class LLM(ABC):
         return outputs
 
     @abstractmethod
-    def generate(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
+    def _generate(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
+        """Generate outputs for the given inputs. Do not call this method directly,
+        since it does not generate a random seed or calculate the cost of the generation.
+        Use llm_instance(inputs) instead. Refer to __call__ method for more details.
+        """
         raise NotImplementedError
 
     @abstractmethod
@@ -242,7 +251,7 @@ class GPT(LLM):
             input_batch = inputs[batch_size * i : batch_size * (i + 1)]
             yield input_batch
 
-    def generate(
+    def _generate(
         self,
         inputs: Union[List[str], str],
         async_generation: bool = True,
@@ -313,7 +322,7 @@ class VLLM(LLM):
         )
         return outputs
 
-    def generate(
+    def _generate(
         self,
         inputs: Union[List[str], str],
         async_generation: bool = True,

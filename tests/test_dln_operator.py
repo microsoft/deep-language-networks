@@ -60,7 +60,7 @@ def test_get_completion_response(mock_openai_api):
 def test_generate(mock_openai_api, async_generation):
     gpt = GPT("text-davinci-003")
     prompt = "What is the largest city in Quebec?"
-    response = gpt.generate(
+    response = gpt._generate(
         inputs=[prompt, prompt],
         batch_size=1,
         async_generation=async_generation,
@@ -71,7 +71,7 @@ def test_generate(mock_openai_api, async_generation):
 def test_generate_seeds():
 
     class MockGPT(LLM):
-        def generate(self, inputs, **kwargs):
+        def _generate(self, inputs, **kwargs):
             return kwargs
         def encode(self, string):
             return string
@@ -122,7 +122,7 @@ def test_openai_invalid_request_error(monkeypatch):
     gpt = GPT("text-davinci-003")
     prompt = "What is the largest city in Quebec?"
     with pytest.raises(openai.InvalidRequestError, match="Invalid request"):
-        gpt.generate(prompt)
+        gpt._generate(prompt)
 
 
 @pytest.fixture

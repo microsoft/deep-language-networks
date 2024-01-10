@@ -24,7 +24,7 @@ def mock_llm_func():
                     self.encoder = instantiate_tokenizer(model_name)
                 super().__init__(model_name)
 
-            def generate(self, inputs, **kwargs):
+            def _generate(self, inputs, **kwargs):
                 return inputs
 
             def encode(self, string):
