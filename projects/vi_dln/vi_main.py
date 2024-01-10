@@ -443,13 +443,13 @@ def main(
     bwd_model_type = bwd_model_type or fwd_model_type
 
     llm_registry = LLMRegistry()
-
     fwd_model = llm_registry.register(
         "fwd_model",
         fwd_model_type,
         temperature=0.0,
         max_tokens=fwd_max_tokens,
         stop=None,
+        seed=seed,
     )
 
     bwd_model = llm_registry.register(
@@ -458,6 +458,7 @@ def main(
         temperature=bwd_temp,
         max_tokens=bwd_max_tokens,
         stop=None,
+        seed=seed,
     )
 
     postproc = None

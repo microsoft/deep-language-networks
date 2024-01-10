@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 import re
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 import asyncio
 import numpy as np
 import openai
@@ -68,7 +68,9 @@ def _parse_openai_response(
 
 class LLM(ABC):
 
-    def __init__(self, model_name: str, **generation_options):
+    def __init__(self, model_name: str, seed: Optional[int] = None, **generation_options):
+        self.seed = seed
+        self.rng = np.random.RandomState(self.seed) if seed is not None else None
         self.generation_options = generation_options
         self.engine = model_name
         self.total_cost = 0.0
@@ -77,7 +79,9 @@ class LLM(ABC):
         is_echo_enabled = kwargs.get("echo") or self.generation_options.get("echo")
         if not is_echo_enabled:
             self.compute_cost(inputs)
-
+        # if LLM has a seed generator, and no seed is provided, generate a random seed
+        if kwargs.get("seed") is None and self.rng is not None:
+            kwargs["seed"] = self._gen_random_seed()
         outputs = self.generate(inputs, **kwargs)
 
         if kwargs.get("return_logprobs"):
@@ -101,6 +105,9 @@ class LLM(ABC):
 
     def compute_cost(self, inputs: List[str]) -> float:
         self.total_cost += np.sum(list([len(self.encode(input)) for input in inputs]))
+
+    def _gen_random_seed(self):
+        return self.rng.randint(0, 10000)
 
 
 class GPT(LLM):
