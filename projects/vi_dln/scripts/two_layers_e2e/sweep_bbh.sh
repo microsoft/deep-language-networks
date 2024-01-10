@@ -21,17 +21,17 @@ fi
 # sweep space
 bwd_temps=(0.7)
 posterior_temps=(1.0)
-logp_decays=(True)
+logp_decays=(False True)
 num_examples=(-1)
 batch_sizes=(20)
-trust_factors=(0)
-held_out_prompt_ranking=(False)
+trust_factors=(0 5)
+held_out_prompt_ranking=(False True)
 one_layer=False
 fwd_model_type="text-davinci-003"
 bwd_model_type="text-davinci-003"
 log_penalties=(0.0 1.0 3.0 5.0)
 train_p2s=(True)
-h_max=(True)
+h_max=(False)
 
 # remove temp jobs file
 rm -rf /tmp/jobs_${dataset}.txt
@@ -47,19 +47,18 @@ for train_p2 in ${train_p2s[@]}; do
 for hmax in ${h_max[@]}; do
 for hout in ${held_out_prompt_ranking[@]}; do
 
-dir=log/one_layer${one_layer}_e2e/${dataset}_burn_in/${fwd_model_type}_${bwd_model_type}_trp2${train_p2}_hmax${hmax}_tf${tf}_heldoutpromptrank${hout}_nex${num_example}_stripoptFalse_decay${decay}_logp${logp_penalty}_bwdt${bwd_temp}_bsz${batch_size}_np${num_p_samples}_nh${num_h_samples}_pt${posterior_temp}
+dir=log/one_layer${one_layer}_e2e/${dataset}_new_sweep/${fwd_model_type}_${bwd_model_type}_trp2${train_p2}_hmax${hmax}_tf${tf}_heldoutpromptrank${hout}_nex${num_example}_stripoptFalse_decay${decay}_logp${logp_penalty}_bwdt${bwd_temp}_bsz${batch_size}_np${num_p_samples}_nh${num_h_samples}_pt${posterior_temp}
 /bin/rm -rf ${dir}
 
 for seed in 13 42 25; do
     echo "python vi_main.py \
-        --rewrite_loss_only True \
-        --val_freq 1 \
+        --rewrite_loss_only False \
+        --val_freq 2 \
         --do_first_eval \
         --one_layer ${one_layer} \
         --train_p1 True \
         --train_p2 ${train_p2} \
         --balance_batch \
-        --num_train_examples ${num_example} \
         --p1_max_tokens ${p1_max_tokens} \
         --num_p_samples ${num_p_samples} \
         --num_h_samples ${num_h_samples} \
@@ -84,7 +83,6 @@ for seed in 13 42 25; do
         --posterior_temp ${posterior_temp} \
         --use_h_argmax ${hmax} \
         --decay_logp_penalty ${decay}" >> /tmp/jobs_${dataset}.txt
-#seed
 done
 done
 done
