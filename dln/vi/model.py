@@ -44,7 +44,7 @@ class VILModel:
         output_scoring_function: str = "logprobs",
         hidden_scoring_function: str = "logprobs",
         posterior_sharpening_include_prior: bool = True,
-        posterior_sharpening_correct_weighting: bool = True,
+        posterior_sharpening_correct_weighting: bool = False,
         posterior_sharpening_use_mi_regularization: bool = False,
         num_p1_steps: int = 1,
         use_nce: bool = False,
@@ -294,7 +294,7 @@ class VILModel:
 
             h_tilde_1 = np.concatenate(
                 [h1[:, None] for _ in range(self.num_h_samples)], axis=1
-            )
+            ).astype(object)  # astype(object) avoids truncating h_tilde_1_
             ll_h_tilde_1 = np.ones((x.shape[0], self.num_h_samples), dtype="float32")
             h_tilde_1[error_indices] = h_tilde_1_
             ll_h_tilde_1[error_indices] = ll_h_tilde_1_
@@ -668,6 +668,8 @@ class VILModel:
             best_p1 = self.encoder_l1.weight
             best_p1_elbo = 0.0
             best_p1_index = 0
+            p1_reward = p1_elbo
+            p1_elbos = [p1_elbo]
 
         self.result_entry.log_candidates(p_tilde_2, p2_elbo, p_tilde_1, p1_elbo)
 
