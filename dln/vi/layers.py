@@ -91,6 +91,7 @@ class PriorLayer:
                     max_tokens=max_len,
                     logit_bias=logit_bias,
                 )
+
         # strip any "\n\n" that might have been added
         if strip_double_newlines:
             outputs = [o.replace("\n\n", "\n") for o in outputs]

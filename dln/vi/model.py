@@ -24,7 +24,7 @@ class VILModel:
         forward_evaluate: LLM = None,
         prompt_sampler_1: PromptSampler = None,
         prompt_sampler_2: PromptSampler = None,
-        posterior_sampler : PosteriorSampler = None,
+        posterior_sampler: PosteriorSampler = None,
         logprobs_score: LogProbsScore = None,
         p_hidden: str = "suffix_forward_tbs:latest",
         p_class: str = "classify_forward:latest",
@@ -44,9 +44,11 @@ class VILModel:
         output_scoring_function: str = "logprobs",
         hidden_scoring_function: str = "logprobs",
         posterior_sharpening_include_prior: bool = True,
+        posterior_sharpening_correct_weighting: bool = False,
         posterior_sharpening_use_mi_regularization: bool = False,
         num_p1_steps: int = 1,
         use_nce: bool = False,
+        rewrite_loss_only = False,
     ):
         """
         Args:
@@ -85,6 +87,7 @@ class VILModel:
             posterior_sharpening_use_mi_regularization: use MI regularization in the posterior sharpening
             num_p1_steps: number of optimization steps for p1
             use_nce: compute p1 elbo using NCE
+            rewrite_loss_only: only rewrite hidden states that had a loss
         """
         self.forward_evaluate = forward_evaluate
         self.encoder_l1 = ResidualPriorLayer(
@@ -103,6 +106,8 @@ class VILModel:
         if not two_layers:
             self.encoder_l1.weight = ""
 
+        self.init_p1 = init_p1
+        self.init_p2 = init_p2
         self.prompt_sampler_1 = prompt_sampler_1
         self.prompt_sampler_2 = prompt_sampler_2
         self.q_sampler = posterior_sampler
@@ -128,9 +133,15 @@ class VILModel:
         self.output_scoring_function = output_scoring_function
         self.hidden_scoring_function = hidden_scoring_function
         self.posterior_sharpening_include_prior = posterior_sharpening_include_prior
-        self.posterior_sharpening_use_mi_regularization = posterior_sharpening_use_mi_regularization
+        self.posterior_sharpening_correct_weighting = (
+            posterior_sharpening_correct_weighting
+        )
+        self.posterior_sharpening_use_mi_regularization = (
+            posterior_sharpening_use_mi_regularization
+        )
         self.num_acc_mc_samples = 1
         self.use_nce = use_nce
+        self.rewrite_loss_only = rewrite_loss_only
 
         if self.forward_use_classes:
             assert (
@@ -173,7 +184,7 @@ class VILModel:
             y,
             y_hat,
             losses,
-            prompt=self.encoder_l2.weight,
+            prompt=[self.encoder_l2.weight] + list(self.get_from_memory(1)),
             num_samples=self.num_p_samples,
             held_out_half=self.held_out_prompt_ranking,
         )
@@ -252,26 +263,41 @@ class VILModel:
         x,
         y,
         h1,
+        losses,
         include_h1=False,
     ):
         # samples from the approx. posterior of h_1
         # (batch_size, num_h_samples)
         # q(h | x, y, p_1, p_2)
         batch_size = x.shape[0]
+        assert h1.shape[0] == batch_size
 
         if not self.num_h_samples and not include_h1:
             raise ValueError("Must sample at least one h or include h1")
 
         if self.num_h_samples:
-            h_tilde_1 = self.q_sampler.sample_q_h(
-                x=x,
-                y=y,
-                h=h1,
+            error_indices = (
+                np.where(losses > 0.0)[0]
+                if self.rewrite_loss_only
+                else np.arange(batch_size)
+            )
+
+            h_tilde_1_, ll_h_tilde_1_ = self.q_sampler.sample_q_h(
+                x=x[error_indices],
+                y=y[error_indices],
+                h=h1[error_indices],
                 prompt=self.encoder_l1.weight,
                 next_prompt=self.encoder_l2.weight,
                 num_samples=self.num_h_samples,
-                return_logprobs=False,
+                return_logprobs=True,
             )
+
+            h_tilde_1 = np.concatenate(
+                [h1[:, None] for _ in range(self.num_h_samples)], axis=1
+            ).astype(object)  # astype(object) avoids truncating h_tilde_1_
+            ll_h_tilde_1 = np.ones((x.shape[0], self.num_h_samples), dtype="float32")
+            h_tilde_1[error_indices] = h_tilde_1_
+            ll_h_tilde_1[error_indices] = ll_h_tilde_1_
 
         # concatenate the original sample
         if include_h1:
@@ -343,6 +369,17 @@ class VILModel:
 
                     logits = logits - mi
 
+                if self.posterior_sharpening_correct_weighting:
+                    log_message(
+                        colored(
+                            "Removing q(h) from posterior samples.",
+                            "yellow",
+                        )
+                    )
+
+                    ll_q = ll_h_tilde_1.reshape(batch_size, num_h_samples)
+                    logits = logits - ll_q
+
             elif self.output_scoring_function == "accuracy":
                 logits = self.encoder_l2.accuracy(
                     inputs=residual_h_tilde_1.flatten(),
@@ -357,7 +394,6 @@ class VILModel:
         weights = np.exp(logits / self.posterior_temp) / np.sum(
             np.exp(logits / self.posterior_temp), axis=1, keepdims=True
         )
-        assert (weights.sum(1).sum(0) - batch_size) < 1e-5
 
         # get best hidden state
         best_h_tilde_1_index: np.array = np.argmax(weights, axis=1)
@@ -410,6 +446,9 @@ class VILModel:
         batch_size = x.shape[0]
         assert y.shape[0] == batch_size
 
+        if losses.sum() == 0.0:
+            return 0.0, 0.0, self.encoder_l1.weight, self.encoder_l2.weight
+
         # sample hidden states from the proposal distribution
         (
             residual_h_tilde_1,
@@ -420,6 +459,7 @@ class VILModel:
             x=x,
             y=y,
             h1=h1,
+            losses=losses,
             include_h1=False,
         )
         num_h_samples = h_tilde_1.shape[1]
@@ -455,7 +495,7 @@ class VILModel:
                     y=y,
                     y_hat=y_hat,
                     losses=losses,
-                    prompt=current_prompt,
+                    prompt=[current_prompt] + list(self.get_from_memory(1)),
                     num_samples=self.num_p_samples,
                     held_out_half=self.held_out_prompt_ranking,
                 )
@@ -505,6 +545,7 @@ class VILModel:
                             output_classes=self.output_classes,
                             agg="sum" if self.forward_use_classes else "max",
                         ).distribution
+
                         lps = lps.reshape(batch_size, p_tilde_2.shape[0], -1)
                         p2_kl = compute_pairwise_kl(lps)
                     else:
@@ -536,8 +577,16 @@ class VILModel:
                     f"P2 optimization step done [{num_step + 1}/{self.num_p2_steps}]."
                 )
                 log_message(f"Optimization metric: {best_p2_elbo}")
-                log_message(f"Current prompt selected: {best_p2}")
 
+            log_message("--- P2 ---")
+            for i, (p_tilde_2_i, p2_elbo_i, p2_kl_i) in enumerate(
+                zip(p_tilde_2, p2_elbo, p2_kl)
+            ):
+                log_message(
+                    "#", i, "ELBO:", p2_elbo_i, "XE:", p2_kl_i, ",", p_tilde_2_i
+                )
+            log_message("Best P2 Index: ", best_p2_index)
+            log_message("Best P2: ", best_p2, best_p2_elbo)
             log_message("Optimization of P2... DONE.", p2_elbos)
         else:
             p_tilde_2 = np.asarray([self.encoder_l2.weight])
@@ -559,7 +608,7 @@ class VILModel:
                     y=h_tilde_1_star,
                     y_hat=h1,
                     losses=losses,
-                    prompt=current_prompt,
+                    prompt=[current_prompt] + list(self.get_from_memory(0)),
                     num_samples=self.num_p_samples,
                     held_out_half=self.held_out_prompt_ranking,
                 )
@@ -575,8 +624,15 @@ class VILModel:
                 ll_orig = scores[:, 0, :]
 
                 if self.use_nce:
-                    weights = np.exp(scores[:, 1:, :]) / np.exp(scores[:, 1:, :]).sum(1)[:, None, :]
-                    p1_elbo = (eval_weights[:, :, None] * np.log(weights + 1e-12)).sum(1).mean(0)
+                    weights = (
+                        np.exp(scores[:, 1:, :])
+                        / np.exp(scores[:, 1:, :]).sum(1)[:, None, :]
+                    )
+                    p1_elbo = (
+                        (eval_weights[:, :, None] * np.log(weights + 1e-12))
+                        .sum(1)
+                        .mean(0)
+                    )
                 else:
                     p1_elbo = self.compute_elbo_score(scores[:, 1:, :], eval_weights)
 
@@ -586,14 +642,16 @@ class VILModel:
 
                     if len(error_terms) > 0:
                         ll_errors = ll_orig[error_terms]
-                        p1_elbo = (
-                            p1_elbo
-                            - self.logp_penalty * ll_errors.sum(0) / ll_orig.shape[0]
-                        )
+                        penalty = ll_errors.sum(0) / ll_orig.shape[0]
+                    else:
+                        penalty = 0.0
+                    p1_reward = p1_elbo - self.logp_penalty * penalty
+                else:
+                    p1_reward = p1_elbo
 
-                best_p1 = p_tilde_1[np.argmax(p1_elbo)]
-                best_p1_elbo = np.max(p1_elbo)
-                best_p1_index = np.argmax(p1_elbo)
+                best_p1_index = np.argmax(p1_reward)
+                best_p1 = p_tilde_1[best_p1_index]
+                best_p1_elbo = p1_elbo[best_p1_index]
                 current_prompt = best_p1
 
                 p1_elbos.append(best_p1_elbo)
@@ -601,32 +659,40 @@ class VILModel:
                 log_message(
                     f"P1 optimization step done [{num_step + 1}/{self.num_p1_steps}]."
                 )
-                log_message(f"Optimization metric: {'->'.join(['{:.3f}'.format(e) for e in p1_elbos])}")
-                log_message(f"Current prompt selected: {best_p1}")
-
-            log_message("Optimization of P1... DONE.", p1_elbos)
+                log_message(
+                    f"Optimization metric: {'->'.join(['{:.3f}'.format(e) for e in p1_elbos])}"
+                )
         else:
             p_tilde_1 = np.asarray([self.encoder_l1.weight])
             p1_elbo = np.zeros(self.num_p_samples)
             best_p1 = self.encoder_l1.weight
             best_p1_elbo = 0.0
             best_p1_index = 0
+            p1_reward = p1_elbo
+            p1_elbos = [p1_elbo]
 
         self.result_entry.log_candidates(p_tilde_2, p2_elbo, p_tilde_1, p1_elbo)
-        log_message("--- P1 ---")
-        for i, (p_tilde_1_i, p1_elbo_i) in enumerate(zip(p_tilde_1, p1_elbo)):
-            log_message("#", i, "ELBO:", p1_elbo_i, ",", p_tilde_1_i)
 
-        log_message("--- P2 ---")
-        for i, (p_tilde_2_i, p2_elbo_i, p2_kl_i) in enumerate(
-            zip(p_tilde_2, p2_elbo, p2_kl)
+        log_message("--- P1 ---")
+        for i, (p_tilde_1_i, p1_elbo_i, p1_reward_i) in enumerate(
+            zip(p_tilde_1, p1_elbo, p1_reward)
         ):
-            log_message("#", i, "ELBO:", p2_elbo_i, "XE:", p2_kl_i, ",", p_tilde_2_i)
+            log_message(
+                "#",
+                i,
+                "ELBO:",
+                p1_elbo_i,
+                ",",
+                "Reward:",
+                p1_reward_i,
+                ",",
+                p_tilde_1_i,
+            )
 
         log_message("Best P1 Index: ", best_p1_index)
-        log_message("Best P2 Index: ", best_p2_index)
         log_message("Best P1: ", best_p1, best_p1_elbo)
-        log_message("Best P2: ", best_p2, best_p2_elbo)
+        log_message("Optimization of P1... DONE.", p1_elbos)
+
         return best_p1_elbo, best_p2_elbo, best_p1, best_p2
 
     def score_p1(self, eval_x, eval_h_tilde_1, p_tilde_1):
@@ -644,6 +710,7 @@ class VILModel:
                                 p_tilde_1[k],
                             )
                         )
+
             # (batch_size, num_h_samples, num_p_samples)
             scores = self.encoder_l1.log_p(
                 inputs=np.array([eval[0] for eval in evals]),

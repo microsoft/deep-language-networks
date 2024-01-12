@@ -407,6 +407,18 @@ class Leopard(Dataset):
                         "- " + item for item in list(self.label_mapping.values())
                     ]
                     sentence = "\n".join(sentence)
+                # append short description of the task
+                if self.dataset_name == "disaster":
+                    sentence = (
+                        "Is the following tweet relevant to a disaster? "
+                        + sentence
+                    )
+                # append short description of the task
+                elif self.dataset_name == "airline":
+                    sentence = (
+                        "Is the following tweet positive, negative, or neutral? "
+                        + sentence
+                    )
                 sentence_list.append(sentence)
                 label_list.append(label)
         indices = data_shuffling_rng.choice(len(sentence_list), 1500, replace=False)

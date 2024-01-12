@@ -4,10 +4,12 @@ v3.0:
     A student is completing a task that requires producing a text output from a text input. The student receives an instruction that describes how to produce the output given each input.
     The student has made some errors. Your task is to improve the instruction such that the student can fix the errors.
 
+    {-% if prompt != '' %}
     This was the instruction.
     ## Instruction
     > {{ prompt }}
     [END]
+    {% endif %-}
 
     # Student successes
     {% for backward_info in backward_infos %} {% if backward_info.loss == 0.0 %}

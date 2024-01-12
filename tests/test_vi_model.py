@@ -62,15 +62,19 @@ def mock_prompt_sampler():
 
 @pytest.fixture
 def mock_posterior_sampler():
+    np.random.seed(42)
     class MockPosteriorSampler:
         def sample_q_h(self, *args, **kwargs):
-            return np.array(
-                [
-                    ["test 1.1", "test 1.2"],
-                    ["test 2.1", "test 2.2"],
-                    ["test 3.1", "test 3.2"],
-                    ["test 4.1", "test 4.2"],
-                ]
+            return (
+                np.array(
+                    [
+                        ["test 1.1", "test 1.2"],
+                        ["test 2.1", "test 2.2"],
+                        ["test 3.1", "test 3.2"],
+                        ["test 4.1", "test 4.2"],
+                    ]
+                ),
+                np.random.rand(4, 2)
             )
     return MockPosteriorSampler()
 
@@ -97,11 +101,35 @@ def test_compute_elbo_score(loss_fn, log_likes, class_weights):
     assert np.allclose(elbo_score, [0.37, 0.33])
 
 
-def test_sample_hidden_states(loss_fn, mock_prompt_sampler, mock_posterior_sampler):
+@pytest.mark.parametrize(
+    "sharpening, expected_weights",
+    [
+        (False, [
+            [0.28796663, 0.71203337],
+            [0.45481729, 0.54518271],
+            [0.63320434, 0.36679566],
+            [0.40828206, 0.59171794],
+        ]),
+        (True, [
+            [0.49463866, 0.50536134],
+            [0.41618364, 0.58381636],
+            [0.58395892, 0.41604108],
+            [0.35088478, 0.64911522],
+        ]),
+    ],
+)
+def test_sample_hidden_states(
+    loss_fn,
+    mock_prompt_sampler,
+    mock_posterior_sampler,
+    sharpening,
+    expected_weights
+):
     np.random.seed(42)
     inputs = np.array(["test-1", "test-2", "test-3", "test-4"])
     y = np.array(["test_1", "test_2", "test_3", "test_4"])
     h = np.array(["test 1", "test2", "test 3", "test4"])
+    losses = np.array([1.0, 1.0, 1.0, 1.0])
     num_h_samples = 2
     model = VILModel(
         loss_fn,
@@ -109,6 +137,7 @@ def test_sample_hidden_states(loss_fn, mock_prompt_sampler, mock_posterior_sampl
         prompt_sampler_2=mock_prompt_sampler,
         posterior_sampler=mock_posterior_sampler,
         num_h_samples=num_h_samples,
+        posterior_sharpening_correct_weighting=sharpening,
     )
     total_h_samples = len(inputs) * num_h_samples
     mock_l2_log_p = LogProbs(
@@ -122,7 +151,9 @@ def test_sample_hidden_states(loss_fn, mock_prompt_sampler, mock_posterior_sampl
     ), patch.object(
         ResidualPriorLayer, "log_p", return_value=mock_l1_log_p
     ):
-        hidden_states = model.sample_hidden_states(x=inputs, y=y, h1=h)
+        hidden_states = model.sample_hidden_states(
+            x=inputs, y=y, h1=h, losses=losses
+        )
 
     residual_h_tilde_1, h_tilde_1, h_tilde_1_star, weights = hidden_states
 
@@ -147,18 +178,14 @@ def test_sample_hidden_states(loss_fn, mock_prompt_sampler, mock_posterior_sampl
             ],
         ],
     )
-    np.testing.assert_equal(h_tilde_1, mock_posterior_sampler.sample_q_h())
+    mock_h_tilde_1, _ = mock_posterior_sampler.sample_q_h()
+    np.testing.assert_equal(h_tilde_1, mock_h_tilde_1)
     np.testing.assert_equal(
         h_tilde_1_star, ["test 1.2", "test 2.2", "test 3.1", "test 4.2"]
     )
     np.testing.assert_almost_equal(
         weights,
-        [
-            [0.28796663, 0.71203337],
-            [0.45481729, 0.54518271],
-            [0.63320434, 0.36679566],
-            [0.40828206, 0.59171794],
-        ],
+        expected_weights,
     )
 
 
@@ -186,11 +213,14 @@ def test_inference_one_layer(loss_fn, backward_info, log_p_fn, mock_prompt_sampl
 
 
 @pytest.mark.parametrize(
-    "train_p1, train_p2, expec_best_p1_elbo, expec_best_p2_elbo, expec_best_p1, expec_best_p2",
+    "train_p1, train_p2, sharpening, expec_best_p1_elbo, expec_best_p2_elbo, expec_best_p1, expec_best_p2",
     [
-        (True, False, 0.44168435, 0.0, "prompt 2", ""),  # Train p1
-        (False, True, 0.0, 0.54359470, "", "prompt 2"),  # Train p2
-        (True, True, 0.44168435, 0.54359470, "prompt 2", "prompt 2"),  # Train e2e
+        (True, False, False, 0.44168435, 0.0, "prompt 2", ""),  # Train p1
+        (False, True, False, 0.0, 0.54359470, "", "prompt 2"),  # Train p2
+        (True, True, False, 0.44168435, 0.54359470, "prompt 2", "prompt 2"),  # Train e2e
+        (True, False, True, 0.44901113, 0.0, "prompt 2", ""),  # Train p1
+        (False, True, True, 0.0, 0.5610236, "", "prompt 2"),  # Train p2
+        (True, True, True, 0.44901113, 0.5610236, "prompt 2", "prompt 2"),  # Train e2e
     ],
 )
 def test_inference_vi(
@@ -201,6 +231,7 @@ def test_inference_vi(
     mock_posterior_sampler,
     train_p1,
     train_p2,
+    sharpening,
     expec_best_p1_elbo,
     expec_best_p2_elbo,
     expec_best_p1,
@@ -221,6 +252,7 @@ def test_inference_vi(
         num_p_samples=num_p_samples,
         train_p1=train_p1,
         train_p2=train_p2,
+        posterior_sharpening_correct_weighting=sharpening,
     )
     with patch.object(
         PriorLayer, "log_p", log_p_fn
@@ -239,11 +271,14 @@ def test_inference_vi(
 
 
 @pytest.mark.parametrize(
-    "train_p1, train_p2, expec_elbo, expec_best_p1, expec_best_p2, expec_loss_mean, expec_elbo1, expec_elbo2",
+    "train_p1, train_p2, sharpening, expec_elbo, expec_best_p1, expec_best_p2, expec_loss_mean, expec_elbo1, expec_elbo2",
     [
-        (True, False, 0.44168435, 'prompt 2', '', 0.5, 0.44168435, 0.0),  # Train p1
-        (False, True, 0.54359470, '', 'prompt 2', 0.5, 0.0, 0.54359470),  # Train p2
-        (True, True, 0.98527906, 'prompt 2', 'prompt 2', 0.5, 0.44168435, 0.54359470),  # Train e2e
+        (True, False, False, 0.44168435, 'prompt 2', '', 0.5, 0.44168435, 0.0),  # Train p1
+        (False, True, False, 0.54359470, '', 'prompt 2', 0.5, 0.0, 0.54359470),  # Train p2
+        (True, True, False, 0.98527906, 'prompt 2', 'prompt 2', 0.5, 0.44168435, 0.54359470),  # Train e2e
+        (True, False, True, 0.44901113, 'prompt 2', '', 0.5, 0.44901113, 0.0),  # Train p1
+        (False, True, True, 0.56102367, '', 'prompt 2', 0.5, 0.0, 0.56102367),  # Train p2
+        (True, True, True, 1.01003481, 'prompt 2', 'prompt 2', 0.5, 0.44901113, 0.56102367),  # Train e2e
     ],
 )
 def test_forward_two_layers(
@@ -255,6 +290,7 @@ def test_forward_two_layers(
     mock_posterior_sampler,
     train_p1,
     train_p2,
+    sharpening,
     expec_elbo,
     expec_best_p1,
     expec_best_p2,
@@ -279,6 +315,7 @@ def test_forward_two_layers(
         train_p1=train_p1,
         train_p2=train_p2,
         two_layers=True,
+        posterior_sharpening_correct_weighting=sharpening,
     )
     with patch.object(
         PriorLayer, "forward", return_value=y_hat
