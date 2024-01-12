@@ -41,9 +41,9 @@ class LogProbsScore:
     cache = {}
     eval_cache = {}
 
-    def __init__(self, forward_evaluate: LLM):
+    def __init__(self, forward_evaluate: LLM, burn_in_ratio: float = 0.05):
         self.forward_evaluate = forward_evaluate
-        self.burn_in_ratio = 0.05
+        self.burn_in_ratio = burn_in_ratio
         self.cache = {}
 
     def score_requests(self, requests, output_classes=None, agg="max") -> LogProbs:
@@ -71,7 +71,7 @@ class LogProbsScore:
             "raw_logprobs": False,
             "top_logprobs": 100,
         }
-        
+
         output_logprobs = []
         output_distribs = []
 

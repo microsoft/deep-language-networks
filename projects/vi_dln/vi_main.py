@@ -343,6 +343,12 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     help="Use NCE for hidden scoring.",
 )
 @click.option(
+    "--burn_in_ratio",
+    type=float,
+    default=0.05,
+    help="Ratio of target tokens to skip when calculating logprobs.",
+)
+@click.option(
     "--result_data_path",
     type=str,
     default=None,
@@ -408,6 +414,7 @@ def main(
     p2_max_tokens,
     num_p1_steps,
     use_nce,
+    burn_in_ratio,
     result_data_path,
     enable_wandb,
 ):
@@ -488,7 +495,7 @@ def main(
     loss_fn = LossRegistry.instantiate(loss_function, postproc)
     prompt_sampler = PromptSampler(bwd_model, q_prompt)
     posterior_sampler = PosteriorSampler(bwd_model, q_hidden)
-    logprobs_score = LogProbsScore(fwd_model)
+    logprobs_score = LogProbsScore(fwd_model, burn_in_ratio)
     model = VILModel(
         loss_fn,
         init_p1=init_p1,
