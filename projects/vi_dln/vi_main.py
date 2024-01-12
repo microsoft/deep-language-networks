@@ -546,6 +546,7 @@ def main(
         posterior_sharpening_use_mi_regularization=posterior_sharpening_use_mi_regularization,
         use_nce=use_nce,
         rewrite_loss_only=rewrite_loss_only,
+        prompt_scoring=prompt_scoring,
     )
 
     running_acc = 0.0

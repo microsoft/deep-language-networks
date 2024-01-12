@@ -140,6 +140,25 @@ class JointLModel:
         self.prompt_memory = []
         self.result_entry = ResultLogEntry()
 
+    def get_from_memory(self, layer_index=0):
+        assert layer_index in [0, 1], "Layer index out of bounds"
+        return np.asarray([p[layer_index] for p in self.prompt_memory])
+
+    def add_to_memory(self, p1, p2, score):
+        """
+        Max memory size is 2. Add (p1, p2, score) to memory and keep memory sorted.
+        Keep best two prompts in memory.
+        """
+        if self.use_memory == 0:
+            raise ValueError("Cannot add to memory if use_memory is 0")
+
+        self.prompt_memory.append((p1, p2, score))
+        self.prompt_memory = sorted(
+            self.prompt_memory, key=lambda x: x[2], reverse=True
+        )
+        if len(self.prompt_memory) > self.use_memory:
+            self.prompt_memory = self.prompt_memory[: self.use_memory][::-1]
+
     def sample_hidden_states(
         self,
         x,
@@ -345,6 +364,9 @@ class JointLModel:
             num_samples=self.num_p_samples,
             held_out_half=self.held_out_prompt_ranking,
         )
+
+        if self.prompt_memory:
+            p_tilde_2 = np.concatenate([p_tilde_2, self.get_from_memory(1)], 0)
 
         evals = []
         for i in range(eval_batch_size):
