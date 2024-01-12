@@ -112,20 +112,23 @@ class LogProbsScore:
                 min_prob = 1e-6
 
             output_classes_scores = np.asarray([min_prob for _ in output_classes])
+            # remove tokenization artifacts
+            clean_text_map = {
+                self.forward_evaluate.clean_text(i): i
+                for i in context_top_logprobs.keys()
+            }
             # accumulate probability mass for each class verbalizer
             # the class verbalizer can be either " a" or "a" (with or without space)
-            extenders = [
-                " ",  # gpt case, regular space
-                "▁",  # llama case, this is not an underscore ord("_") -> 95, but a special character ord("▁") -> 9601
-            ]
             for i in range(len(output_classes)):
                 verbalizers = output_classes.verbalizers(i)
-                verbalizers.extend([f"{e}{v}" for v in verbalizers for e in extenders])
+                verbalizers.extend([f" {v}" for v in verbalizers])
                 verbalizers = set(verbalizers)
                 verbalizers_scores = [0.]
                 for verbalizer in verbalizers:
-                    if verbalizer in context_top_logprobs:
-                        prob_orig = np.exp(context_top_logprobs[verbalizer])
+                    if verbalizer in clean_text_map:
+                        prob_orig = np.exp(
+                            context_top_logprobs[clean_text_map[verbalizer]]
+                        )
                     else:
                         prob_orig = min_prob
                     verbalizers_scores.append(prob_orig)
