@@ -6,7 +6,7 @@ import numpy as np
 
 from dln.operator import LLM
 from dln.template import load_template
-from dln.vi.utils import log_message
+from dln.utils import log_message
 
 
 @dataclass

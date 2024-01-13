@@ -6,6 +6,7 @@ import numpy as np
 from termcolor import colored
 
 from dln.operator import LLM
+from dln.utils import log_message
 
 
 @dataclass
@@ -82,8 +83,8 @@ class LogProbsScore:
                 context_ = f"{context}\n"
                 to_eval.append(context_)
 
-        print("# Scoring requests = {}".format(len(contexts)))
-        print("# Scoring non cached requests = {}".format(len(to_eval)))
+        log_message("# Scoring requests = {}".format(len(contexts)))
+        log_message("# Scoring non cached requests = {}".format(len(to_eval)))
 
         partial_results = self.forward_evaluate(
             to_eval,

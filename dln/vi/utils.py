@@ -6,11 +6,6 @@ from typing import Optional
 
 import numpy as np
 
-# Use this function to log messages to the file
-def log_message(*messages):
-    # print(*messages)
-    logging.info(" ".join(map(str, messages)))
-
 
 def compute_pairwise_kl(lps):
     """We make updates constrained by the KL divergence between the function induced by the current prompt

@@ -359,6 +359,17 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     is_flag=True,
     help="Enable wandb logging. Requires wandb to be installed.",
 )
+@click.option(
+    "--prompt_scoring",
+    type=str,
+    default="vi",
+    help=f"Prompt scoring function. One of {['vi', 'J_SL', 'J_RL', 'J_CL']}",
+)
+@click.option(
+    "--verbose",
+    is_flag=True,
+    help="Print information to console.",
+)
 def main(
     seed,
     out_dir,
@@ -417,11 +428,14 @@ def main(
     burn_in_ratio,
     result_data_path,
     enable_wandb,
+    prompt_scoring,
+    verbose,
 ):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S.%f")
     out_dir = os.path.join(out_dir, timestamp)
     os.makedirs(out_dir, exist_ok=True)
     output_log_dir = os.path.join(out_dir, "output.log")
+    print("Logging to... {}".format(output_log_dir))
     logging.basicConfig(
         filename=output_log_dir,
         level=logging.INFO,
@@ -602,8 +616,8 @@ def main(
         # Update prompts
         model.encoder_l1.weight = p1
         model.encoder_l2.weight = p2
-        log_message("Current L1 weights:", model.encoder_l1.weight)
-        log_message("Current L2 weights:", model.encoder_l2.weight)
+        log_message("Current L1 weights:", model.encoder_l1.weight, verbose=verbose)
+        log_message("Current L2 weights:", model.encoder_l2.weight, verbose=verbose)
         log_message("Patience: {}".format(patience))
 
         if iteration == 0:
@@ -614,13 +628,13 @@ def main(
             running_acc = 0.2 * (1.0 - loss) + 0.8 * running_acc
 
         log_message("--------------------")
-        log_message(colored("{} TRAINING EPOCH DONE.".format(iteration), "blue"))
-        log_message(colored("ELBO: {}".format(elbo), "blue"))
-        log_message(colored("ACC: {}".format((1.0 - loss)), "blue"))
-        log_message(colored("RUN ELBO: {}".format(running_elbo), "blue"))
-        log_message(colored("RUN ACC: {}".format(running_acc), "blue"))
-        log_message(colored("BATCH Y BALANCE: {}".format(Counter(y)), "blue"))
-        log_message(colored("BATCH X LEN: {}".format([len(x_i) for x_i in x]), "blue"))
+        log_message(colored("{} TRAINING EPOCH DONE.".format(iteration), "blue"), verbose=verbose)
+        log_message(colored("ELBO: {}".format(elbo), "blue"), verbose=verbose)
+        log_message(colored("ACC: {}".format((1.0 - loss)), "blue"), verbose=verbose)
+        log_message(colored("RUN ELBO: {}".format(running_elbo), "blue"), verbose=verbose)
+        log_message(colored("RUN ACC: {}".format(running_acc), "blue"), verbose=verbose)
+        log_message(colored("BATCH Y BALANCE: {}".format(Counter(y)), "blue"), verbose=verbose)
+        log_message(colored("BATCH X LEN: {}".format([len(x_i) for x_i in x]), "blue"), verbose=verbose)
 
         if wandb_enabled:
             prompt_table.add_data(iteration + 1, str(p1), str(p2))
@@ -630,8 +644,8 @@ def main(
             )
 
         writer.add_scalar("elbo", elbo, iteration)
-        writer.add_scalar("elbo1", elbo1, iteration)
-        writer.add_scalar("elbo2", elbo2, iteration)
+        # writer.add_scalar("elbo1", elbo1, iteration)
+        # writer.add_scalar("elbo2", elbo2, iteration)
         writer.add_scalar("acc", (1.0 - loss), iteration)
         model.result_entry.log_metric("elbo", elbo)
         model.result_entry.log_metric("acc", (1.0 - loss))
@@ -644,8 +658,8 @@ def main(
     model.encoder_l1.weight = best_ps[0]
     model.encoder_l2.weight = best_ps[1]
 
-    log_message("Best L1 weights:", model.encoder_l1.weight)
-    log_message("Best L2 weights:", model.encoder_l2.weight)
+    log_message("Best L1 weights:", model.encoder_l1.weight, verbose=verbose)
+    log_message("Best L2 weights:", model.encoder_l2.weight, verbose=verbose)
 
     log_message("TRAINING TOKEN COST:", llm_registry.total_cost)
     test_acc = test(dataset, model, loss_fn, iteration, writer, cost_only=cost_only)
@@ -653,8 +667,8 @@ def main(
     if wandb_enabled:
         wandb.log({"test/acc": test_acc, "epoch": iteration})
 
-    log_message(colored("DEV ACC: {}".format(best_dev), "green"))
-    log_message(colored("TEST ACC: {}".format(test_acc), "green"))
+    log_message(colored("DEV ACC: {}".format(best_dev), "green"), verbose=verbose)
+    log_message(colored("TEST ACC: {}".format(test_acc), "green"), verbose=verbose)
     log_message("TOTAL TOKEN COST:", llm_registry.total_cost)
 
     result_writer.save_to_json_file()

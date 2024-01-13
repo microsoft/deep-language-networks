@@ -7,7 +7,7 @@ from dln.loss import LLoss
 from dln.operator import LLM
 from dln.score import LogProbs, LogProbsScore, OutputClasses, ScoreRequest
 from dln.template import load_template
-from dln.vi.utils import log_message
+from dln.utils import log_message
 
 
 class PriorLayer:

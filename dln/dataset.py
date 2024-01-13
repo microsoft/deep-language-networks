@@ -9,7 +9,7 @@ import yaml
 from datasets import load_dataset as hf_load_dataset
 
 from dln.score import OutputClasses
-from dln.vi.utils import log_message
+from dln.utils import log_message
 
 
 def option_shuffle(data_point, rng):
