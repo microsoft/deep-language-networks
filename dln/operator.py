@@ -323,6 +323,7 @@ class VLLM(LLM):
     ) -> List[str]:
         if not isinstance(inputs, list):
             inputs = [inputs]
+        self.check_max_length(inputs, **kwargs)
         generation_options = self.generation_options.copy()
         generation_options.update(**kwargs)
         if async_generation:
@@ -337,6 +338,18 @@ class VLLM(LLM):
                 for _input in inputs
             ]
         return outputs
+
+    def check_max_length(self, inputs: Union[List[str], str], **kwargs) -> bool:
+        gen_max_length = kwargs.get("max_length") or self.generation_options.get("max_length", 0)
+        model_max_len = self.encoder.model_max_length
+        if not isinstance(inputs, list):
+            inputs = [inputs]
+        for i in inputs:
+            if len(self.encoder.tokenize(i)) + gen_max_length > model_max_len:
+                raise ValueError(
+                    "Input + generation length should be less "
+                    f"than model_max_length {model_max_len}"
+                )
 
     def encode(self, string: str) -> List[int]:
         return self.encoder.encode(string)
