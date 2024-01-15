@@ -370,6 +370,21 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     is_flag=True,
     help="Print information to console.",
 )
+@click.option(
+   "--sample_more_h",
+    is_flag=True,
+    help="To sample more hidden states generated from the p1 candidates.",
+)
+@click.option(
+    "--force_eval_weights_to_1",
+    is_flag=True,
+    help="To force eval weights to all be 1 when scoring p1.",
+)
+@click.option(
+    "--keep_only_h_given_p_tilde",
+    is_flag=True,
+    help="To only keep the Hs generated from p1 candidates.",
+)
 def main(
     seed,
     out_dir,
@@ -430,6 +445,9 @@ def main(
     enable_wandb,
     prompt_scoring,
     verbose,
+    sample_more_h,
+    force_eval_weights_to_1,
+    keep_only_h_given_p_tilde,
 ):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S.%f")
     out_dir = os.path.join(out_dir, timestamp)
@@ -547,6 +565,9 @@ def main(
         use_nce=use_nce,
         rewrite_loss_only=rewrite_loss_only,
         prompt_scoring=prompt_scoring,
+        sample_more_h=sample_more_h,
+        force_eval_weights_to_1=force_eval_weights_to_1,
+        keep_only_h_given_p_tilde=keep_only_h_given_p_tilde,
     )
 
     running_acc = 0.0

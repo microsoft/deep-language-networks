@@ -296,7 +296,7 @@ class VLLM(LLM):
         super().__init__(model_name, **generation_options)
         self.encoder = instantiate_tokenizer(model_name)
 
-    @_retry_request(min_wait=1, max_wait=1, max_attempts=100)
+    @_retry_request(min_wait=1, max_wait=1, max_attempts=3)
     async def _aget_vllm_response(self, input, **kwargs):
         response = await openai.Completion.acreate(
             model=self.engine,

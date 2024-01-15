@@ -15,13 +15,13 @@ posterior_temp=1.
 trust_factor=5.
 p_hidden_tpl="suffix_forward_tbs"
 q_hidden_tpl="suffix_forward_tbs_y|suffix_forward_tbs"
-fwd_model_type="/vllm/phi-2"
-bwd_model_type="gpt-35-turbo"
+fwd_model_type="microsoft/phi-2"
+bwd_model_type="microsoft/phi-2"
 
 # dataset
-for dataset in hyperbaton navigate date_understanding logical_deduction_seven_objects mpqa trec subj disaster airline; do
+for dataset in navigate; do #hyperbaton navigate date_understanding logical_deduction_seven_objects mpqa trec subj disaster airline; do
 
-dir=log/phi2/${dataset}/DLN-2/
+dir=log/phi2_hg_49a1d5a16/${dataset}/DLN-2/
 
 if [ ! -f ${dir}/done.txt ]; then
     /bin/rm -rf ${dir}

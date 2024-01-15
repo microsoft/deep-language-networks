@@ -50,6 +50,9 @@ class VILModel:
         use_nce: bool = False,
         rewrite_loss_only = False,
         prompt_scoring: str = "vi",
+        sample_more_h=False,
+        force_eval_weights_to_1 = False,
+        keep_only_h_given_p_tilde = False,
     ):
         """
         Args:
@@ -144,6 +147,9 @@ class VILModel:
         self.use_nce = use_nce
         self.rewrite_loss_only = rewrite_loss_only
         self.prompt_scoring = prompt_scoring
+        self.sample_more_h = sample_more_h
+        self.force_eval_weights_to_1 = force_eval_weights_to_1
+        self.keep_only_h_given_p_tilde = keep_only_h_given_p_tilde
 
         if self.forward_use_classes:
             assert (
@@ -619,10 +625,44 @@ class VILModel:
 
                 # marginalize over all posterior samples
                 # build array: (num_samples, num_h_samples, num_p_samples)
-                evals = []
-                eval_h_tilde_1_ = np.concatenate([h1[:, None], eval_h_tilde_1], 1)
-                scores = self.score_p1(eval_x, eval_h_tilde_1_, p_tilde_1)  # p(h|x, pi_0)
+                eval_h_tilde_1_ = np.concatenate([h1[:, None], eval_h_tilde_1], 1)  # TODO: increase number of h1 sample, i.e. not temp=0.
+
+                if self.sample_more_h:
+                    # Add more samples of hidden states obtained from the prompt candidates.
+                    h_given_p_tilde, ll_h_given_p_tilde = [], []
+                    # Backup encoder_l1.weight.
+                    encoder_l1_weight_bkp = self.encoder_l1.weight
+                    for p_tilde_1_ in p_tilde_1:
+                        self.encoder_l1.weight = p_tilde_1_
+                        h_, ll_h_, h_tks = self.encoder_l1(
+                            eval_x,
+                            temperature=0,  # TODO: change temperature.
+                            max_tokens=self.p1_max_tokens,
+                            return_logprobs=True
+                        )
+
+                        ll_h_given_p_tilde.append(ll_h_)
+                        h_given_p_tilde.append(h_[:, None])
+
+                    # Reset encoder_l1.weight.
+                    self.encoder_l1.weight = encoder_l1_weight_bkp
+                    h_given_p_tilde = np.concatenate(h_given_p_tilde, 1)
+                    if self.keep_only_h_given_p_tilde:
+                        eval_h_tilde_1_ = h_given_p_tilde
+                    else:
+                        eval_h_tilde_1_ = np.concatenate([eval_h_tilde_1_, h_given_p_tilde], 1)
+
+                    # TODO:
+                    # Baseline: no new h, eval_weights = 1 for all samples.
+                    # Just New h, no old h, eval_weights = 1.
+                    # New h + old h, eval_weights = 1 for all.
+                    # After: new scoring function.
+
+                scores = self.score_p1(eval_x, eval_h_tilde_1_, p_tilde_1)  # logp_h_given_x_pi0
                 ll_orig = scores[:, 0, :]
+
+                if self.force_eval_weights_to_1:
+                    eval_weights = np.ones((batch_size, scores.shape[1]-1))
 
                 if self.use_nce:
                     weights = np.exp(scores[:, 1:, :]) / np.exp(scores[:, 1:, :]).sum(1)[:, None, :]
