@@ -337,6 +337,12 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     help="Number of prompt optimization steps for the hidden layer.",
 )
 @click.option(
+    "--connections_config",
+    type=click.Path(exists=True),
+    default=None,
+    help="Path to the connections config yaml file.",
+)
+@click.option(
     "--use_nce",
     type=bool,
     default=False,
@@ -413,6 +419,7 @@ def main(
     p1_max_tokens,
     p2_max_tokens,
     num_p1_steps,
+    connections_config,
     use_nce,
     burn_in_ratio,
     result_data_path,
@@ -471,23 +478,28 @@ def main(
     # Use the same model type if bwd is not specified.
     bwd_model_type = bwd_model_type or fwd_model_type
 
-    llm_registry = LLMRegistry()
+    if connections_config is not None:
+        llm_registry = LLMRegistry.from_yaml(connections_config)
+        fwd_model = llm_registry.get(fwd_model_type)
+        bwd_model = llm_registry.get(bwd_model_type)
+    else:
+        llm_registry = LLMRegistry()
 
-    fwd_model = llm_registry.register(
-        "fwd_model",
-        fwd_model_type,
-        temperature=0.0,
-        max_tokens=fwd_max_tokens,
-        stop=None,
-    )
+        fwd_model = llm_registry.register(
+            "fwd_model",
+            fwd_model_type,
+            temperature=0.0,
+            max_tokens=fwd_max_tokens,
+            stop=None,
+        )
 
-    bwd_model = llm_registry.register(
-        "bwd_model",
-        bwd_model_type,
-        temperature=bwd_temp,
-        max_tokens=bwd_max_tokens,
-        stop=None,
-    )
+        bwd_model = llm_registry.register(
+            "bwd_model",
+            bwd_model_type,
+            temperature=bwd_temp,
+            max_tokens=bwd_max_tokens,
+            stop=None,
+        )
 
     postproc = None
     if loss_function == "exact_match_loss":
