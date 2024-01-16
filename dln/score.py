@@ -166,8 +166,8 @@ class LogProbsScore:
             if to_eval not in self.eval_cache:
                 eval_keys.append(to_eval)
 
-        print("# Scoring requests = {}".format(len(contexts)))
-        print("# Scoring non cached requests = {}".format(len(eval_keys)))
+        log_message("# Scoring requests = {}".format(len(contexts)))
+        log_message("# Scoring non cached requests = {}".format(len(eval_keys)))
 
         logging.info(
             "Computing log prob of the red part:\n" +

@@ -266,57 +266,14 @@ class VILModel:
         else:
             raise NotImplementedError()
 
-    def sample_hidden_states(
+    def _tighten_posterior_approximation(
         self,
-        x,
-        y,
-        h1,
-        losses,
-        include_h1=False,
+        x: np.array,
+        y: np.array,
+        h_tilde_1: np.array,
+        ll_h_tilde_1: np.array,
     ):
-        # samples from the approx. posterior of h_1
-        # (batch_size, num_h_samples)
-        # q(h | x, y, p_1, p_2)
         batch_size = x.shape[0]
-        assert h1.shape[0] == batch_size
-
-        if not self.num_h_samples and not include_h1:
-            raise ValueError("Must sample at least one h or include h1")
-
-        if self.num_h_samples:
-            error_indices = (
-                np.where(losses > 0.0)[0]
-                if self.rewrite_loss_only
-                else np.arange(batch_size)
-            )
-
-            h_tilde_1_, ll_h_tilde_1_ = self.q_sampler.sample_q_h(
-                x=x[error_indices],
-                y=y[error_indices],
-                h=h1[error_indices],
-                prompt=self.encoder_l1.weight,
-                next_prompt=self.encoder_l2.weight,
-                num_samples=self.num_h_samples,
-                return_logprobs=True,
-            )
-
-            h_tilde_1 = np.concatenate(
-                [h1[:, None] for _ in range(self.num_h_samples)], axis=1
-            ).astype(object)  # astype(object) avoids truncating h_tilde_1_
-            ll_h_tilde_1 = np.ones((x.shape[0], self.num_h_samples), dtype="float32")
-            h_tilde_1[error_indices] = h_tilde_1_
-            ll_h_tilde_1[error_indices] = ll_h_tilde_1_
-
-        # concatenate the original sample
-        if include_h1:
-            log_message(
-                colored("Concatenating original sample to h_tilde_1!", "yellow")
-            )
-            if self.num_h_samples:
-                h_tilde_1 = np.concatenate([h1[:, None], h_tilde_1], axis=1)
-            else:
-                h_tilde_1 = h1[:, None]
-
         num_h_samples = h_tilde_1.shape[1]
 
         ## TIGHTEN POSTERIOR APPROXIMATION...
@@ -406,13 +363,67 @@ class VILModel:
             np.exp(logits / self.posterior_temp), axis=1, keepdims=True
         )
 
+        return weights, residual_h_tilde_1, logp_h_given_x_pi1, logp_y_given_h_pi2
+
+    def sample_hidden_states(
+        self,
+        x,
+        y,
+        h1,
+        losses,
+        include_h1=False,
+    ):
+        # samples from the approx. posterior of h_1
+        # (batch_size, num_h_samples)
+        # q(h | x, y, p_1, p_2)
+        batch_size = x.shape[0]
+        assert h1.shape[0] == batch_size
+
+        if not self.num_h_samples and not include_h1:
+            raise ValueError("Must sample at least one h or include h1")
+
+        if self.num_h_samples:
+            error_indices = (
+                np.where(losses > 0.0)[0]
+                if self.rewrite_loss_only
+                else np.arange(batch_size)
+            )
+
+            h_tilde_1_, ll_h_tilde_1_ = self.q_sampler.sample_q_h(
+                x=x[error_indices],
+                y=y[error_indices],
+                h=h1[error_indices],
+                prompt=self.encoder_l1.weight,
+                next_prompt=self.encoder_l2.weight,
+                num_samples=self.num_h_samples,
+                return_logprobs=True,
+            )
+
+            h_tilde_1 = np.concatenate(
+                [h1[:, None] for _ in range(self.num_h_samples)], axis=1
+            ).astype(object)  # astype(object) avoids truncating h_tilde_1_
+            ll_h_tilde_1 = np.ones((x.shape[0], self.num_h_samples), dtype="float32")
+            h_tilde_1[error_indices] = h_tilde_1_
+            ll_h_tilde_1[error_indices] = ll_h_tilde_1_
+
+        # concatenate the original sample
+        if include_h1:
+            log_message(
+                colored("Concatenating original sample to h_tilde_1!", "yellow")
+            )
+            if self.num_h_samples:
+                h_tilde_1 = np.concatenate([h1[:, None], h_tilde_1], axis=1)
+            else:
+                h_tilde_1 = h1[:, None]
+
+        weights, residual_h_tilde_1, logp_h_given_x_pi1, logp_y_given_h_pi2 = self._tighten_posterior_approximation(x, y, h_tilde_1, ll_h_tilde_1)
+
         # get best hidden state
         best_h_tilde_1_index: np.array = np.argmax(weights, axis=1)
         residual_h_tilde_1_star = residual_h_tilde_1[
             np.arange(batch_size), best_h_tilde_1_index
         ]
         h_tilde_1_star = h_tilde_1[np.arange(batch_size), best_h_tilde_1_index]
-        num_h_samples = h_tilde_1.shape[1]
 
         log_message("Prior h:", h1[0])
         log_message("Best Posterior h:", h_tilde_1_star[0])
@@ -625,7 +636,7 @@ class VILModel:
 
                 # marginalize over all posterior samples
                 # build array: (num_samples, num_h_samples, num_p_samples)
-                eval_h_tilde_1_ = np.concatenate([h1[:, None], eval_h_tilde_1], 1)  # TODO: increase number of h1 sample, i.e. not temp=0.
+                eval_h_tilde_1_ = np.concatenate([h1[:, None], eval_h_tilde_1], 1)
 
                 if self.sample_more_h:
                     # Add more samples of hidden states obtained from the prompt candidates.
@@ -646,17 +657,17 @@ class VILModel:
 
                     # Reset encoder_l1.weight.
                     self.encoder_l1.weight = encoder_l1_weight_bkp
+
                     h_given_p_tilde = np.concatenate(h_given_p_tilde, 1)
+
+                    # Compute weights for new Hs.
+                    weights, _, _, _ = self._tighten_posterior_approximation(x, y, h_given_p_tilde, ll_h_tilde_1=None)
                     if self.keep_only_h_given_p_tilde:
                         eval_h_tilde_1_ = h_given_p_tilde
+                        eval_weights = weights
                     else:
                         eval_h_tilde_1_ = np.concatenate([eval_h_tilde_1_, h_given_p_tilde], 1)
-
-                    # TODO:
-                    # Baseline: no new h, eval_weights = 1 for all samples.
-                    # Just New h, no old h, eval_weights = 1.
-                    # New h + old h, eval_weights = 1 for all.
-                    # After: new scoring function.
+                        eval_weights = np.concatenate([eval_weights, weights], 1)
 
                 scores = self.score_p1(eval_x, eval_h_tilde_1_, p_tilde_1)  # logp_h_given_x_pi0
                 ll_orig = scores[:, 0, :]
@@ -743,6 +754,7 @@ class VILModel:
             x=x,
             y=y,
             h1=h1,
+            losses=losses,
             include_h1=False,
         )
         num_h_samples = h_tilde_1.shape[1]
@@ -820,9 +832,32 @@ class VILModel:
 
         logp_h_given_x_pi1 = self.score_p1(x, h_tilde_1, p_tilde_1)  # p(h|x, pi_0)  # (batch_size, num_h_samples, num_p_samples)
 
+        # TODO: check how truly unique the hiddens are.
+        # Compute the average number of unique hiddens given h_tilde_1 has shape of (batch_sie, num_h_samples).
+        unique_hiddens = [len(np.unique(h_)) for h_ in h_tilde_1]
+        log_message(f"Average number of unique hidden states {np.mean(unique_hiddens)} ± {np.std(unique_hiddens)} out of {h_tilde_1.shape[1]}")
 
         # Scoring of (p1, p2).
-        if self.prompt_scoring == "J_SL":
+        if self.prompt_scoring == "average_expected_return":
+            # sum_(x,y) sum_h p(h | x, p1) * (p(y* | h, x, p2) - b)
+            # where b = avg_(h)[p(y* | h, x, p2)]  # Avg. is different for each x.
+
+            p_h_given_x_pi1 = np.exp(logp_h_given_x_pi1)
+            p_y_given_h_pi2 = np.exp(logp_y_given_h_pi2)
+            baseline = p_y_given_h_pi2.mean(1)  # Average over the Hs given (x,y) and p2.
+
+            p1_p2_scores = np.zeros(shape=(len(p_tilde_1), len(p_tilde_2)))
+            for p2_idx, p2 in enumerate(p_tilde_2):
+                log_message(f"Average p(y* | h, x, p2) = {baseline[:, p2_idx].mean()} ± {baseline[:, p2_idx].std()}")
+
+                for p1_idx, p1 in enumerate(p_tilde_1):
+                    p1_p2_score = p_h_given_x_pi1[:, :, p1_idx] * (p_y_given_h_pi2[:, :, p2_idx] - baseline[:, None, p2_idx])
+                    p1_p2_score = p1_p2_score.mean(1)  # Average over the Hs.
+                    p1_p2_score = p1_p2_score.mean(0)  # Average over the data (x,y).
+
+                p1_p2_scores[p1_idx, p2_idx] = p1_p2_score
+
+        elif self.prompt_scoring == "J_SL":
             # TODO: implement J_SL
 
             p1_p2_scores = np.zeros(shape=(len(p_tilde_1), len(p_tilde_2)))
@@ -831,7 +866,7 @@ class VILModel:
                     p1_p2_score = 0
                     for i, (x_, y_) in enumerate(zip(x, y)):
 
-                        for j, h in enumerate(h_tilde_1):
+                        for j in range(num_h_samples):
 
                             # loss += p((y, h), given=(x, Pi_prime)) * np.log(p((y, h), given=(x, Pi)))
                             # where p((y, h), given=(x, Pi_prime)) == p(y, given=(x, h, Pi1)) * p(h, given=(x, Pi0))  # Decompose the joint.

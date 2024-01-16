@@ -372,17 +372,17 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 )
 @click.option(
    "--sample_more_h",
-    is_flag=True,
+    type=bool,
     help="To sample more hidden states generated from the p1 candidates.",
 )
 @click.option(
     "--force_eval_weights_to_1",
-    is_flag=True,
+    type=bool,
     help="To force eval weights to all be 1 when scoring p1.",
 )
 @click.option(
     "--keep_only_h_given_p_tilde",
-    is_flag=True,
+    type=bool,
     help="To only keep the Hs generated from p1 candidates.",
 )
 def main(
@@ -460,6 +460,9 @@ def main(
         format="%(asctime)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+    # Add log to stdout if verbose
+    if verbose:
+        logging.getLogger().addHandler(logging.StreamHandler())
 
     log_message(json.dumps(locals()))
     log_message(f"Logging to... {output_log_dir}")
