@@ -49,14 +49,12 @@ for method in glob.glob(root + "/**/output.log", recursive=True):
                 line = escape_ansi(line).partition("COST:")[-1]
                 token_cost.append(float(line.strip()))
 
-    if init_dev_accuracy:
-        results[name]["init_dev"].append(init_dev_accuracy[0])
-    if dev_accuracy:
+    # skip jobs not completed
+    if dev_accuracy and test_accuracy:
         results[name]["dev"].append(np.max(dev_accuracy))
-    if test_accuracy:
         results[name]["test"].append(test_accuracy[0])
-    if token_cost:
-        results[name]["cost"].append(token_cost[0])
+        results[name]["init_dev"].append(init_dev_accuracy[0] if init_dev_accuracy else np.nan)
+        results[name]["cost"].append(token_cost[0] if token_cost else np.nan)
 
 
 def mean_confidence_interval(data, confidence=0.95):
@@ -78,11 +76,10 @@ def top_k(data, k):
     the argmax over all the seeds and reporting its test score.
     """
     test_scores = np.array(data['test'])
-    # limit to the number of test results (discard dev results that are in progress)
-    dev_scores = np.array(data['dev'][:len(test_scores)])
+    dev_scores = np.array(data['dev'])
 
     if k <= 0 or k > len(test_scores):
-        raise ValueError("k must be between 1 and the number of test results")
+        return np.nan, np.nan
 
     indices = np.arange(len(dev_scores))
     combination_indices = combinations(indices, k)
@@ -115,7 +112,6 @@ for k, v in results.items():
             "tstd": np.std(v["test"]),
             "tcf": mean_confidence_interval(v["test"]),
             "seeds": len(v["dev"]),
-            "completed": len(v["test"]),
             "top_k_1_mean_test": top_k_1_mean_test,
             "top_k_1_std_test": top_k_1_std_test,
             "top_k_3_mean_test": top_k_3_mean_test,
