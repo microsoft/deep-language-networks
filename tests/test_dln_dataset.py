@@ -63,6 +63,19 @@ def mock_leopard_data():
         dataset.write_text(json.dumps([{"sentence1": "some sentence", "label": "0"}] * data_size))
     return build_leopard_data
 
+@pytest.fixture
+def mock_hf_dataset():
+    data_size = 1000
+    dataset = HFDataset.from_dict({
+        "question": [f"question {i}" for i in range(data_size)],
+        "answer": [f"answer #### {i % 4}" for i in range(data_size)],  # 4 labels
+    })
+    dataset_splits = dataset.train_test_split(test_size=0.4)
+    dataset_dict = HFDatasetDict({
+        'train': dataset_splits['train'],
+        'test': dataset_splits['test'],
+    })
+    return dataset_dict
 
 def test_init_dataset_subj(tmp_path, mock_ordered_prompt_data):
     mock_ordered_prompt_data(tmp_path, "subj")
@@ -204,8 +217,8 @@ def test_init_dataset_gsm8k(tmp_path):
         "answer": [f"answer #### {i}" for i in range(data_size)],
     })
     dataset_splits = dataset.train_test_split(test_size=0.4)
-    dataset_dict = HFDatasetDict({  
-        'train': dataset_splits['train'],  
+    dataset_dict = HFDatasetDict({
+        'train': dataset_splits['train'],
         'test': dataset_splits['test'],
     })
     with patch("dln.dataset.hf_load_dataset", MagicMock(return_value=dataset_dict)):
@@ -247,18 +260,8 @@ def test_option_shuffle():
     assert new_data_point["target"] in target_option
 
 
-def test_max_size_balanced(tmp_path):
-    data_size = 1000
-    dataset = HFDataset.from_dict({
-        "question": [f"question {i}" for i in range(data_size)],
-        "answer": [f"answer #### {i % 4}" for i in range(data_size)],  # 4 labels
-    })
-    dataset_splits = dataset.train_test_split(test_size=0.4)
-    dataset_dict = HFDatasetDict({
-        'train': dataset_splits['train'],
-        'test': dataset_splits['test'],
-    })
-    with patch("dln.dataset.hf_load_dataset", MagicMock(return_value=dataset_dict)):
+def test_max_size_balanced(tmp_path, mock_hf_dataset):
+    with patch("dln.dataset.hf_load_dataset", MagicMock(return_value=mock_hf_dataset)):
         dataset = init_dataset(
             "gsm8k",
             42,
@@ -277,18 +280,8 @@ def test_max_size_balanced(tmp_path):
         assert len(set(label_counts.values())) <= 1
 
 
-def test_get_balanced_batch(tmp_path):
-    data_size = 1000
-    dataset = HFDataset.from_dict({
-        "question": [f"question {i}" for i in range(data_size)],
-        "answer": [f"answer #### {i % 4}" for i in range(data_size)],
-    })
-    dataset_splits = dataset.train_test_split(test_size=0.4)
-    dataset_dict = HFDatasetDict({
-        'train': dataset_splits['train'],
-        'test': dataset_splits['test'],
-    })
-    with patch("dln.dataset.hf_load_dataset", MagicMock(return_value=dataset_dict)):
+def test_get_balanced_batch(tmp_path, mock_hf_dataset):
+    with patch("dln.dataset.hf_load_dataset", MagicMock(return_value=mock_hf_dataset)):
         dataset = init_dataset("gsm8k", 42, tmp_path, n_few_shots=8)
     x, y, few_shot = dataset.get_batch("test", 12, random_sample=True, balance=True)
     assert len(x) == 12
@@ -298,3 +291,110 @@ def test_get_balanced_batch(tmp_path):
     few_shot_labels = [l for s, l in few_shot]
     few_shot_counts = {f: few_shot_labels.count(f) for f in few_shot_labels}
     assert few_shot_counts == {'0': 2, '1': 2, '2': 2, '3': 2}
+
+
+def test_get_data_random_seed(tmp_path, mock_hf_dataset):
+    """Train set varies with random seed, dev and test sets are the same"""
+    with patch("dln.dataset.hf_load_dataset", MagicMock(return_value=mock_hf_dataset)):
+        dts = [
+            init_dataset(
+                "gsm8k",
+                seed,
+                tmp_path,
+                n_few_shots=8,
+                max_train_size=100,
+                max_dev_size=100,
+                max_test_size=100,
+            )
+            for seed in (42, 16, 1234)
+        ]
+    assert dts[0].get_data("dev") == dts[1].get_data("dev") == dts[2].get_data("dev")
+    assert dts[0].get_data("test") == dts[1].get_data("test") == dts[2].get_data("test")
+    assert (
+        dts[0].get_data("train") != dts[1].get_data("train") and
+        dts[0].get_data("train") != dts[2].get_data("train") and
+        dts[1].get_data("train") != dts[2].get_data("train")
+    )
+
+
+def test_get_data_same_random_seed(tmp_path, mock_hf_dataset):
+    """All sets are the same for the same random seed"""
+    with patch("dln.dataset.hf_load_dataset", MagicMock(return_value=mock_hf_dataset)):
+        dts = [
+            init_dataset(
+                "gsm8k",
+                seed,
+                tmp_path,
+                n_few_shots=8,
+                max_train_size=100,
+                max_dev_size=100,
+                max_test_size=100,
+            )
+            for seed in (42, 42)
+        ]
+    assert dts[0].get_data("dev") == dts[1].get_data("dev")
+    assert dts[0].get_data("test") == dts[1].get_data("test")
+    assert dts[0].get_data("train") == dts[1].get_data("train")
+
+
+def test_get_batch_random_seed(tmp_path, mock_hf_dataset):
+    """Train set varies with random seed, dev and test sets are the same."""
+    with patch("dln.dataset.hf_load_dataset", MagicMock(return_value=mock_hf_dataset)):
+        dts = [
+            init_dataset(
+                "gsm8k",
+                seed,
+                tmp_path,
+                n_few_shots=8,
+                max_train_size=100,
+                max_dev_size=100,
+                max_test_size=100,
+            )
+            for seed in (42, 16, 1234)
+        ]
+    assert (
+        dts[0].get_batch("dev", batch_size=10, random_sample=True, return_few_shot=False)
+        == dts[1].get_batch("dev", batch_size=10, random_sample=True, return_few_shot=False)
+        == dts[2].get_batch("dev", batch_size=10, random_sample=True, return_few_shot=False)
+    )
+    assert (
+        dts[0].get_batch("test", batch_size=10, random_sample=True, return_few_shot=False)
+        == dts[1].get_batch("test", batch_size=10, random_sample=True, return_few_shot=False)
+        == dts[2].get_batch("test", batch_size=10, random_sample=True, return_few_shot=False)
+    )
+    assert (
+        dts[0].get_batch("train", batch_size=10, random_sample=True)
+        != dts[1].get_batch("train", batch_size=10, random_sample=True)
+        and dts[0].get_batch("train", batch_size=10, random_sample=True)
+        != dts[2].get_batch("train", batch_size=10, random_sample=True)
+        and dts[1].get_batch("train", batch_size=10, random_sample=True)
+        != dts[2].get_batch("train", batch_size=10, random_sample=True)
+    )
+
+def test_get_batch_fix_seed(tmp_path, mock_hf_dataset):
+    """All sets are the same for the same random seed"""
+    with patch("dln.dataset.hf_load_dataset", MagicMock(return_value=mock_hf_dataset)):
+        dts = [
+            init_dataset(
+                "gsm8k",
+                seed,
+                tmp_path,
+                n_few_shots=8,
+                max_train_size=100,
+                max_dev_size=100,
+                max_test_size=100,
+            )
+            for seed in (42, 42)
+        ]
+    assert (
+        dts[0].get_batch("dev", batch_size=10, random_sample=True, return_few_shot=False)
+        == dts[1].get_batch("dev", batch_size=10, random_sample=True, return_few_shot=False)
+    )
+    assert (
+        dts[0].get_batch("test", batch_size=10, random_sample=True, return_few_shot=False)
+        == dts[1].get_batch("test", batch_size=10, random_sample=True, return_few_shot=False)
+    )
+    assert (
+        dts[0].get_batch("train", batch_size=10, random_sample=True)
+        == dts[1].get_batch("train", batch_size=10, random_sample=True)
+    )

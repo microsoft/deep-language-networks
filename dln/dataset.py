@@ -146,6 +146,7 @@ class Dataset:
             ("train", "dev", "test"),
             (max_train_size, max_dev_size, max_test_size),
         ):
+            resize_rng = self.rng if split == "train" else np.random.RandomState(42)
             split_per_class = f"{split}_per_class"
             per_class = defaultdict(list)
             for index, label in enumerate(self.dataset[split]["label"]):
@@ -155,7 +156,7 @@ class Dataset:
             if max_size > 0:
                 log_message(f"Cutting {split} dataset to {max_size} examples.")
                 indices = []
-                pick_order = self.rng.choice(
+                pick_order = resize_rng.choice(
                     list(self.dataset[split_per_class].keys()),
                     len(self.dataset[split_per_class].keys()),
                     replace=False,
@@ -163,7 +164,7 @@ class Dataset:
 
                 i = 0
                 while len(indices) < max_size:
-                    indices += self.rng.choice(
+                    indices += resize_rng.choice(
                         self.dataset[split_per_class][
                             pick_order[i % len(pick_order)]
                         ],
@@ -190,7 +191,7 @@ class Dataset:
         elif split == "test":
             self.test_pointer = 0
 
-    def get_batch(self, split, batch_size, random_sample=False, balance=False):
+    def get_batch(self, split, batch_size, random_sample=False, balance=False, return_few_shot=True):
         if balance is True and random_sample is False:
             raise ValueError("Balance batch must be sampled randomly.")
         if batch_size <= 0:
@@ -198,7 +199,9 @@ class Dataset:
         if split not in ["train", "dev", "test"]:
             raise ValueError(f"Invalid split: {split}")
 
+        batch_rng = np.random.RandomState(42)
         if split == "train":
+            batch_rng = self.rng
             pointer = self.train_pointer
             data_size = self.train_size
             self.train_pointer += batch_size
@@ -222,11 +225,11 @@ class Dataset:
                 indices = []
                 example_pools = {}
                 for key in self.dataset[f"{split}_per_class"].keys():
-                    example_pools[key] = self.rng.permutation(
+                    example_pools[key] = batch_rng.permutation(
                         self.dataset[f"{split}_per_class"][key]
                 )
                 i = 0
-                pick_order = self.rng.permutation(list(self.dataset[f"{split}_per_class"].keys()))
+                pick_order = batch_rng.permutation(list(self.dataset[f"{split}_per_class"].keys()))
                 while len(indices) < batch_size:
                     current_key = pick_order[i % len(pick_order)]
 
@@ -238,7 +241,7 @@ class Dataset:
                         example_pools[current_key] = example_pools[current_key][1:]
                     i += 1
             else:
-                indices = self.rng.choice(data_size, batch_size, replace=False)
+                indices = batch_rng.choice(data_size, batch_size, replace=False)
         else:
             start = pointer
             end = min(start + batch_size, data_size)
@@ -253,6 +256,9 @@ class Dataset:
                 label_list.append(label_mapping[self.dataset[split]["label"][idx]])
             else:
                 label_list.append(self.dataset[split]["label"][idx])
+
+        if not return_few_shot:
+            return sentence_list, label_list
 
         few_shots = self._get_few_shots()
         return sentence_list, label_list, few_shots
