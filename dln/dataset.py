@@ -69,7 +69,9 @@ class Dataset:
         protos = self.dataset_info.get('protos', list(self.label_mapping.values()))
         self.output_classes = OutputClasses(protos=protos) if protos else None
 
-        self.rng = np.random.RandomState(self.random_seed)
+        self.train_rng = np.random.RandomState(self.random_seed)
+        self.dev_rng = np.random.RandomState(42)
+        self.test_rng = np.random.RandomState(42)
         self.few_shot_rng = np.random.RandomState(self.random_seed)
 
         # load dataset from file
@@ -114,6 +116,16 @@ class Dataset:
     def test_size(self):
         return len(self.dataset["test"]["label"])
 
+    def split_rgn(self, split):
+        if split == "train":
+            return self.train_rng
+        elif split == "dev":
+            return self.dev_rng
+        elif split == "test":
+            return self.test_rng
+        else:
+            raise ValueError(f"Invalid split: {split}")
+
     def _get_few_shots(self):
         if self.n_few_shots <= 0:
             return None
@@ -146,7 +158,7 @@ class Dataset:
             ("train", "dev", "test"),
             (max_train_size, max_dev_size, max_test_size),
         ):
-            resize_rng = self.rng if split == "train" else np.random.RandomState(42)
+            resize_rng = self.split_rgn(split)
             split_per_class = f"{split}_per_class"
             per_class = defaultdict(list)
             for index, label in enumerate(self.dataset[split]["label"]):
@@ -199,9 +211,7 @@ class Dataset:
         if split not in ["train", "dev", "test"]:
             raise ValueError(f"Invalid split: {split}")
 
-        batch_rng = np.random.RandomState(42)
         if split == "train":
-            batch_rng = self.rng
             pointer = self.train_pointer
             data_size = self.train_size
             self.train_pointer += batch_size
@@ -221,6 +231,7 @@ class Dataset:
                 self.test_pointer = 0
 
         if random_sample is True:
+            batch_rng = self.split_rgn(split)
             if balance is True:
                 indices = []
                 example_pools = {}

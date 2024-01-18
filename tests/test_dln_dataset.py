@@ -337,6 +337,32 @@ def test_get_data_same_random_seed(tmp_path, mock_hf_dataset):
     assert dts[0].get_data("train") == dts[1].get_data("train")
 
 
+def test_get_batches_do_not_reset_seed(tmp_path, mock_hf_dataset):
+    """Confirms that random is not reset between batches"""
+    with patch("dln.dataset.hf_load_dataset", MagicMock(return_value=mock_hf_dataset)):
+        dataset = init_dataset(
+            "gsm8k",
+            42,
+            tmp_path,
+            n_few_shots=8,
+            max_train_size=100,
+            max_dev_size=100,
+            max_test_size=100,
+        )
+    assert (
+        dataset.get_batch("dev", batch_size=10, random_sample=True, return_few_shot=False)
+        != dataset.get_batch("dev", batch_size=10, random_sample=True, return_few_shot=False)
+    )
+    assert (
+        dataset.get_batch("test", batch_size=10, random_sample=True, return_few_shot=False)
+        != dataset.get_batch("test", batch_size=10, random_sample=True, return_few_shot=False)
+    )
+    assert (
+        dataset.get_batch("train", batch_size=10, random_sample=True, return_few_shot=False)
+        != dataset.get_batch("train", batch_size=10, random_sample=True, return_few_shot=False)
+    )
+
+
 def test_get_batch_random_seed(tmp_path, mock_hf_dataset):
     """Train set varies with random seed, dev and test sets are the same."""
     with patch("dln.dataset.hf_load_dataset", MagicMock(return_value=mock_hf_dataset)):
