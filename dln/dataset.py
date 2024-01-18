@@ -69,9 +69,9 @@ class Dataset:
         protos = self.dataset_info.get('protos', list(self.label_mapping.values()))
         self.output_classes = OutputClasses(protos=protos) if protos else None
 
-        self.train_rng = np.random.RandomState(self.random_seed)
         self.dev_rng = np.random.RandomState(42)
         self.test_rng = np.random.RandomState(42)
+        self.train_rng = np.random.RandomState(self.random_seed)
         self.few_shot_rng = np.random.RandomState(self.random_seed)
 
         # load dataset from file
