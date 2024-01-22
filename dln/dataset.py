@@ -69,7 +69,9 @@ class Dataset:
         protos = self.dataset_info.get('protos', list(self.label_mapping.values()))
         self.output_classes = OutputClasses(protos=protos) if protos else None
 
-        self.rng = np.random.RandomState(self.random_seed)
+        self.dev_rng = np.random.RandomState(42)
+        self.test_rng = np.random.RandomState(42)
+        self.train_rng = np.random.RandomState(self.random_seed)
         self.few_shot_rng = np.random.RandomState(self.random_seed)
 
         # load dataset from file
@@ -114,6 +116,16 @@ class Dataset:
     def test_size(self):
         return len(self.dataset["test"]["label"])
 
+    def split_rgn(self, split):
+        if split == "train":
+            return self.train_rng
+        elif split == "dev":
+            return self.dev_rng
+        elif split == "test":
+            return self.test_rng
+        else:
+            raise ValueError(f"Invalid split: {split}")
+
     def _get_few_shots(self):
         if self.n_few_shots <= 0:
             return None
@@ -146,6 +158,7 @@ class Dataset:
             ("train", "dev", "test"),
             (max_train_size, max_dev_size, max_test_size),
         ):
+            resize_rng = self.split_rgn(split)
             split_per_class = f"{split}_per_class"
             per_class = defaultdict(list)
             for index, label in enumerate(self.dataset[split]["label"]):
@@ -155,7 +168,7 @@ class Dataset:
             if max_size > 0:
                 log_message(f"Cutting {split} dataset to {max_size} examples.")
                 indices = []
-                pick_order = self.rng.choice(
+                pick_order = resize_rng.choice(
                     list(self.dataset[split_per_class].keys()),
                     len(self.dataset[split_per_class].keys()),
                     replace=False,
@@ -163,7 +176,7 @@ class Dataset:
 
                 i = 0
                 while len(indices) < max_size:
-                    indices += self.rng.choice(
+                    indices += resize_rng.choice(
                         self.dataset[split_per_class][
                             pick_order[i % len(pick_order)]
                         ],
@@ -190,7 +203,7 @@ class Dataset:
         elif split == "test":
             self.test_pointer = 0
 
-    def get_batch(self, split, batch_size, random_sample=False, balance=False):
+    def get_batch(self, split, batch_size, random_sample=False, balance=False, return_few_shot=True):
         if balance is True and random_sample is False:
             raise ValueError("Balance batch must be sampled randomly.")
         if batch_size <= 0:
@@ -218,15 +231,16 @@ class Dataset:
                 self.test_pointer = 0
 
         if random_sample is True:
+            batch_rng = self.split_rgn(split)
             if balance is True:
                 indices = []
                 example_pools = {}
                 for key in self.dataset[f"{split}_per_class"].keys():
-                    example_pools[key] = self.rng.permutation(
+                    example_pools[key] = batch_rng.permutation(
                         self.dataset[f"{split}_per_class"][key]
                 )
                 i = 0
-                pick_order = self.rng.permutation(list(self.dataset[f"{split}_per_class"].keys()))
+                pick_order = batch_rng.permutation(list(self.dataset[f"{split}_per_class"].keys()))
                 while len(indices) < batch_size:
                     current_key = pick_order[i % len(pick_order)]
 
@@ -238,7 +252,7 @@ class Dataset:
                         example_pools[current_key] = example_pools[current_key][1:]
                     i += 1
             else:
-                indices = self.rng.choice(data_size, batch_size, replace=False)
+                indices = batch_rng.choice(data_size, batch_size, replace=False)
         else:
             start = pointer
             end = min(start + batch_size, data_size)
@@ -253,6 +267,9 @@ class Dataset:
                 label_list.append(label_mapping[self.dataset[split]["label"][idx]])
             else:
                 label_list.append(self.dataset[split]["label"][idx])
+
+        if not return_few_shot:
+            return sentence_list, label_list
 
         few_shots = self._get_few_shots()
         return sentence_list, label_list, few_shots
