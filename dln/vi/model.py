@@ -663,7 +663,7 @@ class VILModel:
                     # Compute weights for new Hs.
                     weights, _, _, _ = self._tighten_posterior_approximation(x, y, h_given_p_tilde, ll_h_tilde_1=None)
                     if self.keep_only_h_given_p_tilde:
-                        eval_h_tilde_1_ = h_given_p_tilde
+                        eval_h_tilde_1_ = np.concatenate([eval_h_tilde_1_[:, :1], h_given_p_tilde], 1)
                         eval_weights = weights
                     else:
                         eval_h_tilde_1_ = np.concatenate([eval_h_tilde_1_, h_given_p_tilde], 1)
@@ -852,10 +852,11 @@ class VILModel:
 
                 for p1_idx, p1 in enumerate(p_tilde_1):
                     p1_p2_score = p_h_given_x_pi1[:, :, p1_idx] * (p_y_given_h_pi2[:, :, p2_idx] - baseline[:, None, p2_idx])
-                    p1_p2_score = p1_p2_score.mean(1)  # Average over the Hs.
+                    # p1_p2_score = p1_p2_score.mean(1)  # Average over the Hs.
                     p1_p2_score = p1_p2_score.mean(0)  # Average over the data (x,y).
+                    p1_p2_score = np.max(p1_p2_score)  # Max over the Hs.
 
-                p1_p2_scores[p1_idx, p2_idx] = p1_p2_score
+                    p1_p2_scores[p1_idx, p2_idx] = p1_p2_score
 
         elif self.prompt_scoring == "J_SL":
             # TODO: implement J_SL
