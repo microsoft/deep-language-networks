@@ -340,7 +340,7 @@ class VLLM(LLM):
         return outputs
 
     def check_max_length(self, inputs: Union[List[str], str], **kwargs) -> bool:
-        gen_max_length = kwargs.get("max_length") or self.generation_options.get("max_length", 0)
+        gen_max_length = kwargs.get("max_tokens") or self.generation_options.get("max_tokens", 0)
         model_max_len = self.encoder.model_max_length
         if not isinstance(inputs, list):
             inputs = [inputs]
