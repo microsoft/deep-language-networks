@@ -94,6 +94,11 @@ def top_k(data, k):
 
     return mean_test_score, std_test_score
 
+def find_dataset_name(dataset_path):
+    dataset_names = ["navigate", "hyperbaton", "date_understanding", "logical_deduction_seven_objects", "disaster", "airline", "mpqa", "trec", "subj"]
+    for name in dataset_names:
+        if name in dataset_path:
+            return name.split("_")[0]
 
 data = []
 for k, v in results.items():
@@ -101,9 +106,15 @@ for k, v in results.items():
     top_k_3_mean_test, top_k_3_std_test = top_k(v, 3)
     top_k_argmax_mean_test, _ = top_k(v, len(v["test"]))
 
+    # TODO: receive min_seeds as parameter
+    if len(v["dev"]) <= 2:
+        continue
     data.append(
         {
-            "name": k,
+            # "name": k,
+            # "name": k[:30],
+            "name": find_dataset_name(k),
+            "seeds": len(v["dev"]),
             "init_dev": np.mean(v["init_dev"]) if "init_dev" in v else None,
             "dev": np.mean(v["dev"]),
             "test": np.mean(v["test"]),
@@ -111,14 +122,13 @@ for k, v in results.items():
             "dstd": np.std(v["dev"]),
             "tstd": np.std(v["test"]),
             "tcf": mean_confidence_interval(v["test"]),
-            "seeds": len(v["dev"]),
             "top_k_1_mean_test": top_k_1_mean_test,
             "top_k_1_std_test": top_k_1_std_test,
             "top_k_3_mean_test": top_k_3_mean_test,
             "top_k_3_std_test": top_k_3_std_test,
             "top_k_argmax_mean_test": top_k_argmax_mean_test,
+            "log_path": k,
         }
     )
 
-
-print(pd.DataFrame.from_records(data).sort_values(by="dev", ascending=True).to_markdown())
+print(pd.DataFrame.from_records(data).sort_values(by=["name", "dev"], ascending=[True, False]).to_markdown(index=False))
