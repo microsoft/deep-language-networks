@@ -82,6 +82,7 @@ class PromptSampler:
                     template_infos["prompt"] = (
                         prompt[i % len(prompt)] if type(prompt) == list else prompt
                     )
+                    log_message(self.prompt_template.render(**template_infos))
                     tpls.append(self.prompt_template.render(**template_infos))
 
                 new_prompts = self.evaluate_func(
