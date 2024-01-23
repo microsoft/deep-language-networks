@@ -107,6 +107,16 @@ class LLM(ABC):
     def compute_cost(self, inputs: List[str]) -> float:
         self.total_cost += np.sum(list([len(self.encode(input)) for input in inputs]))
 
+    @staticmethod
+    def _mini_batch(inputs, batch_size=20):
+        input_length = len(inputs)
+        num_batches = input_length // batch_size + (
+            1 if input_length % batch_size > 0 else 0
+        )
+        for i in range(num_batches):
+            input_batch = inputs[batch_size * i : batch_size * (i + 1)]
+            yield input_batch
+
 
 class GPT(LLM):
 
@@ -235,15 +245,6 @@ class GPT(LLM):
         )
         return outputs
 
-    def _mini_batch(self, inputs, batch_size=20):
-        input_length = len(inputs)
-        num_batches = input_length // batch_size + (
-            1 if input_length % batch_size > 0 else 0
-        )
-        for i in range(num_batches):
-            input_batch = inputs[batch_size * i : batch_size * (i + 1)]
-            yield input_batch
-
     def generate(
         self,
         inputs: Union[List[str], str],
@@ -319,6 +320,7 @@ class VLLM(LLM):
         self,
         inputs: Union[List[str], str],
         async_generation: bool = True,
+        batch_size: int = 20,
         **kwargs
     ) -> List[str]:
         if not isinstance(inputs, list):
@@ -327,9 +329,12 @@ class VLLM(LLM):
         generation_options = self.generation_options.copy()
         generation_options.update(**kwargs)
         if async_generation:
-            outputs = asyncio.run(
-                self._gather_vllm_response(inputs, **generation_options)
-            )
+            outputs = []
+            for input_batch in self._mini_batch(inputs, batch_size=batch_size):
+                outputs_batch = asyncio.run(
+                    self._gather_vllm_response(input_batch, **generation_options)
+                )
+                outputs = outputs + outputs_batch
         else:
             outputs = [
                 asyncio.run(
