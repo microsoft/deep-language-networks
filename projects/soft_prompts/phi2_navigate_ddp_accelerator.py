@@ -34,6 +34,21 @@ def load_dln_dataset_to_hf_dataset(dataset_id):
     })
     return dataset_dict
 
+def test(dataloader, model, tokenizer, device):
+    loss = 0
+    preds = []
+    for batch in tqdm(dataloader):
+        batch = {k: v.to(device) for k, v in batch.items()}
+        with torch.no_grad():
+            outputs = model(**batch)
+        loss = outputs.loss
+        loss += loss.detach().float()
+        preds.extend(
+            tokenizer.batch_decode(torch.argmax(outputs.logits, -1).detach().cpu().numpy(), skip_special_tokens=True)
+        )
+
+    loss = loss / len(dataloader)
+    return loss
 
 def main():
     accelerator = Accelerator()
@@ -49,11 +64,11 @@ def main():
     )
     text_column = "text"
     label_column = "label"
-    max_length = 64
+    max_length = 128
     lr = 3e-2
-    num_epochs = 50
+    num_epochs = 10
     # batch_size = 8
-    batch_size = 32
+    batch_size = 16
 
     peft_config = PromptTuningConfig(
         task_type=TaskType.CAUSAL_LM,
@@ -114,12 +129,28 @@ def main():
     )
 
     train_dataset = processed_datasets["train"]
-    eval_dataset = processed_datasets["test"]
+    eval_dataset = processed_datasets["dev"]
+    test_dataset = processed_datasets["test"]
 
     train_dataloader = DataLoader(
-        train_dataset, shuffle=True, collate_fn=default_data_collator, batch_size=batch_size, pin_memory=True
+        train_dataset,
+        shuffle=True,
+        collate_fn=default_data_collator,
+        batch_size=batch_size,
+        pin_memory=True,
     )
-    eval_dataloader = DataLoader(eval_dataset, collate_fn=default_data_collator, batch_size=batch_size, pin_memory=True)
+    eval_dataloader = DataLoader(
+        eval_dataset,
+        collate_fn=default_data_collator,
+        batch_size=batch_size,
+        pin_memory=True,
+    )
+    test_dataloader = DataLoader(
+        test_dataset,
+        collate_fn=default_data_collator,
+        batch_size=batch_size,
+        pin_memory=True,
+    )
 
 
     model = AutoModelForCausalLM.from_pretrained(model_name_or_path)
@@ -136,9 +167,14 @@ def main():
     model = model.to(device)
 
     # Send everything through `accelerator.prepare`
-    train_loader, test_loader, model, optimizer = accelerator.prepare(
-        train_dataloader, eval_dataloader, model, optimizer
+    train_loader, eval_loader, test_loader, model, optimizer = accelerator.prepare(
+        train_dataloader, eval_dataloader, test_dataloader, model, optimizer
     )
+
+    model.eval()
+    init_test_loss = test(test_dataloader, model, tokenizer, device)
+    init_test_ppl = torch.exp(init_test_loss)  # Perplexity
+    print(f"Test before training: {init_test_ppl=} {init_test_loss=}")
 
     for epoch in range(num_epochs):
         model.train()
@@ -154,23 +190,17 @@ def main():
             optimizer.zero_grad()
 
         model.eval()
-        eval_loss = 0
-        eval_preds = []
-        for step, batch in enumerate(tqdm(eval_dataloader)):
-            batch = {k: v.to(device) for k, v in batch.items()}
-            with torch.no_grad():
-                outputs = model(**batch)
-            loss = outputs.loss
-            eval_loss += loss.detach().float()
-            eval_preds.extend(
-                tokenizer.batch_decode(torch.argmax(outputs.logits, -1).detach().cpu().numpy(), skip_special_tokens=True)
-            )
-
-        eval_epoch_loss = eval_loss / len(eval_dataloader)
+        eval_epoch_loss = test(eval_dataloader, model, tokenizer, device)
         eval_ppl = torch.exp(eval_epoch_loss)
         train_epoch_loss = total_loss / len(train_dataloader)
         train_ppl = torch.exp(train_epoch_loss)
         print(f"{epoch=}: {train_ppl=} {train_epoch_loss=} {eval_ppl=} {eval_epoch_loss=}")
+
+    model.eval()
+    final_test_loss = test(test_dataloader, model, tokenizer, device)
+    final_test_ppl = torch.exp(final_test_loss)
+    print(f"Test before training: {init_test_ppl=} {init_test_loss=}")
+    print(f"Test after training: {final_test_ppl=} {final_test_loss=}")
 
 if __name__ == "__main__":
     main()
