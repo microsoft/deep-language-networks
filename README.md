@@ -55,6 +55,10 @@ Then, export the openai env vars `OPENAI_API_BASE` and `OPENAI_API_KEY`. Remembe
 Please see the [Variational Inference README](projects/vi_dln/README.md) for information on how to run experiments.
 
 
+## Soft-prompts
+pip install peft transformers datasets accelerator tqdm
+
+
 ## Limitations
 
 When it comes to large-scale natural language models, there are particular fairness and responsible AI issues to consider.
@@ -81,7 +85,7 @@ If you find DLNs useful, please consider citing this work!
 
 ```text
 @article{sordoni2023deep,
-      title={Deep Language Networks: Joint Prompt Training of Stacked LLMs using Variational Inference}, 
+      title={Deep Language Networks: Joint Prompt Training of Stacked LLMs using Variational Inference},
       author={Alessandro Sordoni and Xingdi Yuan and Marc-Alexandre Côté and Matheus Pereira and Adam Trischler and Ziang Xiao and Arian Hosseini and Friederike Niedtner and Nicolas Le Roux},
       year={2023},
       eprint={2306.12509},
@@ -106,8 +110,8 @@ contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additio
 
 ## Trademarks
 
-This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft 
-trademarks or logos is subject to and must follow 
+This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft
+trademarks or logos is subject to and must follow
 [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
 Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
 Any use of third-party trademarks or logos are subject to those third-party's policies.
