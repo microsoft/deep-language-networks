@@ -1,14 +1,21 @@
-import os
-
 import torch
-from torch.utils.data import DataLoader
-from transformers import AutoModelForCausalLM, AutoTokenizer, default_data_collator, get_linear_schedule_with_warmup
-from peft import get_peft_model, PromptTuningInit, PromptTuningConfig, TaskType, PeftType
-from tqdm import tqdm
-from datasets import Dataset, DatasetDict
 from accelerate import Accelerator
-
+from datasets import Dataset, DatasetDict
 from dln.dataset import init_dataset
+from peft import (
+    PromptTuningConfig,
+    PromptTuningInit,
+    TaskType,
+    get_peft_model,
+)
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    default_data_collator,
+    get_linear_schedule_with_warmup,
+)
 
 
 def load_dln_dataset_to_hf_dataset(dataset_id):
@@ -20,6 +27,7 @@ def load_dln_dataset_to_hf_dataset(dataset_id):
         seed=42,
         data_dir="../../data",
     )
+
     def load_split(split):
         text_data, label_data = dln_dataset.get_data(split)
         data_dict = {"text": text_data, "label": label_data}
@@ -27,12 +35,15 @@ def load_dln_dataset_to_hf_dataset(dataset_id):
         return dataset
 
     # Combine the datasets into a DatasetDict
-    dataset_dict = DatasetDict({
-        "train": load_split("train"),
-        "dev": load_split("dev"),
-        "test": load_split("test"),
-    })
+    dataset_dict = DatasetDict(
+        {
+            "train": load_split("train"),
+            "dev": load_split("dev"),
+            "test": load_split("test"),
+        }
+    )
     return dataset_dict
+
 
 def test(dataloader, model, tokenizer, device):
     loss = 0
@@ -44,11 +55,15 @@ def test(dataloader, model, tokenizer, device):
         loss = outputs.loss
         loss += loss.detach().float()
         preds.extend(
-            tokenizer.batch_decode(torch.argmax(outputs.logits, -1).detach().cpu().numpy(), skip_special_tokens=True)
+            tokenizer.batch_decode(
+                torch.argmax(outputs.logits, -1).detach().cpu().numpy(),
+                skip_special_tokens=True,
+            )
         )
 
     loss = loss / len(dataloader)
     return loss
+
 
 def main():
     accelerator = Accelerator()
@@ -80,12 +95,14 @@ def main():
 
     dataset = load_dln_dataset_to_hf_dataset(dataset_id)
 
-    classes = list(set(dataset["train"]['label']))
+    classes = list(set(dataset["train"]["label"]))
 
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, device_map="auto")
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
-    target_max_length = max([len(tokenizer(class_label)["input_ids"]) for class_label in classes])
+    target_max_length = max(
+        [len(tokenizer(class_label)["input_ids"]) for class_label in classes]
+    )
     print(target_max_length)
 
     def preprocess_function(examples):
@@ -108,16 +125,21 @@ def main():
             model_inputs["input_ids"][i] = [tokenizer.pad_token_id] * (
                 max_length - len(sample_input_ids)
             ) + sample_input_ids
-            model_inputs["attention_mask"][i] = [0] * (max_length - len(sample_input_ids)) + model_inputs[
-                "attention_mask"
-            ][i]
-            labels["input_ids"][i] = [-100] * (max_length - len(sample_input_ids)) + label_input_ids
-            model_inputs["input_ids"][i] = torch.tensor(model_inputs["input_ids"][i][:max_length])
-            model_inputs["attention_mask"][i] = torch.tensor(model_inputs["attention_mask"][i][:max_length])
+            model_inputs["attention_mask"][i] = [0] * (
+                max_length - len(sample_input_ids)
+            ) + model_inputs["attention_mask"][i]
+            labels["input_ids"][i] = [-100] * (
+                max_length - len(sample_input_ids)
+            ) + label_input_ids
+            model_inputs["input_ids"][i] = torch.tensor(
+                model_inputs["input_ids"][i][:max_length]
+            )
+            model_inputs["attention_mask"][i] = torch.tensor(
+                model_inputs["attention_mask"][i][:max_length]
+            )
             labels["input_ids"][i] = torch.tensor(labels["input_ids"][i][:max_length])
         model_inputs["labels"] = labels["input_ids"]
         return model_inputs
-
 
     processed_datasets = dataset.map(
         preprocess_function,
@@ -151,7 +173,6 @@ def main():
         batch_size=batch_size,
         pin_memory=True,
     )
-
 
     model = AutoModelForCausalLM.from_pretrained(model_name_or_path)
     model = get_peft_model(model, peft_config)
@@ -194,13 +215,16 @@ def main():
         eval_ppl = torch.exp(eval_epoch_loss)
         train_epoch_loss = total_loss / len(train_dataloader)
         train_ppl = torch.exp(train_epoch_loss)
-        print(f"{epoch=}: {train_ppl=} {train_epoch_loss=} {eval_ppl=} {eval_epoch_loss=}")
+        print(
+            f"{epoch=}: {train_ppl=} {train_epoch_loss=} {eval_ppl=} {eval_epoch_loss=}"
+        )
 
     model.eval()
     final_test_loss = test(test_dataloader, model, tokenizer, device)
     final_test_ppl = torch.exp(final_test_loss)
     print(f"Test before training: {init_test_ppl=} {init_test_loss=}")
     print(f"Test after training: {final_test_ppl=} {final_test_loss=}")
+
 
 if __name__ == "__main__":
     main()
