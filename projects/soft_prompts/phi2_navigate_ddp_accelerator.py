@@ -97,7 +97,7 @@ def main():
 
     classes = list(set(dataset["train"]["label"]))
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, device_map="auto")
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name_or_path, device_map="auto")
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
     target_max_length = max(
