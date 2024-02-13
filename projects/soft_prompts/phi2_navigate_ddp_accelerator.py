@@ -66,9 +66,9 @@ def test(dataloader, model, tokenizer, device):
     return loss
 
 
-def preprocess_function(examples, tokenizer, text_column, label_column, max_length):
+def preprocess_function(examples, tokenizer, prefix, text_column, label_column, max_length):
     batch_size = len(examples[text_column])
-    inputs = [f"{text_column} : {x} Label : " for x in examples[text_column]]
+    inputs = [f"{prefix}\n\n{x}\n\nAnswer:\n" for x in examples[text_column]]
     targets = [str(x) for x in examples[label_column]]
     model_inputs = tokenizer(inputs)
     labels = tokenizer(targets)
@@ -116,8 +116,7 @@ def main():
 
     dataset_id = "navigate"
     initial_instruction = (
-        "Read the following sentence, then determine whether you return to the starting point. "
-        "If you follow these instructions, do you return to the starting point?"
+        "Read the following sentence, then determine whether you return to the starting point."
     )
     text_column = "text"
     label_column = "label"
@@ -156,6 +155,7 @@ def main():
         desc="Running tokenizer on dataset",
         fn_kwargs={
             "tokenizer": tokenizer,
+            "prefix": initial_instruction,
             "text_column": text_column,
             "label_column": label_column,
             "max_length": max_length,
