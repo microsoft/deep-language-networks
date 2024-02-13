@@ -1,3 +1,4 @@
+import os
 import torch
 from accelerate import Accelerator
 from datasets import Dataset, DatasetDict
@@ -25,7 +26,7 @@ def load_dln_dataset_to_hf_dataset(dataset_id):
     dln_dataset = init_dataset(
         dataset_id=dataset_id,
         seed=42,
-        data_dir="../../data",
+        data_dir=os.path.dirname(os.path.realpath(__file__)) + "/../../data",
     )
 
     def load_split(split):
