@@ -30,7 +30,7 @@ class Dataset:
         seed: int,
         use_label_mapping: bool = True,
         append_options: bool = True,
-        n_few_shots: int = -1,
+        n_few_shots: int = 0,
         max_train_size: int = -1,
         max_dev_size: int = -1,
         max_test_size: int = -1,
@@ -280,6 +280,8 @@ class Dataset:
         split: SplitType,
         batch_size: int,
         random_sample: bool = False,
+        balance: bool = False,
+        return_few_shot: bool = True,
     ) -> Iterator[Union[DatasetData, DatasetDataAndFewShot]]:
         """
         Iterates over the dataset split and yields batches of data.
@@ -288,9 +290,11 @@ class Dataset:
         split (str): The split of the dataset to iterate over ("train", "dev", or "test").
         batch_size (int): The size of each batch.
         random_sample (bool): Whether to randomly sample the data or iterate sequentially.
+        balance: Whether to balance the batch by sampling from each class.
+        return_few_shot: Whether to include few-shot examples in the batch.
 
         Returns:
-        A generator that yields batches of data.
+        An iterator that yields batches of data.
         """
         if split == "train":
             self.train_pointer = 0
@@ -299,7 +303,9 @@ class Dataset:
         else:
             self.test_pointer = 0
         while True:
-            yield self.get_batch(split, batch_size, random_sample)
+            yield self.get_batch(
+                split, batch_size, random_sample, balance, return_few_shot
+            )
 
             if not random_sample:
                 if split == "dev" and self.dev_pointer == 0:
@@ -337,14 +343,29 @@ class Dataset:
 
 
 def init_dataset(
-    dataset_id,
-    seed,
-    data_dir,
-    n_few_shots=-1,
-    max_train_size=-1,
-    max_dev_size=-1,
-    max_test_size=-1,
+    dataset_id: str,
+    seed: int,
+    data_dir: str,
+    n_few_shots: int = 0,
+    max_train_size: int = -1,
+    max_dev_size: int = -1,
+    max_test_size: int = -1,
 ) -> Dataset:
+    """
+    Initialize a dataset based on the given dataset id.
+
+    Args:
+        dataset_id: The dataset id.
+        seed: The seed value for randomization. Only applies to the train split and few-shot examples.
+        data_dir: The directory path where the dataset is located.
+        n_few_shots: The number of few-shot examples to include. Defaults to 0.
+        max_train_size: The maximum size of the training set. Defaults to -1 (no limit).
+        max_dev_size: The maximum size of the development set. Defaults to -1 (no limit).
+        max_test_size: The maximum size of the test set. Defaults to -1 (no limit).
+
+    Returns:
+        The initialized dataset.
+    """
     datasets = {
         "subj": OrderedPrompt,
         "mpqa": OrderedPrompt,

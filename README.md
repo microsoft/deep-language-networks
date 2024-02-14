@@ -50,7 +50,43 @@ Then, export the openai env vars `OPENAI_API_BASE` and `OPENAI_API_KEY`. Remembe
     unset OPENAI_API_VERSION
 
 
-## Running experiments
+## Datasets
+
+### Loading datasets
+See [dln/dataset.py](dln/dataset.py) for more details.
+
+```python
+from dln.dataset import init_dataset
+
+dataset = "navigate"
+seed = 42
+data_dir = "data"
+
+dataset = init_dataset(
+    dataset_id=dataset,
+    seed=seed,
+    data_dir=data_dir,
+    n_few_shots=5,
+    # max_train_size=max_train_size,
+    # max_dev_size=max_dev_size,
+    # max_test_size=max_test_size,
+)
+# Get dataset sizes
+dataset.train_size, dataset.dev_size, dataset.test_size
+
+# Get a batch
+sentences, labels, few_shot_examples = dataset.get_batch("train", 10)
+
+# Reset the split pointer
+dataset.reset_pointer("train")
+
+# Iterate over a dataset split
+for sentences, labels, few_shot_examples in dataset.iterate("dev", batch_size=10):
+    pass
+
+# Get all data from a split
+test_sentences, test_labels = dataset.get_data("test")
+```
 
 Please see the [Variational Inference README](projects/vi_dln/README.md) for information on how to run experiments.
 
@@ -81,7 +117,7 @@ If you find DLNs useful, please consider citing this work!
 
 ```text
 @article{sordoni2023deep,
-      title={Deep Language Networks: Joint Prompt Training of Stacked LLMs using Variational Inference}, 
+      title={Deep Language Networks: Joint Prompt Training of Stacked LLMs using Variational Inference},
       author={Alessandro Sordoni and Xingdi Yuan and Marc-Alexandre Côté and Matheus Pereira and Adam Trischler and Ziang Xiao and Arian Hosseini and Friederike Niedtner and Nicolas Le Roux},
       year={2023},
       eprint={2306.12509},
@@ -106,8 +142,8 @@ contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additio
 
 ## Trademarks
 
-This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft 
-trademarks or logos is subject to and must follow 
+This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft
+trademarks or logos is subject to and must follow
 [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
 Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
 Any use of third-party trademarks or logos are subject to those third-party's policies.
