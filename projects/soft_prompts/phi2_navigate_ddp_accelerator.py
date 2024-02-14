@@ -6,6 +6,8 @@ from dln.dataset import init_dataset
 from peft import (
     PromptTuningConfig,
     PromptTuningInit,
+    PeftConfig,
+    PeftModel,
     TaskType,
     get_peft_model,
 )
@@ -236,6 +238,19 @@ def main():
     final_test_ppl = torch.exp(final_test_loss)
     print(f"Test before training: {init_test_ppl=} {init_test_loss=}")
     print(f"Test after training: {final_test_ppl=} {final_test_loss=}")
+
+    model.module.save_pretrained("data/models/" + model_name_or_path)
+
+    config = PeftConfig.from_pretrained("data/models/" + model_name_or_path)
+    model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path)
+
+    lora_model = PeftModel.from_pretrained(model, "data/models/" + model_name_or_path)
+    lora_model.to(device)
+
+    final_test_loss = test(test_dataloader, lora_model, tokenizer, device)
+    final_test_ppl = torch.exp(final_test_loss)
+
+    print(f"Test after loading: {final_test_ppl=} {final_test_loss=}")
 
 
 if __name__ == "__main__":
