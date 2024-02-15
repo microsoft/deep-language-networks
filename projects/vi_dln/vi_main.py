@@ -193,12 +193,12 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option(
     "--fwd_temp",
     default=0.0,
-    help="Forward temperature",
+    help="Forward temperature. This config is ignored if --connections_config is specified.",
 )
 @click.option(
     "--bwd_temp",
     default=0.7,
-    help="Backward temperature",
+    help="Backward temperature. This config is ignored if --connections_config is specified.",
 )
 @click.option(
     "--use_memory",
@@ -310,13 +310,13 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     "--fwd_max_tokens",
     type=int,
     default=256,
-    help="Forward max tokens.",
+    help="Forward max tokens. This config is ignored if --connections_config is specified.",
 )
 @click.option(
     "--bwd_max_tokens",
     type=int,
     default=512,
-    help="Backward max tokens.",
+    help="Backward max tokens. This config is ignored if --connections_config is specified.",
 )
 @click.option(
     "--p1_max_tokens",
@@ -340,7 +340,10 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     "--connections_config",
     type=click.Path(exists=True),
     default=None,
-    help="Path to the connections config yaml file.",
+    help=(
+        "Path to the connections config yaml file. If a config file is specified, "
+        "the models temperature and max_tokens from the command line are ignored."
+    ),
 )
 @click.option(
     "--use_nce",
