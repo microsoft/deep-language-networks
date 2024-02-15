@@ -158,7 +158,10 @@ class GPT(LLM):
         return self.encoder.encode(string)
 
     def clean_text(self, text: str) -> str:
-        """TODO: Check if there are tokenization artifacts for GPT."""
+        """
+        Return text since there are no tokenization artifacts for GPT.
+        Tokens are either 'token' or ' token' for beginning of a word.
+        """
         return text
 
     @property
