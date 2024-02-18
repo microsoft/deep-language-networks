@@ -1,5 +1,6 @@
 import os
 import torch
+import torch.nn as nn
 from accelerate import Accelerator
 from datasets import Dataset, DatasetDict
 from dln.dataset import init_dataset
@@ -233,6 +234,8 @@ def main():
     )
 
     model = model.to(device)
+    if torch.cuda.device_count() > 1:
+        model = nn.DataParallel(model)
 
     # Send everything through `accelerator.prepare`
     train_loader, eval_loader, test_loader, model, optimizer = accelerator.prepare(
@@ -249,13 +252,23 @@ def main():
         total_loss = 0
         for step, batch in enumerate(tqdm(train_dataloader)):
             batch = {k: v.to(device) for k, v in batch.items()}
-            outputs = model(**batch)
-            loss = outputs.loss
+
+            output = model.module.generate(batch["input_ids"], max_length=500, num_return_sequences=1)
+
+            generated_texts = [tokenizer.decode(out, skip_special_tokens=True) for out in output]    
+            target_texts_decoded = [tokenizer.decode(target, skip_special_tokens=True) for target in batch["labels"]]
+
+            loss = exact_match_loss(generated_texts, target_texts_decoded)
+            # optimizer.zero_grad()
+            loss.requires_grad_(True)
+            
             total_loss += loss.detach().float()
+            optimizer.zero_grad()
+
             accelerator.backward(loss)
             optimizer.step()
             lr_scheduler.step()
-            optimizer.zero_grad()
+            # optimizer.zero_grad()
 
         model.eval()
         eval_epoch_loss = test(eval_dataloader, model, tokenizer, device)
