@@ -48,21 +48,54 @@ def load_dln_dataset_to_hf_dataset(dataset_id):
     return dataset_dict
 
 
-def test(dataloader, model, tokenizer, device):
+def exact_match_loss(generated_texts, target_texts):
+    losses = []
+    for generated_text, target_text in zip(generated_texts, target_texts):
+        generated_tokens = generated_text.split()
+        target_tokens = target_text.split()
+        loss = sum(generated_token != target_token for generated_token, target_token in zip(generated_tokens, target_tokens))
+        losses.append(loss)
+    
+    loss_tensor = torch.tensor(losses, dtype=torch.float32)
+    total_loss = torch.mean(loss_tensor)
+    
+    print(generated_texts)
+    print(target_texts)
+    print(total_loss.item())
+    
+    return total_loss
+
+def test(dataloader, model, tokenizer, device, exact_match=False):
     loss = 0
     preds = []
     for batch in tqdm(dataloader):
         batch = {k: v.to(device) for k, v in batch.items()}
         with torch.no_grad():
-            outputs = model(**batch)
-        loss = outputs.loss
+            outputs = model.generate(batch["input_ids"], max_length=500, num_return_sequences=1) if exact_match else model(**batch)
+        
+        if exact_match:
+            generated_texts = tokenizer.batch_decode(outputs,  skip_special_tokens=True) #[tokenizer.decode(out, skip_special_tokens=True) for out in outputs]        
+            target_texts_decoded = [tokenizer.decode(target, skip_special_tokens=True) for target in batch["labels"]]
+
+        loss = exact_match_loss(generated_texts, target_texts_decoded) if exact_match else outputs.loss
         loss += loss.detach().float()
-        preds.extend(
-            tokenizer.batch_decode(
-                torch.argmax(outputs.logits, -1).detach().cpu().numpy(),
-                skip_special_tokens=True,
-            )
-        )
+        # preds.extend(
+        #     tokenizer.batch_decode(
+        #         torch.argmax(outputs.logits, -1).detach().cpu().numpy(),
+        #         skip_special_tokens=True,
+        #     )
+        # )
+        labels = torch.where(batch['labels'] != -100, batch['labels'], tokenizer.pad_token_id)
+
+        # targets = []
+        # for label_row in labels:
+        #     decoded_tokens = tokenizer.convert_ids_to_tokens(label_row, skip_special_tokens=True)
+        #     decoded_text = tokenizer.convert_tokens_to_string(decoded_tokens)
+        #     targets.append(decoded_text)
+
+        # if (exact_match):
+        #     print(preds)
+            # print(targets)
 
     loss = loss / len(dataloader)
     return loss
@@ -247,11 +280,19 @@ def main():
     lora_model = PeftModel.from_pretrained(model, "data/models/" + model_name_or_path)
     lora_model.to(device)
 
-    final_test_loss = test(test_dataloader, lora_model, tokenizer, device)
-    final_test_ppl = torch.exp(final_test_loss)
+    # final_test_loss = test(test_dataloader, lora_model, tokenizer, device, True)
+    # final_test_ppl = torch.exp(final_test_loss)
 
-    print(f"Test after loading: {final_test_ppl=} {final_test_loss=}")
+    # print(f"Test after loading: {final_test_ppl=} {final_test_loss=}")
 
+    sentences = ["Read the following sentence, then determine whether you return to the starting point.\n\nIf you follow these instructions, do you return to the starting point? Take 9 steps. Take 9 steps. Take 4 steps. Turn right.\nOptions:\n- Yes\n- No\n\nAnswer:\n"]
+    tokenizer.pad_token_id = tokenizer.eos_token_id
+    tokenizer.padding_side = "left"
+
+    inputs = tokenizer(sentences, return_tensors="pt", padding=True).to(device)
+    generate_ids = lora_model.generate(**inputs, max_length=500)
+    outputs = tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+    print([print(o, "\n") for o in outputs])
 
 if __name__ == "__main__":
     main()
