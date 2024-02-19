@@ -116,7 +116,7 @@ def preprocess_function(examples, tokenizer, prefix, text_column, label_column, 
         # print(i, sample_input_ids, label_input_ids)
         model_inputs["input_ids"][i] = sample_input_ids + label_input_ids
         # masks / ignores -100 tokens in the loss: https://pytorch.org/docs/stable/generated/torch.nn.CrossEntropyLoss.html#crossentropyloss
-        labels["input_ids"][i] = [-100] * len(sample_input_ids) + label_input_ids
+        labels["input_ids"][i] = [tokenizer.pad_token_id] * len(sample_input_ids) + label_input_ids
         model_inputs["attention_mask"][i] = [1] * len(model_inputs["input_ids"][i])
     # print(model_inputs)
     for i in range(batch_size):
@@ -129,7 +129,7 @@ def preprocess_function(examples, tokenizer, prefix, text_column, label_column, 
         model_inputs["attention_mask"][i] = [0] * (
             max_length - len(sample_input_ids)
         ) + model_inputs["attention_mask"][i]
-        labels["input_ids"][i] = [-100] * (
+        labels["input_ids"][i] = [tokenizer.pad_token_id] * (
             max_length - len(sample_input_ids)
         ) + label_input_ids
         model_inputs["input_ids"][i] = torch.tensor(
@@ -234,8 +234,6 @@ def main():
     )
 
     model = model.to(device)
-    if torch.cuda.device_count() > 1:
-        model = nn.DataParallel(model)
 
     # Send everything through `accelerator.prepare`
     train_loader, eval_loader, test_loader, model, optimizer = accelerator.prepare(
@@ -253,7 +251,7 @@ def main():
         for step, batch in enumerate(tqdm(train_dataloader)):
             batch = {k: v.to(device) for k, v in batch.items()}
 
-            output = model.module.generate(batch["input_ids"], max_length=500, num_return_sequences=1)
+            output = model.generate(batch["input_ids"], max_length=500, num_return_sequences=1)
 
             generated_texts = [tokenizer.decode(out, skip_special_tokens=True) for out in output]    
             target_texts_decoded = [tokenizer.decode(target, skip_special_tokens=True) for target in batch["labels"]]
