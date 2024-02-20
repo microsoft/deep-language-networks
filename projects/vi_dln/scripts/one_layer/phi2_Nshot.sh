@@ -28,9 +28,6 @@ fwd_max_tokens=256
 bwd_max_tokens=512
 one_layer=True
 
-# iters=20
-# num_p_samples=15
-
 # dataset
 for dataset in gsm8k hyperbaton navigate date_understanding logical_deduction_seven_objects mpqa trec subj disaster airline; do
 # n_shot
