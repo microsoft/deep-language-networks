@@ -38,7 +38,7 @@ you need to set the OPENAI_API_TYPE, OPENAI_API_BASE and OPENAI_API_VERSION.
 The OPENAI_API_TYPE must be set to 'azure' and the others correspond to the properties of your endpoint.
 
 
-> :warning: Setting `echo` and `logprobs` simultaneously is no longer supported for certain OpenAI models.
+> :warning: **Warning:** Setting `echo` and `logprobs` simultaneously is no longer supported for certain OpenAI models.
 However, optimizing prompts jointly for 2-DLN using variational inference requires both settings.
 To run 2-DLN experiments, consider hosting your own model (see [self-hosted models](#setup-self-hosted-models-vllm)).
 Alternatively, you can run 1-DNL by setting output_scoring_function="accuracy" and --one_layer=True.

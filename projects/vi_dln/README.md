@@ -17,7 +17,7 @@ See [one-layer-dln-hp-search-result.json](./one-layer-dln-hp-search-result.json)
 
 ### Two-Layer DLN
 
-> :warning: Setting `echo` and `logprobs` simultaneously is no longer supported for certain OpenAI models.
+> :warning: **Warning:** Setting `echo` and `logprobs` simultaneously is no longer supported for certain OpenAI models.
 However, optimizing prompts jointly for 2-DLN using variational inference requires both settings.
 To run 2-DLN experiments, consider hosting your own model (see [self-hosted models](../../README.md#setup-self-hosted-models-vllm)).
 Alternatively, you can run 1-DNL by setting output_scoring_function="accuracy" and --one_layer=True.
