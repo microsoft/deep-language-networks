@@ -256,7 +256,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     "--output_scoring_function",
     type=str,
     default="logprobs",
-    help="Use logprobs to score output predictions.",
+    help="Scoring function to score output predictions. One of: logprobs, accuracy",
 )
 @click.option(
     "--hidden_scoring_function",

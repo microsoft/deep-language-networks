@@ -17,6 +17,12 @@ See [one-layer-dln-hp-search-result.json](./one-layer-dln-hp-search-result.json)
 
 ### Two-Layer DLN
 
+:warning: Setting `echo` and `logprobs` simultaneously is no longer supported for certain OpenAI models.
+However, optimizing prompts jointly for 2-DLN using variational inference requires both settings.
+To run 2-DLN experiments, consider hosting your own model (see [self-hosted models](../../README.md#setup-self-hosted-models-vllm)).
+Alternatively, you can run 1-DNL by setting output_scoring_function="accuracy" and --one_layer=True.
+
+
 For two-layer DLN, you can select one of the following training strategies:
 
 - `two_layers_fix_2nd`: Load pretrained prompts from [one-layer-dln-hp-search-result.json](./one-layer-dln-hp-search-result.json) to the second layer and train only the first layer.

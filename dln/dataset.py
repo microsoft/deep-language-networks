@@ -3,6 +3,7 @@ import json
 import os
 from collections import defaultdict
 from os.path import join as pjoin
+import re
 from typing import Iterator, List, Literal, Tuple, Union
 
 import numpy as np
@@ -396,8 +397,6 @@ def init_dataset(
 
 
 def option_shuffle(data_point, rng):
-    import re
-
     pattern = r'\([A-Z]\)\s(.*)'
     letters = ['(A)', '(B)', '(C)', '(D)', '(E)', '(F)', '(G)']
 

@@ -38,6 +38,12 @@ you need to set the OPENAI_API_TYPE, OPENAI_API_BASE and OPENAI_API_VERSION.
 The OPENAI_API_TYPE must be set to 'azure' and the others correspond to the properties of your endpoint.
 
 
+:warning: Setting `echo` and `logprobs` simultaneously is no longer supported for certain OpenAI models.
+However, optimizing prompts jointly for 2-DLN using variational inference requires both settings.
+To run 2-DLN experiments, consider hosting your own model (see [self-hosted models](#setup-self-hosted-models-vllm)).
+Alternatively, you can run 1-DNL by setting output_scoring_function="accuracy" and --one_layer=True.
+
+
 ### Setup self-hosted models (vLLM)
 
 Export huggingface id or path to the tokenizer, for example `meta-llama/Llama-2-70b-chat-hf` from huggingface or `/path/to/Llama-2-70b-chat-hf` from your local machine.
@@ -110,15 +116,15 @@ fwd_model = llm_registry.register(
 )
 
 bwd_model = llm_registry.register(
-    "fwd_model",
+    "bwd_model",
     "gpt-35-turbo-instruct",
     temperature=0.7,
     max_tokens=512,
     stop=None,
 )
 
-fwd_model.generate("What is putine?")
-fwd_model.generate("What is putine?", max_tokens=200, stop=[r"\n"])
+fwd_model.generate("What is sirop d'érable?")
+fwd_model.generate("What is sirop d'érable?", max_tokens=200, stop=[r"\n"])
 ```
 
 Alternatively, you can specify the LLMs configuration in a YAML file with the following format:
@@ -189,7 +195,10 @@ LossRegistry.available_losses()  # list available losses
 loss_fn = LossRegistry.instantiate(
     "exact_match_loss", postprocess_prediction
 )
+y = ["Montreal", "Toronto", "Sao Paulo"]
+y_hat = ["Montréal", "Toronto", "SaoPaulo"]
 losses = loss_fn(y_hat, y)
+# array([1., 0., 1.], dtype=float32)
 ```
 For sampling and scoring both prompts and hidden states for the Variational Inference algorithm, samplers are found in [dln/vi/sampler.py](dln/vi/sampler.py), and the LogProbsScore in [dln/score.py](dln/score.py). Samplers use templates that are found in [dln/templates.py](dln/templates.py).
 
