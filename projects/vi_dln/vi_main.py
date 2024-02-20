@@ -193,12 +193,12 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option(
     "--fwd_temp",
     default=0.0,
-    help="Forward temperature",
+    help="Forward temperature. This config is ignored if --connections_config is specified.",
 )
 @click.option(
     "--bwd_temp",
     default=0.7,
-    help="Backward temperature",
+    help="Backward temperature. This config is ignored if --connections_config is specified.",
 )
 @click.option(
     "--use_memory",
@@ -256,7 +256,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     "--output_scoring_function",
     type=str,
     default="logprobs",
-    help="Use logprobs to score output predictions.",
+    help="Scoring function to score output predictions. One of: logprobs, accuracy",
 )
 @click.option(
     "--hidden_scoring_function",
@@ -310,13 +310,13 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     "--fwd_max_tokens",
     type=int,
     default=256,
-    help="Forward max tokens.",
+    help="Forward max tokens. This config is ignored if --connections_config is specified.",
 )
 @click.option(
     "--bwd_max_tokens",
     type=int,
     default=512,
-    help="Backward max tokens.",
+    help="Backward max tokens. This config is ignored if --connections_config is specified.",
 )
 @click.option(
     "--p1_max_tokens",
@@ -335,6 +335,15 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     type=int,
     default=1,
     help="Number of prompt optimization steps for the hidden layer.",
+)
+@click.option(
+    "--connections_config",
+    type=click.Path(exists=True),
+    default=None,
+    help=(
+        "Path to the connections config yaml file. If a config file is specified, "
+        "the models temperature and max_tokens from the command line are ignored."
+    ),
 )
 @click.option(
     "--use_nce",
@@ -413,6 +422,7 @@ def main(
     p1_max_tokens,
     p2_max_tokens,
     num_p1_steps,
+    connections_config,
     use_nce,
     burn_in_ratio,
     result_data_path,
@@ -471,23 +481,28 @@ def main(
     # Use the same model type if bwd is not specified.
     bwd_model_type = bwd_model_type or fwd_model_type
 
-    llm_registry = LLMRegistry()
+    if connections_config is not None:
+        llm_registry = LLMRegistry.from_yaml(connections_config)
+        fwd_model = llm_registry.get(fwd_model_type)
+        bwd_model = llm_registry.get(bwd_model_type)
+    else:
+        llm_registry = LLMRegistry()
 
-    fwd_model = llm_registry.register(
-        "fwd_model",
-        fwd_model_type,
-        temperature=0.0,
-        max_tokens=fwd_max_tokens,
-        stop=None,
-    )
+        fwd_model = llm_registry.register(
+            "fwd_model",
+            fwd_model_type,
+            temperature=0.0,
+            max_tokens=fwd_max_tokens,
+            stop=None,
+        )
 
-    bwd_model = llm_registry.register(
-        "bwd_model",
-        bwd_model_type,
-        temperature=bwd_temp,
-        max_tokens=bwd_max_tokens,
-        stop=None,
-    )
+        bwd_model = llm_registry.register(
+            "bwd_model",
+            bwd_model_type,
+            temperature=bwd_temp,
+            max_tokens=bwd_max_tokens,
+            stop=None,
+        )
 
     postproc = None
     if loss_function == "exact_match_loss":
