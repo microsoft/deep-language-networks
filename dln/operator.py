@@ -169,9 +169,9 @@ class GPT(LLM):
         return self._has_logprobs
 
     @staticmethod
-    def _log_filtering_error_message(error_message, prompt):
+    def _log_invalid_request_error_message(error_message, prompt):
         error_message = (
-            f"InvalidRequestError, most likely due to content filtering. "
+            f"InvalidRequestError. "
             f"Prompt: {prompt}. ErrorMessage: {error_message}"
         )
         logging.warning(error_message)
@@ -193,7 +193,7 @@ class GPT(LLM):
                 **kwargs,
             )
         except openai.InvalidRequestError as e:
-            self._log_filtering_error_message(e, prompt)
+            self._log_invalid_request_error_message(e, prompt)
             raise e
 
         if "content" not in response["choices"][0]["message"]:
@@ -234,7 +234,7 @@ class GPT(LLM):
                         **kwargs,
                     )
             except openai.InvalidRequestError as err:
-                self._log_filtering_error_message(err, prompt)
+                self._log_invalid_request_error_message(err, prompt)
             raise e
 
         return _parse_openai_response(response, return_logprobs, raw_logprobs, top_logprobs)
