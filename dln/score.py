@@ -38,9 +38,12 @@ class LogProbs:
 
 
 class LogProbsScore:
+    cache = {}
+    eval_cache = {}
 
-    def __init__(self, forward_evaluate: LLM):
+    def __init__(self, forward_evaluate: LLM, burn_in_ratio: float = 0.05):
         self.forward_evaluate = forward_evaluate
+        self.burn_in_ratio = burn_in_ratio
         self.cache = {}
 
     def score_requests(self, requests, output_classes=None, agg="max") -> LogProbs:
@@ -68,7 +71,7 @@ class LogProbsScore:
             "raw_logprobs": False,
             "top_logprobs": 100,
         }
-        
+
         output_logprobs = []
         output_distribs = []
 
@@ -109,20 +112,23 @@ class LogProbsScore:
                 min_prob = 1e-6
 
             output_classes_scores = np.asarray([min_prob for _ in output_classes])
+            # remove tokenization artifacts
+            clean_text_map = {
+                self.forward_evaluate.clean_text(i): i
+                for i in context_top_logprobs.keys()
+            }
             # accumulate probability mass for each class verbalizer
             # the class verbalizer can be either " a" or "a" (with or without space)
-            extenders = [
-                " ",  # gpt case, regular space
-                "▁",  # llama case, this is not an underscore ord("_") -> 95, but a special character ord("▁") -> 9601
-            ]
             for i in range(len(output_classes)):
                 verbalizers = output_classes.verbalizers(i)
-                verbalizers.extend([f"{e}{v}" for v in verbalizers for e in extenders])
+                verbalizers.extend([f" {v}" for v in verbalizers])
                 verbalizers = set(verbalizers)
                 verbalizers_scores = [0.]
                 for verbalizer in verbalizers:
-                    if verbalizer in context_top_logprobs:
-                        prob_orig = np.exp(context_top_logprobs[verbalizer])
+                    if verbalizer in clean_text_map:
+                        prob_orig = np.exp(
+                            context_top_logprobs[clean_text_map[verbalizer]]
+                        )
                     else:
                         prob_orig = min_prob
                     verbalizers_scores.append(prob_orig)
@@ -150,33 +156,50 @@ class LogProbsScore:
             "raw_logprobs": True,
         }
 
-        eval_batch = []
+        def get_eval_key(context, target):
+            return f"{context}\n{target}"
+
+        eval_keys = []
         for context, target in zip(contexts, targets):
-            to_eval = f"{context}\n{target}"
-            eval_batch.append(to_eval)
+            to_eval = get_eval_key(context, target)
+            if to_eval not in self.eval_cache:
+                eval_keys.append(to_eval)
+
+        print("# Scoring requests = {}".format(len(contexts)))
+        print("# Scoring non cached requests = {}".format(len(eval_keys)))
 
         # there might be doubles in the eval_batch, so we need to
         # only perform unique evals
-        unique_keys = list(set(eval_batch))
-        unique_keys_to_positions = {key: i for i, key in enumerate(unique_keys)}
-        unique_eval_results = self.forward_evaluate(
-            unique_keys,
+        eval_results = self.forward_evaluate(
+            eval_keys,
             async_generation=True,
             **eval_kwargs,
         )
+
+        for eval_key, eval_result in zip(eval_keys, eval_results):
+            self.eval_cache[eval_key] = eval_result
+
         # get the results in the same order as the eval_batch
         eval_results = []
-        for eval_key in eval_batch:
-            eval_results.append(unique_eval_results[unique_keys_to_positions[eval_key]])
+        for context, target in zip(contexts, targets):
+            to_eval = get_eval_key(context, target)
+            eval_results.append(self.eval_cache[to_eval])
+
         # get the nll results
         log_probs = [eval_result[1] for eval_result in eval_results]
+
         # get the logprobs results
         output_logprobs = []
         context_logprobs = []
+        all_output_logprobs = []
+
         for context, token_log_probs in zip(contexts, log_probs):
             num_tokens_prompt = len(self.forward_evaluate.encode(context))
-            target_log_probs = token_log_probs[num_tokens_prompt:]
+            burn_in_tokens = int(self.burn_in_ratio * (len(token_log_probs) - num_tokens_prompt))
+            target_log_probs = token_log_probs[num_tokens_prompt + burn_in_tokens:]
             context_log_probs = token_log_probs[1:num_tokens_prompt]
+            all_output_logprobs.append(target_log_probs)
             output_logprobs.append(sum(target_log_probs) / (len(target_log_probs) + 1e-5))
             context_logprobs.append(sum(context_log_probs) / (len(context_log_probs) + 1e-5))
+
         return LogProbs(np.asarray(output_logprobs), np.asarray(context_logprobs))

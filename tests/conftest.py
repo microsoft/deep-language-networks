@@ -30,6 +30,9 @@ def mock_llm_func():
             def encode(self, string):
                 return self.encoder.encode(string)
 
+            def clean_text(self, string):
+                return string
+
             @property
             def has_logprobs(self):
                 return True

@@ -107,6 +107,11 @@ class LLM(ABC):
     def encode(self, string: str) -> List[int]:
         raise NotImplementedError
 
+    @abstractmethod
+    def clean_text(self, text: str) -> str:
+        """Remove tokenization artifacts from the text, like weird characters used for spacing."""
+        raise NotImplementedError
+
     @property
     @abstractmethod
     def has_logprobs(self) -> bool:
@@ -117,6 +122,16 @@ class LLM(ABC):
 
     def _gen_random_seed(self):
         return self.rng.randint(0, 10000)
+
+    @staticmethod
+    def _mini_batch(inputs, batch_size=20):
+        input_length = len(inputs)
+        num_batches = input_length // batch_size + (
+            1 if input_length % batch_size > 0 else 0
+        )
+        for i in range(num_batches):
+            input_batch = inputs[batch_size * i : batch_size * (i + 1)]
+            yield input_batch
 
 
 class GPT(LLM):
@@ -158,14 +173,21 @@ class GPT(LLM):
     def encode(self, string: str) -> List[int]:
         return self.encoder.encode(string)
 
+    def clean_text(self, text: str) -> str:
+        """
+        Return text since there are no tokenization artifacts for GPT.
+        Tokens are either 'token' or ' token' for beginning of a word.
+        """
+        return text
+
     @property
     def has_logprobs(self) -> bool:
         return self._has_logprobs
 
     @staticmethod
-    def _log_filtering_error_message(error_message, prompt):
+    def _log_invalid_request_error_message(error_message, prompt):
         error_message = (
-            f"InvalidRequestError, most likely due to content filtering. "
+            f"InvalidRequestError. "
             f"Prompt: {prompt}. ErrorMessage: {error_message}"
         )
         logging.warning(error_message)
@@ -187,7 +209,7 @@ class GPT(LLM):
                 **kwargs,
             )
         except openai.InvalidRequestError as e:
-            self._log_filtering_error_message(e, prompt)
+            self._log_invalid_request_error_message(e, prompt)
             raise e
 
         if "content" not in response["choices"][0]["message"]:
@@ -228,7 +250,7 @@ class GPT(LLM):
                         **kwargs,
                     )
             except openai.InvalidRequestError as err:
-                self._log_filtering_error_message(err, prompt)
+                self._log_invalid_request_error_message(err, prompt)
             raise e
 
         return _parse_openai_response(response, return_logprobs, raw_logprobs, top_logprobs)
@@ -326,16 +348,21 @@ class VLLM(LLM):
         self,
         inputs: Union[List[str], str],
         async_generation: bool = True,
+        batch_size: int = 20,
         **kwargs
     ) -> List[str]:
         if not isinstance(inputs, list):
             inputs = [inputs]
+        self.check_max_length(inputs, **kwargs)
         generation_options = self.generation_options.copy()
         generation_options.update(**kwargs)
         if async_generation:
-            outputs = asyncio.run(
-                self._gather_vllm_response(inputs, **generation_options)
-            )
+            outputs = []
+            for input_batch in self._mini_batch(inputs, batch_size=batch_size):
+                outputs_batch = asyncio.run(
+                    self._gather_vllm_response(input_batch, **generation_options)
+                )
+                outputs = outputs + outputs_batch
         else:
             outputs = [
                 asyncio.run(
@@ -345,8 +372,28 @@ class VLLM(LLM):
             ]
         return outputs
 
+    def check_max_length(self, inputs: Union[List[str], str], **kwargs) -> bool:
+        gen_max_length = kwargs.get("max_tokens") or self.generation_options.get("max_tokens", 0)
+        model_max_len = self.encoder.model_max_length
+        if not isinstance(inputs, list):
+            inputs = [inputs]
+        for i in inputs:
+            if len(self.encoder.tokenize(i)) + gen_max_length > model_max_len:
+                raise ValueError(
+                    "Input + generation length should be less "
+                    f"than model_max_length {model_max_len}"
+                )
+
     def encode(self, string: str) -> List[int]:
         return self.encoder.encode(string)
+
+    def clean_text(self, text: str) -> str:
+        """
+        Remove tokenization artifacts from the text, like weird characters used for spacing. e.g:
+        "ĠNo" -> " No", '\n' -> 'Ċ'  # phi-2
+        "_No" -> " No"  # llama2
+        """
+        return self.encoder.decode(self.encoder.convert_tokens_to_ids(text))
 
     @property
     def has_logprobs(self) -> bool:

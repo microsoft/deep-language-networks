@@ -4,10 +4,12 @@ v3.0:
     A student is completing a task that requires producing a text output from a text input. The student receives an instruction that describes how to produce the output given each input.
     The student has made some errors. Your task is to improve the instruction such that the student can fix the errors.
 
+    {-% if prompt != '' %}
     This was the instruction.
     ## Instruction
     > {{ prompt }}
     [END]
+    {% endif %-}
 
     # Student successes
     {% for backward_info in backward_infos %} {% if backward_info.loss == 0.0 %}
@@ -72,3 +74,50 @@ v3.5:
     - Improve the instruction by providing examples on how to solve the task. Be concise.
     - Shorten the instruction by removing superflous words or sentences.
     - Rewrite the instruction by providing detailed information to avoid ambiguity. Be concise.
+v3.6:
+  stop_tokens: ['[END]']
+  template: |-
+    A student is completing a task that requires producing a text output from a text input.
+    The student receives an instruction that describes how to produce the output given each input.
+    Your task is to improve the instruction such that the student can identify and correct any errors.
+    {%- if prompt %}
+
+
+    This was the instruction:
+    ## Instruction
+    > {{ prompt }}
+    [END]
+    {%- endif %}
+    {%- set success_list = backward_infos | selectattr('loss', 'equalto', 0.0) | list %}
+    {%- set error_list = backward_infos | selectattr('loss', 'greaterthan', 0.0) | list %}
+    {%- if success_list %}
+
+
+    # Student successes
+    {%- for backward_info in success_list %}
+
+    ## Input:
+    > {{ backward_info.input }}
+    ## Correct Output:
+    > {{ backward_info.target }}
+    {%- endfor %}
+    {%- endif %}
+    {%- if error_list %}
+
+
+    # Student errors
+    {%- for backward_info in error_list %}
+
+    ## Input:
+    > {{ backward_info.input }}
+    ## Student Output:
+    > {{ backward_info.output }}
+    ## Correct Output:
+    > {{ backward_info.target }}
+    {%- endfor %}
+    {%- endif %}
+
+
+    Improve the instruction by being concise and avoiding unnecessary code generation.
+    ## Instruction
+    >

@@ -21,6 +21,7 @@ from dln.vi.utils import ResultLogWriter
 
 try:
     import wandb
+
     wandb_installed = True
 except ImportError:
     wandb_installed = False
@@ -84,7 +85,9 @@ def validate(dataset, model, loss_fn, iteration, val_scores, writer, result_writ
         for batch in dataset.iterate("dev", batch_size=20):
             x, y, infos = batch
             y_hat = model.forward(np.array(x), infos=infos)
-            result_writer.write_examples(iteration, x, y, model.result_entry.outputs, model.result_entry.hiddens)
+            result_writer.write_examples(
+                iteration, x, y, model.result_entry.outputs, model.result_entry.hiddens
+            )
             losses = loss_fn(y_hat, y)
             acc += len(y) - np.sum(losses)
             tot += len(y)
@@ -171,6 +174,12 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 @click.option("--tolerance", type=int, default=-1)
 @click.option("--cost_only", is_flag=True)
 @click.option(
+    "--rewrite_loss_only",
+    type=bool,
+    default=False,
+    help="Rewrite hidden states for examples with errors only. Speeds-up inference.",
+)
+@click.option(
     "--strip_options_for_hidden",
     type=bool,
     default=False,
@@ -186,13 +195,13 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     "--fwd_temp",
     type=float,
     default=0.0,
-    help="Forward temperature",
+    help="Forward temperature. This config is ignored if --connections_config is specified.",
 )
 @click.option(
     "--bwd_temp",
     type=float,
     default=0.7,
-    help="Backward temperature",
+    help="Backward temperature. This config is ignored if --connections_config is specified.",
 )
 @click.option(
     "--use_memory",
@@ -250,7 +259,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     "--output_scoring_function",
     type=str,
     default="logprobs",
-    help="Use logprobs to score output predictions.",
+    help="Scoring function to score output predictions. One of: logprobs, accuracy",
 )
 @click.option(
     "--hidden_scoring_function",
@@ -269,6 +278,12 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     type=bool,
     default=True,
     help="Include prior term in the posterior sharpening.",
+)
+@click.option(
+    "--posterior_sharpening_correct_weighting",
+    type=bool,
+    default=False,
+    help="Correct importance sampling weighting for sharpening.",
 )
 @click.option(
     "--posterior_sharpening_use_mi_regularization",
@@ -298,13 +313,13 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     "--fwd_max_tokens",
     type=int,
     default=256,
-    help="Forward max tokens.",
+    help="Forward max tokens. This config is ignored if --connections_config is specified.",
 )
 @click.option(
     "--bwd_max_tokens",
     type=int,
     default=512,
-    help="Backward max tokens.",
+    help="Backward max tokens. This config is ignored if --connections_config is specified.",
 )
 @click.option(
     "--p1_max_tokens",
@@ -325,10 +340,25 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     help="Number of prompt optimization steps for the hidden layer.",
 )
 @click.option(
+    "--connections_config",
+    type=click.Path(exists=True),
+    default=None,
+    help=(
+        "Path to the connections config yaml file. If a config file is specified, "
+        "the models temperature and max_tokens from the command line are ignored."
+    ),
+)
+@click.option(
     "--use_nce",
     type=bool,
     default=False,
     help="Use NCE for hidden scoring.",
+)
+@click.option(
+    "--burn_in_ratio",
+    type=float,
+    default=0.05,
+    help="Ratio of target tokens to skip when calculating logprobs.",
 )
 @click.option(
     "--result_data_path",
@@ -377,7 +407,9 @@ def main(
     output_scoring_function,
     hidden_scoring_function,
     loss_function,
+    rewrite_loss_only,
     posterior_sharpening_include_prior,
+    posterior_sharpening_correct_weighting,
     posterior_sharpening_use_mi_regularization,
     forward_use_classes,
     held_out_prompt_ranking,
@@ -393,7 +425,9 @@ def main(
     p1_max_tokens,
     p2_max_tokens,
     num_p1_steps,
+    connections_config,
     use_nce,
+    burn_in_ratio,
     result_data_path,
     enable_wandb,
 ):
@@ -418,7 +452,12 @@ def main(
             wandb.init(config=locals(), project="dln")
             prompt_table = wandb.Table(columns=["epoch", "w1", "w2"])
         else:
-            log_message(colored("Wandb is not installed. Please install it to enable wandb logging.", "red"))
+            log_message(
+                colored(
+                    "Wandb is not installed. Please install it to enable wandb logging.",
+                    "red",
+                )
+            )
 
     writer = SummaryWriter(out_dir)
 
@@ -445,24 +484,30 @@ def main(
     # Use the same model type if bwd is not specified.
     bwd_model_type = bwd_model_type or fwd_model_type
 
-    llm_registry = LLMRegistry()
-    fwd_model = llm_registry.register(
-        "fwd_model",
-        fwd_model_type,
-        temperature=0.0,
-        max_tokens=fwd_max_tokens,
-        stop=None,
-        seed=seed,
-    )
+    if connections_config is not None:
+        llm_registry = LLMRegistry.from_yaml(connections_config)
+        fwd_model = llm_registry.get(fwd_model_type)
+        bwd_model = llm_registry.get(bwd_model_type)
+    else:
+        llm_registry = LLMRegistry()
 
-    bwd_model = llm_registry.register(
-        "bwd_model",
-        bwd_model_type,
-        temperature=bwd_temp,
-        max_tokens=bwd_max_tokens,
-        stop=None,
-        seed=seed,
-    )
+        fwd_model = llm_registry.register(
+            "fwd_model",
+            fwd_model_type,
+            temperature=0.0,
+            max_tokens=fwd_max_tokens,
+            stop=None,
+            seed=seed,
+        )
+
+        bwd_model = llm_registry.register(
+            "bwd_model",
+            bwd_model_type,
+            temperature=bwd_temp,
+            max_tokens=bwd_max_tokens,
+            stop=None,
+            seed=seed,
+        )
 
     postproc = None
     if loss_function == "exact_match_loss":
@@ -470,7 +515,7 @@ def main(
     loss_fn = LossRegistry.instantiate(loss_function, postproc)
     prompt_sampler = PromptSampler(bwd_model, q_prompt)
     posterior_sampler = PosteriorSampler(bwd_model, q_hidden)
-    logprobs_score = LogProbsScore(fwd_model)
+    logprobs_score = LogProbsScore(fwd_model, burn_in_ratio)
     model = VILModel(
         loss_fn,
         init_p1=init_p1,
@@ -503,8 +548,10 @@ def main(
         hidden_scoring_function=hidden_scoring_function,
         num_p1_steps=num_p1_steps,
         posterior_sharpening_include_prior=posterior_sharpening_include_prior,
+        posterior_sharpening_correct_weighting=posterior_sharpening_correct_weighting,
         posterior_sharpening_use_mi_regularization=posterior_sharpening_use_mi_regularization,
         use_nce=use_nce,
+        rewrite_loss_only=rewrite_loss_only,
     )
 
     running_acc = 0.0
@@ -544,11 +591,13 @@ def main(
                 model.encoder_l2.weight = best_ps[1]
                 patience = 0
         else:
-            model.result_entry.log_metric('dev_acc', None)
+            model.result_entry.log_metric("dev_acc", None)
 
         result_writer.write_result(
             step=iteration,
-            layers=[model.encoder_l2.weight] if one_layer else [model.encoder_l1.weight, model.encoder_l2.weight],
+            layers=[model.encoder_l2.weight]
+            if one_layer
+            else [model.encoder_l1.weight, model.encoder_l2.weight],
             metrics=model.result_entry.metrics,
             candidates=model.result_entry.candidates,
         )
@@ -595,17 +644,19 @@ def main(
 
         if wandb_enabled:
             prompt_table.add_data(iteration + 1, str(p1), str(p2))
-            wandb.log({"train/prompts" : prompt_table})
-            wandb.log({"train/elbo": elbo, "train/acc": (1.0 - loss), "epoch": iteration})
+            wandb.log({"train/prompts": prompt_table})
+            wandb.log(
+                {"train/elbo": elbo, "train/acc": (1.0 - loss), "epoch": iteration}
+            )
 
         writer.add_scalar("elbo", elbo, iteration)
         writer.add_scalar("elbo1", elbo1, iteration)
         writer.add_scalar("elbo2", elbo2, iteration)
         writer.add_scalar("acc", (1.0 - loss), iteration)
-        model.result_entry.log_metric('elbo', elbo)
-        model.result_entry.log_metric('acc', (1.0 - loss))
-        model.result_entry.log_metric('run_elbo', running_elbo)
-        model.result_entry.log_metric('run_acc', running_acc)
+        model.result_entry.log_metric("elbo", elbo)
+        model.result_entry.log_metric("acc", (1.0 - loss))
+        model.result_entry.log_metric("run_elbo", running_elbo)
+        model.result_entry.log_metric("run_acc", running_acc)
 
     log_message("--------------------")
     log_message("Loading best model...")

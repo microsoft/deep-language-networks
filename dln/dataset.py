@@ -3,6 +3,8 @@ import json
 import os
 from collections import defaultdict
 from os.path import join as pjoin
+import re
+from typing import Iterator, List, Literal, Tuple, Union
 
 import numpy as np
 import yaml
@@ -12,34 +14,13 @@ from dln.score import OutputClasses
 from dln.vi.utils import log_message
 
 
-def option_shuffle(data_point, rng):
-    import re
+# (sentences, labels)
+DatasetData = Tuple[List[str], List[str]]
 
-    pattern = r'\([A-Z]\)\s(.*)'
-    letters = ['(A)', '(B)', '(C)', '(D)', '(E)', '(F)', '(G)']
+# (sentences, labels, few_shot_examples(sentence, label))
+DatasetDataAndFewShot = Tuple[List[str], List[str], List[Tuple[str, str]]]
 
-    input = data_point['input']
-    target = data_point['target']
-
-    if "\nOptions:\n" not in input:
-        raise ValueError("Error detected in data point, Options not found.")
-
-    input, _, options = input.partition('\nOptions:\n')
-    options = options.strip().split("\n")
-    options_text = [re.findall(pattern, option)[-1] for option in options]
-
-    random_indices = rng.permutation(range(len(options)))
-    target_index = letters.index(target)
-
-    new_target = letters[list(random_indices).index(target_index)]
-    new_options = [options_text[i] for i in random_indices]
-    new_options = [f'{letter} {text}' for letter, text in zip(letters, new_options)]
-
-    new_data_point = {}
-    new_data_point['input'] = f'{input}\nOptions:\n' + '\n'.join(new_options)
-    new_data_point['target'] = new_target
-
-    return new_data_point
+SplitType = Literal["train", "dev", "test"]
 
 
 class Dataset:
@@ -50,7 +31,7 @@ class Dataset:
         seed: int,
         use_label_mapping: bool = True,
         append_options: bool = True,
-        n_few_shots: int = -1,
+        n_few_shots: int = 0,
         max_train_size: int = -1,
         max_dev_size: int = -1,
         max_test_size: int = -1,
@@ -69,7 +50,9 @@ class Dataset:
         protos = self.dataset_info.get('protos', list(self.label_mapping.values()))
         self.output_classes = OutputClasses(protos=protos) if protos else None
 
-        self.rng = np.random.RandomState(self.random_seed)
+        self.dev_rng = np.random.RandomState(42)
+        self.test_rng = np.random.RandomState(42)
+        self.train_rng = np.random.RandomState(self.random_seed)
         self.few_shot_rng = np.random.RandomState(self.random_seed)
 
         # load dataset from file
@@ -80,7 +63,7 @@ class Dataset:
             test=dict(sentence=[], label=[]),
         )
         self.load_dataset()
-        self.resize_and_compute_per_class(
+        self._resize_and_compute_per_class(
             max_train_size, max_dev_size, max_test_size
         )
         self.reset()
@@ -114,6 +97,16 @@ class Dataset:
     def test_size(self):
         return len(self.dataset["test"]["label"])
 
+    def split_rgn(self, split: SplitType):
+        if split == "train":
+            return self.train_rng
+        elif split == "dev":
+            return self.dev_rng
+        elif split == "test":
+            return self.test_rng
+        else:
+            raise ValueError(f"Invalid split: {split}")
+
     def _get_few_shots(self):
         if self.n_few_shots <= 0:
             return None
@@ -141,11 +134,12 @@ class Dataset:
             y = [self.dataset["train"]["label"][i] for i in indices]
         return list(zip(x, y))
 
-    def resize_and_compute_per_class(self, max_train_size, max_dev_size, max_test_size):
+    def _resize_and_compute_per_class(self, max_train_size, max_dev_size, max_test_size):
         for split, max_size in zip(
             ("train", "dev", "test"),
             (max_train_size, max_dev_size, max_test_size),
         ):
+            resize_rng = self.split_rgn(split)
             split_per_class = f"{split}_per_class"
             per_class = defaultdict(list)
             for index, label in enumerate(self.dataset[split]["label"]):
@@ -155,7 +149,7 @@ class Dataset:
             if max_size > 0:
                 log_message(f"Cutting {split} dataset to {max_size} examples.")
                 indices = []
-                pick_order = self.rng.choice(
+                pick_order = resize_rng.choice(
                     list(self.dataset[split_per_class].keys()),
                     len(self.dataset[split_per_class].keys()),
                     replace=False,
@@ -163,7 +157,7 @@ class Dataset:
 
                 i = 0
                 while len(indices) < max_size:
-                    indices += self.rng.choice(
+                    indices += resize_rng.choice(
                         self.dataset[split_per_class][
                             pick_order[i % len(pick_order)]
                         ],
@@ -179,10 +173,10 @@ class Dataset:
                     per_class[label].append(index)
                 self.dataset[split_per_class] = per_class
 
-    def reset(self):
+    def reset(self) -> None:
         self.train_pointer, self.dev_pointer, self.test_pointer = 0, 0, 0
 
-    def reset_pointer(self, split):
+    def reset_pointer(self, split: SplitType) -> None:
         if split == "train":
             self.train_pointer = 0
         elif split == "dev":
@@ -190,7 +184,28 @@ class Dataset:
         elif split == "test":
             self.test_pointer = 0
 
-    def get_batch(self, split, batch_size, random_sample=False, balance=False):
+    def get_batch(
+        self,
+        split: SplitType,
+        batch_size: int,
+        random_sample: bool = False,
+        balance: bool = False,
+        return_few_shot: bool = True,
+    ) -> Union[DatasetData, DatasetDataAndFewShot]:
+        """
+        Retrieves a batch of data from the specified split of the dataset.
+
+        Args:
+            split: The split of the dataset to retrieve the batch from. One of "train", "dev", or "test".
+            batch_size: The size of the batch to retrieve.
+            random_sample: Whether to randomly sample the batch.
+            balance: Whether to balance the batch by sampling from each class.
+            return_few_shot: Whether to include few-shot examples in the batch.
+
+        Returns:
+            A tuple containing the list of sentences, the list of labels,
+            and a list of few_show examples (if return_few_shot is True).
+        """
         if balance is True and random_sample is False:
             raise ValueError("Balance batch must be sampled randomly.")
         if batch_size <= 0:
@@ -218,15 +233,16 @@ class Dataset:
                 self.test_pointer = 0
 
         if random_sample is True:
+            batch_rng = self.split_rgn(split)
             if balance is True:
                 indices = []
                 example_pools = {}
                 for key in self.dataset[f"{split}_per_class"].keys():
-                    example_pools[key] = self.rng.permutation(
+                    example_pools[key] = batch_rng.permutation(
                         self.dataset[f"{split}_per_class"][key]
                 )
                 i = 0
-                pick_order = self.rng.permutation(list(self.dataset[f"{split}_per_class"].keys()))
+                pick_order = batch_rng.permutation(list(self.dataset[f"{split}_per_class"].keys()))
                 while len(indices) < batch_size:
                     current_key = pick_order[i % len(pick_order)]
 
@@ -238,7 +254,7 @@ class Dataset:
                         example_pools[current_key] = example_pools[current_key][1:]
                     i += 1
             else:
-                indices = self.rng.choice(data_size, batch_size, replace=False)
+                indices = batch_rng.choice(data_size, batch_size, replace=False)
         else:
             start = pointer
             end = min(start + batch_size, data_size)
@@ -254,10 +270,33 @@ class Dataset:
             else:
                 label_list.append(self.dataset[split]["label"][idx])
 
+        if not return_few_shot:
+            return sentence_list, label_list
+
         few_shots = self._get_few_shots()
         return sentence_list, label_list, few_shots
 
-    def iterate(self, split, batch_size, random_sample=False):
+    def iterate(
+        self,
+        split: SplitType,
+        batch_size: int,
+        random_sample: bool = False,
+        balance: bool = False,
+        return_few_shot: bool = True,
+    ) -> Iterator[Union[DatasetData, DatasetDataAndFewShot]]:
+        """
+        Iterates over the dataset split and yields batches of data.
+
+        Parameters:
+        split (str): The split of the dataset to iterate over ("train", "dev", or "test").
+        batch_size (int): The size of each batch.
+        random_sample (bool): Whether to randomly sample the data or iterate sequentially.
+        balance: Whether to balance the batch by sampling from each class.
+        return_few_shot: Whether to include few-shot examples in the batch.
+
+        Returns:
+        An iterator that yields batches of data.
+        """
         if split == "train":
             self.train_pointer = 0
         elif split == "dev":
@@ -265,7 +304,9 @@ class Dataset:
         else:
             self.test_pointer = 0
         while True:
-            yield self.get_batch(split, batch_size, random_sample)
+            yield self.get_batch(
+                split, batch_size, random_sample, balance, return_few_shot
+            )
 
             if not random_sample:
                 if split == "dev" and self.dev_pointer == 0:
@@ -274,8 +315,21 @@ class Dataset:
                 if split == "test" and self.test_pointer == 0:
                     return
 
-    def get_data(self, split, indices=None):
-        """get all data from a split"""
+    def get_data(
+        self,
+        split: SplitType,
+        indices: List[int] = None
+    ) -> DatasetData:
+        """
+        Get all data from a split.
+
+        Parameters:
+        split: The split to retrieve data from. One of "train", "dev", or "test".
+        indices: Optional list of indices to select specific data samples.
+
+        Returns:
+        A tuple containing two lists: sentences and labels.
+        """
         assert split in self.dataset
         if indices is None:
             res_sentence = self.dataset[split]["sentence"]
@@ -290,14 +344,29 @@ class Dataset:
 
 
 def init_dataset(
-    dataset_id,
-    seed,
-    data_dir,
-    n_few_shots=-1,
-    max_train_size=-1,
-    max_dev_size=-1,
-    max_test_size=-1,
-):
+    dataset_id: str,
+    seed: int,
+    data_dir: str,
+    n_few_shots: int = 0,
+    max_train_size: int = -1,
+    max_dev_size: int = -1,
+    max_test_size: int = -1,
+) -> Dataset:
+    """
+    Initialize a dataset based on the given dataset id.
+
+    Args:
+        dataset_id: The dataset id.
+        seed: The seed value for randomization. Only applies to the train split and few-shot examples.
+        data_dir: The directory path where the dataset is located.
+        n_few_shots: The number of few-shot examples to include. Defaults to 0.
+        max_train_size: The maximum size of the training set. Defaults to -1 (no limit).
+        max_dev_size: The maximum size of the development set. Defaults to -1 (no limit).
+        max_test_size: The maximum size of the test set. Defaults to -1 (no limit).
+
+    Returns:
+        The initialized dataset.
+    """
     datasets = {
         "subj": OrderedPrompt,
         "mpqa": OrderedPrompt,
@@ -325,6 +394,34 @@ def init_dataset(
         max_test_size=max_test_size,
     )
     return dataset
+
+
+def option_shuffle(data_point, rng):
+    pattern = r'\([A-Z]\)\s(.*)'
+    letters = ['(A)', '(B)', '(C)', '(D)', '(E)', '(F)', '(G)']
+
+    input = data_point['input']
+    target = data_point['target']
+
+    if "\nOptions:\n" not in input:
+        raise ValueError("Error detected in data point, Options not found.")
+
+    input, _, options = input.partition('\nOptions:\n')
+    options = options.strip().split("\n")
+    options_text = [re.findall(pattern, option)[-1] for option in options]
+
+    random_indices = rng.permutation(range(len(options)))
+    target_index = letters.index(target)
+
+    new_target = letters[list(random_indices).index(target_index)]
+    new_options = [options_text[i] for i in random_indices]
+    new_options = [f'{letter} {text}' for letter, text in zip(letters, new_options)]
+
+    new_data_point = {}
+    new_data_point['input'] = f'{input}\nOptions:\n' + '\n'.join(new_options)
+    new_data_point['target'] = new_target
+
+    return new_data_point
 
 
 class BBH(Dataset):
@@ -407,6 +504,18 @@ class Leopard(Dataset):
                         "- " + item for item in list(self.label_mapping.values())
                     ]
                     sentence = "\n".join(sentence)
+                # append short description of the task
+                if self.dataset_name == "disaster":
+                    sentence = (
+                        "Is the following tweet relevant to a disaster? "
+                        + sentence
+                    )
+                # append short description of the task
+                elif self.dataset_name == "airline":
+                    sentence = (
+                        "Is the following tweet positive, negative, or neutral? "
+                        + sentence
+                    )
                 sentence_list.append(sentence)
                 label_list.append(label)
         indices = data_shuffling_rng.choice(len(sentence_list), 1500, replace=False)
