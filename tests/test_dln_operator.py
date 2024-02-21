@@ -78,6 +78,9 @@ def test_generate_seeds():
         def has_logprobs(self):
             return True
 
+        def clean_text(self, text):
+            return text
+
     prompt = "Prompt test"
 
     # generate seed from random state
