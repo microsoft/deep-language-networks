@@ -134,8 +134,8 @@ def main():
     label_column = "label"
     max_length = 128
     lr = 3e-2
-    num_epochs = 3
-    batch_size = 10
+    num_epochs = 10
+    batch_size = 16
 
     peft_config = PromptTuningConfig(
         task_type=TaskType.CAUSAL_LM,
@@ -173,11 +173,9 @@ def main():
         },
     )
     
-    indices = list(range(20))
-
-    train_dataset = Subset(processed_datasets["train"], indices)
-    eval_dataset = Subset(processed_datasets["dev"], indices)
-    test_dataset = Subset(processed_datasets["test"], indices)
+    train_dataset = processed_datasets["train"]
+    eval_dataset = processed_datasets["dev"]
+    test_dataset = processed_datasets["test"]
     
     train_dataloader = DataLoader(
         train_dataset,
