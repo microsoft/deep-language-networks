@@ -5,7 +5,7 @@ from dln.score import LogProbsScore, OutputClasses
 
 def test_logprobs_score_with_output_classes(score_requests, top_logprobs, mock_llm_func):
     mock_llm = mock_llm_func("text-davinci-003")
-    mock_llm.generate = top_logprobs
+    mock_llm._generate = top_logprobs
     logprobs_score = LogProbsScore(mock_llm)
 
     logprobs = logprobs_score.score_requests(
@@ -24,9 +24,9 @@ def test_logprobs_score_with_output_classes(score_requests, top_logprobs, mock_l
 
 def test_logprobs_score_without_output_classes(score_requests, raw_logprobs, mock_llm_func):
     mock_llm = mock_llm_func("text-davinci-003")
-    mock_llm.generate = raw_logprobs
+    mock_llm._generate = raw_logprobs
     logprobs_score = LogProbsScore(mock_llm)
-    
+
     logprobs = logprobs_score.score_requests(score_requests)
 
     np.testing.assert_almost_equal(logprobs.logp_targets, [-0.7682657, -0.7632834])

@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import openai
 import pytest
 
-from dln.operator import GPT, VLLM, LLMRegistry, _replace_env_vars, isolated_cost
+from dln.operator import GPT, LLM, VLLM, LLMRegistry, _replace_env_vars, isolated_cost
 
 
 @pytest.fixture
@@ -60,12 +60,49 @@ def test_get_completion_response(mock_openai_api):
 def test_generate(mock_openai_api, async_generation):
     gpt = GPT("text-davinci-003")
     prompt = "What is the largest city in Quebec?"
-    response = gpt.generate(
+    response = gpt._generate(
         inputs=[prompt, prompt],
         batch_size=1,
         async_generation=async_generation,
     )
     assert response == ["Montreal", "Montreal"]
+
+
+def test_generate_seeds():
+
+    class MockGPT(LLM):
+        def _generate(self, inputs, **kwargs):
+            return kwargs
+        def encode(self, string):
+            return string
+        def has_logprobs(self):
+            return True
+
+        def clean_text(self, text):
+            return text
+
+    prompt = "Prompt test"
+
+    # generate seed from random state
+    mock_gpt = MockGPT("mock_model", seed=42)
+    kwargs = mock_gpt(inputs=[prompt, prompt])
+    assert kwargs["seed"] == 7270  # randomly generated seed 1
+    kwargs = mock_gpt(inputs=[prompt, prompt])
+    assert kwargs["seed"] == 860  # randomly generated seed 2
+
+    # override seed with provided value
+    kwargs = mock_gpt(inputs=[prompt, prompt], seed=-10)
+    assert kwargs["seed"] == -10
+
+    # no seed at init, no seed provided
+    mock_gpt_no_seed = MockGPT("mock_model")
+    kwargs = mock_gpt_no_seed(inputs=[prompt, prompt])
+    assert "seed" not in kwargs
+
+    # no seed at init, seed provided
+    kwargs = mock_gpt_no_seed(inputs=[prompt, prompt], seed=-20)
+    assert kwargs["seed"] == -20
+
 
 @pytest.mark.parametrize("model_name", [
     "gpt-35-turbo",
@@ -88,7 +125,7 @@ def test_openai_invalid_request_error(monkeypatch):
     gpt = GPT("text-davinci-003")
     prompt = "What is the largest city in Quebec?"
     with pytest.raises(openai.InvalidRequestError, match="Invalid request"):
-        gpt.generate(prompt)
+        gpt._generate(prompt)
 
 
 @pytest.fixture

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 import re
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 import asyncio
 import numpy as np
 import openai
@@ -68,17 +68,26 @@ def _parse_openai_response(
 
 class LLM(ABC):
 
-    def __init__(self, model_name: str, **generation_options):
+    def __init__(self, model_name: str, seed: Optional[int] = None, **generation_options):
+        self.seed = seed
+        self.rng = np.random.RandomState(self.seed) if seed is not None else None
         self.generation_options = generation_options
         self.engine = model_name
         self.total_cost = 0.0
 
     def __call__(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
+        """Generate outputs for the given inputs. Use this method instead of calling _generate directly.
+        In addition to calling LLM._generate, this method generates a random seed per request
+        if the LLM was instantiated with a seed, and calculates the cost of the generation.
+        If a seed is provided in the kwargs, it will be used instead of generating a random one.
+        """
         is_echo_enabled = kwargs.get("echo") or self.generation_options.get("echo")
         if not is_echo_enabled:
             self.compute_cost(inputs)
-
-        outputs = self.generate(inputs, **kwargs)
+        # if LLM has a seed generator, and no seed is provided, generate a random seed
+        if kwargs.get("seed") is None and self.rng is not None:
+            kwargs["seed"] = self._gen_random_seed()
+        outputs = self._generate(inputs, **kwargs)
 
         if kwargs.get("return_logprobs"):
             self.compute_cost([out[0] for out in outputs])
@@ -87,7 +96,11 @@ class LLM(ABC):
         return outputs
 
     @abstractmethod
-    def generate(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
+    def _generate(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
+        """Generate outputs for the given inputs. Do not call this method directly,
+        since it does not generate a random seed or calculate the cost of the generation.
+        Use llm_instance(inputs) instead. Refer to __call__ method for more details.
+        """
         raise NotImplementedError
 
     @abstractmethod
@@ -106,6 +119,9 @@ class LLM(ABC):
 
     def compute_cost(self, inputs: List[str]) -> float:
         self.total_cost += np.sum(list([len(self.encode(input)) for input in inputs]))
+
+    def _gen_random_seed(self):
+        return self.rng.randint(0, 10000)
 
     @staticmethod
     def _mini_batch(inputs, batch_size=20):
@@ -248,7 +264,16 @@ class GPT(LLM):
         )
         return outputs
 
-    def generate(
+    def _mini_batch(self, inputs, batch_size=20):
+        input_length = len(inputs)
+        num_batches = input_length // batch_size + (
+            1 if input_length % batch_size > 0 else 0
+        )
+        for i in range(num_batches):
+            input_batch = inputs[batch_size * i : batch_size * (i + 1)]
+            yield input_batch
+
+    def _generate(
         self,
         inputs: Union[List[str], str],
         async_generation: bool = True,
@@ -319,7 +344,7 @@ class VLLM(LLM):
         )
         return outputs
 
-    def generate(
+    def _generate(
         self,
         inputs: Union[List[str], str],
         async_generation: bool = True,
