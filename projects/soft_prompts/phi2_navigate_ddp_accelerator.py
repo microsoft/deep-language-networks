@@ -1,5 +1,6 @@
 import os
 import torch
+import numpy as np
 import torch.nn as nn
 from accelerate import Accelerator
 from datasets import Dataset, DatasetDict
@@ -50,7 +51,20 @@ def load_dln_dataset_to_hf_dataset(dataset_id):
     )
     return dataset_dict
 
-def exact_match_loss(generated_texts, target_texts):
+def logprobs_for_classes(tokenizer, output_logits, classes):
+    logits = [0 for _ in range(len(classes))]
+    for i, target in enumerate(classes):
+        expanded_classes = [target] + [f" {target}"] + [f"{target.lower()}"] + [f" {target.lower()}"]
+        encoded_classes = [tokenizer.encode(c, return_tensors="pt", padding=True) for c in expanded_classes]
+        for token in encoded_classes:
+            logits[i] += output_logits[token]
+    return nn.functional.log_softmax(torch.tensor(logits), dim=0)
+
+def exact_match_loss(tokenizer, outputs, labels):     
+    target_texts = [tokenizer.decode([tok for tok in target if tok != -100], skip_special_tokens=True) for target in labels]
+    targets = list(set(target_texts))
+    generated_texts = [targets[np.argmax(logprobs_for_classes(tokenizer, out[-1], targets))] for out in outputs.logits]        
+
     losses = []
     for generated_text, target_text in zip(generated_texts, target_texts):
         generated_tokens = generated_text.split()
@@ -60,62 +74,35 @@ def exact_match_loss(generated_texts, target_texts):
 
     loss_tensor = torch.tensor(losses, dtype=torch.float32)
     total_loss = torch.mean(loss_tensor)
-    
     return total_loss
 
-def test(dataloader, model, tokenizer, device, exact_match=False):
-    loss = 0
+def test(dataloader, model, tokenizer, device, exact_match=True):
+    total_loss = 0
     preds = []
     for batch in tqdm(dataloader):
         batch = {k: v.to(device) for k, v in batch.items()}
         with torch.no_grad():
-            outputs = model.generate(batch["input_ids"], max_length=500, num_return_sequences=1) if exact_match else model(**batch)
-        
-        if exact_match:
-            generated_texts = tokenizer.batch_decode(outputs,  skip_special_tokens=True) #[tokenizer.decode(out, skip_special_tokens=True) for out in outputs]        
-            target_texts_decoded = [tokenizer.decode(target, skip_special_tokens=True) for target in batch["labels"]]
-
-        loss = exact_match_loss(generated_texts, target_texts_decoded) if exact_match else outputs.loss
-        loss += loss.detach().float()
+            outputs = model(**batch)
+        loss = exact_match_loss(tokenizer, outputs, batch["labels"]) if exact_match else outputs.loss
+        total_loss += loss.detach().float()
         labels = torch.where(batch['labels'] != -100, batch['labels'], tokenizer.pad_token_id)
 
-    loss = loss / len(dataloader)
-    return loss
-
+    total_loss = total_loss / len(dataloader)
+    return total_loss
 
 def preprocess_function(examples, tokenizer, prefix, text_column, label_column, max_length):
     batch_size = len(examples[text_column])
     inputs = [f"{prefix}{x}\n\nAnswer:\n" for x in examples[text_column]]
     targets = [str(x) for x in examples[label_column]]
-    model_inputs = tokenizer(inputs)
-    labels = tokenizer(targets)
-    for i in range(batch_size):
-        # Mask the inputs part, and update the attention mask to match the new length
-        sample_input_ids = model_inputs["input_ids"][i]
-        label_input_ids = labels["input_ids"][i] + [tokenizer.pad_token_id]
-        model_inputs["input_ids"][i] = sample_input_ids
-        # masks / ignores -100 tokens in the loss
-        labels["input_ids"][i] = [tokenizer.pad_token_id] * len(sample_input_ids) + label_input_ids
-        model_inputs["attention_mask"][i] = [1] * len(model_inputs["input_ids"][i])
-        # pad or truncate the batch to the specified max_length, and update the attention mask
-        sample_input_ids = model_inputs["input_ids"][i]
-        label_input_ids = labels["input_ids"][i]
-        model_inputs["input_ids"][i] = [tokenizer.pad_token_id] * (
-            max_length - len(sample_input_ids)
-        ) + sample_input_ids
-        model_inputs["attention_mask"][i] = [0] * (
-            max_length - len(sample_input_ids)
-        ) + model_inputs["attention_mask"][i]
-        labels["input_ids"][i] = [tokenizer.pad_token_id] * (
-            max_length - len(label_input_ids)
-        ) + label_input_ids
-        model_inputs["input_ids"][i] = torch.tensor(
-            model_inputs["input_ids"][i][:max_length]
-        )
-        model_inputs["attention_mask"][i] = torch.tensor(
-            model_inputs["attention_mask"][i][:max_length]
-        )
-        labels["input_ids"][i] = torch.tensor(labels["input_ids"][i][:max_length])
+    
+    model_inputs = tokenizer(inputs, padding='max_length', truncation=True, max_length=max_length)
+    
+    with tokenizer.as_target_tokenizer():
+        labels = tokenizer(targets, padding='max_length', truncation=True, max_length=max_length)
+
+    # Replace padding tokens in the labels with -100
+    labels["input_ids"] = [[-100 if token == tokenizer.pad_token_id else token for token in label] for label in labels["input_ids"]]
+
     model_inputs["labels"] = labels["input_ids"]
     return model_inputs
 
@@ -135,7 +122,7 @@ def main():
     max_length = 128
     lr = 3e-2
     num_epochs = 10
-    batch_size = 16
+    batch_size = 8
 
     peft_config = PromptTuningConfig(
         task_type=TaskType.CAUSAL_LM,
@@ -166,7 +153,7 @@ def main():
         desc="Running tokenizer on dataset",
         fn_kwargs={
             "tokenizer": tokenizer,
-            "prefix": initial_instruction + "\n\n",
+            "prefix": '',
             "text_column": text_column,
             "label_column": label_column,
             "max_length": max_length,
@@ -198,8 +185,14 @@ def main():
     )
 
     model = AutoModelForCausalLM.from_pretrained(model_name_or_path)
-    model = get_peft_model(model, peft_config)
-
+    try:
+        saved_model = PeftModel.from_pretrained(model, os.path.dirname(os.path.realpath(__file__)) + "/data/models/" + model_name_or_path)
+        model = saved_model
+        print("Using saved model from data/models/" + model_name_or_path)
+    except ValueError:
+        model = get_peft_model(model, peft_config)
+        print("Model not found, training new model")
+    
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
     lr_scheduler = get_linear_schedule_with_warmup(
         optimizer=optimizer,
@@ -224,30 +217,28 @@ def main():
         total_loss = 0
         for step, batch in enumerate(tqdm(train_dataloader)):
             batch = {k: v.to(device) for k, v in batch.items()}
-            output = model.generate(**batch, max_length=1, num_return_sequences=1, return_dict_in_generate=True)
+            output = model(**batch)
 
-            generated_texts = [tokenizer.decode(out[-1], skip_special_tokens=True) for out in output.sequences] #tokenizer.batch_decode(output.sequences, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-            target_texts_decoded = [tokenizer.decode(target, skip_special_tokens=True) for target in batch["labels"]]
-
-            loss = exact_match_loss(generated_texts, target_texts_decoded)
-            loss.requires_grad_(True)
-
-            total_loss += loss.detach().float()
+            loss = output.loss
+            total_loss += loss.item()
             optimizer.zero_grad()
             accelerator.backward(loss)
             optimizer.step()
             lr_scheduler.step()
 
         model.eval()
-        eval_epoch_loss = test(eval_dataloader, model, tokenizer, device)
+        eval_epoch_loss = test(eval_dataloader, model, tokenizer, device, False)
         eval_ppl = torch.exp(eval_epoch_loss)
         train_epoch_loss = total_loss / len(train_dataloader)
-        train_ppl = torch.exp(train_epoch_loss)
+        train_ppl = torch.exp(torch.tensor(train_epoch_loss))
         print(
             f"{epoch=}: {train_ppl=} {train_epoch_loss=} {eval_ppl=} {eval_epoch_loss=}"
         )
 
     model.eval()
+    if not saved_model:
+        model.save_pretrained("data/models/" + model_name_or_path)
+
     final_test_loss = test(test_dataloader, model, tokenizer, device)
     final_test_ppl = torch.exp(final_test_loss)
     print(f"Test before training: {init_test_ppl=} {init_test_loss=}")
