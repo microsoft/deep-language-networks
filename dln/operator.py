@@ -5,6 +5,10 @@ from typing import Dict, List, Optional, Union
 import asyncio
 import numpy as np
 import openai
+from openai import AzureOpenAI, AsyncAzureOpenAI
+
+client = AzureOpenAI(api_version=os.environ.get('OPENAI_API_VERSION'))
+aclient = AsyncAzureOpenAI(api_version=os.environ.get('OPENAI_API_VERSION'))
 import logging
 import os
 from tenacity import (
@@ -26,11 +30,11 @@ def _retry_request(min_wait=4, max_wait=10, max_attempts=100):
         stop=stop_after_attempt(max_attempts),
         wait=wait_exponential(multiplier=1, min=min_wait, max=max_wait),
         retry=(
-            retry_if_exception_type(openai.error.Timeout)
-            | retry_if_exception_type(openai.error.APIError)
-            | retry_if_exception_type(openai.error.APIConnectionError)
-            | retry_if_exception_type(openai.error.RateLimitError)
-            | retry_if_exception_type(openai.error.ServiceUnavailableError)
+            retry_if_exception_type(openai.Timeout)
+            | retry_if_exception_type(openai.APIError)
+            | retry_if_exception_type(openai.APIConnectionError)
+            | retry_if_exception_type(openai.RateLimitError)
+            | retry_if_exception_type(openai.ServiceUnavailableError)
         ),
     )
 
@@ -45,18 +49,18 @@ def _parse_openai_response(
     output = []
     nlls = []
     lengths = []
-    for response in response["choices"]:
-        output.append(response["text"].strip())
+    for response in response.choices:
+        output.append(response.text.strip())
         if raw_logprobs:
-            nlls.append(response["logprobs"]["token_logprobs"])
-            lengths.append(response["logprobs"]["tokens"])
+            nlls.append(response.logprobs.token_logprobs)
+            lengths.append(response.logprobs.tokens)
         elif top_logprobs:
-            nlls.append(response["logprobs"]["top_logprobs"])
-            lengths.append(response["logprobs"]["tokens"])
+            nlls.append(response.logprobs.top_logprobs)
+            lengths.append(response.logprobs.tokens)
         else:
-            if "token_logprobs" in response["logprobs"]:
-                nlls.append(sum(response["logprobs"]["token_logprobs"]))
-                lengths.append(len(response["logprobs"]["token_logprobs"]))
+            if "token_logprobs" in response.logprobs:
+                nlls.append(sum(response.logprobs.token_logprobs))
+                lengths.append(len(response.logprobs.token_logprobs))
             else:
                 nlls.append(-np.inf)
                 lengths.append(1)
@@ -167,7 +171,6 @@ class GPT(LLM):
         super().__init__(model_name, **generation_options)
         engine_for_encoder = self.engine.replace("gpt-35", "gpt-3.5")
         self.encoder = instantiate_tokenizer(engine_for_encoder)
-        openai.api_version = os.environ.get('OPENAI_API_VERSION')
         self._has_logprobs = self.engine in self.LOGPROBS_MODELS
 
     def encode(self, string: str) -> List[int]:
@@ -204,18 +207,16 @@ class GPT(LLM):
         else:
             kwargs["model"] = self.engine
         try:
-            response = await openai.ChatCompletion.acreate(
-                messages=[{"role": "user", "content": prompt}],
-                **kwargs,
-            )
+            response = await aclient.chat.completions.create(messages=[{"role": "user", "content": prompt}],
+            **kwargs)
         except openai.InvalidRequestError as e:
             self._log_invalid_request_error_message(e, prompt)
             raise e
 
-        if "content" not in response["choices"][0]["message"]:
+        if "content" not in response.choices[0].message:
             return ""
 
-        output = response["choices"][0]["message"]["content"].strip()
+        output = response.choices[0].message.content.strip()
         return output
 
     @_retry_request(min_wait=4, max_wait=10, max_attempts=500)
@@ -233,22 +234,18 @@ class GPT(LLM):
         """
         logging.debug(kwargs)
         try:
-            response = openai.Completion.create(
-                engine=self.engine,
-                prompt=prompt_batch,
-                logprobs=top_logprobs or 1,
-                **kwargs,
-            )
+            response = client.completions.create(model=self.model,
+            prompt=prompt_batch,
+            logprobs=top_logprobs or 1,
+            **kwargs)
         except openai.InvalidRequestError as e:
             # Retry one by one to find out which prompt is causing the error for debugging
             try:
                 for prompt in prompt_batch:
-                    _ = openai.Completion.create(
-                        engine=self.engine,
-                        prompt=prompt,
-                        logprobs=top_logprobs or 1,
-                        **kwargs,
-                    )
+                    _ = client.completions.create(model=self.model,
+                    prompt=prompt,
+                    logprobs=top_logprobs or 1,
+                    **kwargs)
             except openai.InvalidRequestError as err:
                 self._log_invalid_request_error_message(err, prompt)
             raise e
@@ -327,12 +324,10 @@ class VLLM(LLM):
 
     @_retry_request(min_wait=1, max_wait=1, max_attempts=100)
     async def _aget_vllm_response(self, input, **kwargs):
-        response = await openai.Completion.acreate(
-            model=self.engine,
-            prompt=input,
-            logprobs=kwargs.get("top_logprobs") or 1,
-            **kwargs,
-        )
+        response = await aclient.completions.create(model=self.model,
+        prompt=input,
+        logprobs=kwargs.get("top_logprobs") or 1,
+        **kwargs)
         return _parse_openai_response(response, **kwargs)[0]
 
     async def _gather_vllm_response(self, inputs, **kwargs):
