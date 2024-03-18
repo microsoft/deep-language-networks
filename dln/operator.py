@@ -6,12 +6,12 @@ from typing import Dict, List, Optional, Union
 import asyncio
 import numpy as np
 import openai
-from openai import AzureOpenAI, AsyncAzureOpenAI
+from openai import OpenAI, AsyncOpenAI
 
-client = AzureOpenAI(api_version=os.environ.get('OPENAI_API_VERSION'))
-aclient = AsyncAzureOpenAI(api_version=os.environ.get('OPENAI_API_VERSION'))
+client = OpenAI()
+aclient = AsyncOpenAI()
+
 import logging
-import os
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -21,8 +21,8 @@ from tenacity import (
 from termcolor import colored
 import yaml
 
+logging.getLogger("openai").setLevel(logging.WARNING)
 
-openai.util.logger.setLevel(logging.WARNING)
 
 
 def _retry_request(min_wait=4, max_wait=10, max_attempts=100):
@@ -33,9 +33,6 @@ def _retry_request(min_wait=4, max_wait=10, max_attempts=100):
         retry=(
             retry_if_exception_type(openai.Timeout)
             | retry_if_exception_type(openai.APIError)
-            | retry_if_exception_type(openai.APIConnectionError)
-            | retry_if_exception_type(openai.RateLimitError)
-            | retry_if_exception_type(openai.ServiceUnavailableError)
         ),
     )
 
@@ -210,7 +207,7 @@ class GPT(LLM):
         try:
             response = await aclient.chat.completions.create(messages=[{"role": "user", "content": prompt}],
             **kwargs)
-        except openai.InvalidRequestError as e:
+        except openai.APIError as e:
             self._log_invalid_request_error_message(e, prompt)
             raise e
 
@@ -235,19 +232,19 @@ class GPT(LLM):
         """
         logging.debug(kwargs)
         try:
-            response = client.completions.create(model=self.model,
+            response = client.completions.create(model=self.engine,
             prompt=prompt_batch,
             logprobs=top_logprobs or 1,
             **kwargs)
-        except openai.InvalidRequestError as e:
+        except openai.APIError as e:
             # Retry one by one to find out which prompt is causing the error for debugging
             try:
                 for prompt in prompt_batch:
-                    _ = client.completions.create(model=self.model,
+                    _ = client.completions.create(model=self.engine,
                     prompt=prompt,
                     logprobs=top_logprobs or 1,
                     **kwargs)
-            except openai.InvalidRequestError as err:
+            except openai.APIError as err:
                 self._log_invalid_request_error_message(err, prompt)
             raise e
 
@@ -325,7 +322,7 @@ class VLLM(LLM):
 
     @_retry_request(min_wait=1, max_wait=1, max_attempts=100)
     async def _aget_vllm_response(self, input, **kwargs):
-        response = await aclient.completions.create(model=self.model,
+        response = await aclient.completions.create(model=self.engine,
         prompt=input,
         logprobs=kwargs.get("top_logprobs") or 1,
         **kwargs)
