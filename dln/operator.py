@@ -208,7 +208,7 @@ class GPT(LLM):
             self._log_invalid_request_error_message(e, prompt)
             raise e
 
-        if "content" not in response.choices[0].message:
+        if not hasattr(response.choices[0].message, 'content'):
             return ""
 
         output = response.choices[0].message.content.strip()

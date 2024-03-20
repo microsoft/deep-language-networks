@@ -26,7 +26,7 @@ def mock_data():
 def mock_openai_api(monkeypatch, mock_data):
     chat_completion_data, completion_data = mock_data
     mock_api = MagicMock()
-    mock_api.ChatCompletion.acreate = AsyncMock(return_value=chat_completion_data)
+    mock_api.chat.completions.create = AsyncMock(return_value=chat_completion_data)
     mock_api.completions.create.return_value = completion_data
 
     print("This is the fixture mock_openai_api")
@@ -43,12 +43,12 @@ def test_valid_model_name(mock_openai_api):
     assert gpt.engine == "gpt-3.5-turbo-instruct"
 
 
-# @pytest.mark.asyncio
-# async def test_aget_chat_completion_response(mock_openai_api):
-#     gpt = GPT("gpt-3.5-turbo-instruct")
-#     prompt = "What is the largest city in Quebec?"
-#     response = await gpt._aget_chat_completion_response(prompt)
-#     assert "Montreal" in response
+@pytest.mark.asyncio
+async def test_aget_chat_completion_response(mock_openai_api):
+    gpt = GPT("gpt-3.5-turbo-instruct")
+    prompt = "What is the largest city in Quebec?"
+    response = await gpt._aget_chat_completion_response(prompt)
+    assert "Montreal" in response
 
 
 def test_get_completion_response(mock_openai_api):
@@ -118,16 +118,16 @@ def test_gpt_35_name_variations_load_tokenizer(model_name, mock_openai_api):
     assert gpt.encoder.name == "cl100k_base"
 
 
-# def test_openai_invalid_request_error(monkeypatch):
-#     mock_api = MagicMock()
-#     mock_api.Completion.create.side_effect = openai.APIError(
-#         "Invalid request", "param", body=None
-#     )
-#     monkeypatch.setattr(openai.Completion, "create", mock_api.create)
-#     gpt = GPT("gpt-3.5-turbo-instruct")
-#     prompt = "What is the largest city in Quebec?"
-#     with pytest.raises(openai.APIError, match="Invalid request"):
-#         gpt._generate(prompt)
+def test_openai_invalid_request_error(monkeypatch):
+    mock_api = MagicMock()
+    mock_api.Completion.create.side_effect = openai.APIError(
+        "Invalid request", "param", body=None
+    )
+    monkeypatch.setattr(openai.Completion, "create", mock_api.create)
+    gpt = GPT("gpt-3.5-turbo-instruct")
+    prompt = "What is the largest city in Quebec?"
+    with pytest.raises(openai.APIError, match="Invalid request"):
+        gpt._generate(prompt)
 
 
 @pytest.fixture
