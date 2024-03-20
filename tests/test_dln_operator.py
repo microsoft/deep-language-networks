@@ -310,70 +310,70 @@ def test_total_cost(gpt_api_config, llama_api_config, mock_openai_api):
     assert llm_registry.total_cost == 6.0
 
 
-# def test_compute_cost_manager(gpt_api_config, mock_openai_api):
-#     llm = LLMRegistry().register("gpt-3.5-turbo-instruct", **gpt_api_config)
-#     assert llm.total_cost == 0.0
-#     with isolated_cost(llm):  # add_cost_to_total=False by default
-#         prompt = "What is the largest city in Quebec?"
-#         response = llm(prompt)
-#         assert "Montreal" in response[0]
-#         assert llm.total_cost == 45.0
-#     assert llm.total_cost == 0.0
+def test_compute_cost_manager(gpt_api_config, mock_openai_api):
+    llm = LLMRegistry().register("gpt-3.5-turbo-instruct", **gpt_api_config)
+    assert llm.total_cost == 0.0
+    with isolated_cost(llm):  # add_cost_to_total=False by default
+        prompt = "What is the largest city in Quebec?"
+        response = llm(prompt)
+        assert "Montreal" in response[0]
+        assert llm.total_cost == 37.0
+    assert llm.total_cost == 0.0
 
-#     with isolated_cost(llm, add_cost_to_total=True):
-#         prompt = "What is the largest city in Quebec?"
-#         response = llm(prompt)
-#         assert "Montreal" in response[0]
-#         assert llm.total_cost == 45.0
-#     assert llm.total_cost == 49.0
-
-
-# def test_compute_cost_manager_many_llms(gpt_api_config, mock_openai_api):
-#     registry = LLMRegistry()
-#     gpt2 = registry.register("text-davinci-002", **gpt_api_config)
-#     gpt3 = registry.register("gpt-3.5-turbo-instruct", **gpt_api_config)
-#     assert gpt2.total_cost == 0.0
-#     assert gpt3.total_cost == 0.0
-#     with isolated_cost([gpt2, gpt3]):
-#         response = gpt2("What is the largest city in Quebec?")
-#         assert response == ["Montreal"]
-#         response = gpt3("What is the second-largest city in Canada?")
-#         assert gpt2.total_cost == 37.0
-#         assert gpt3.total_cost == 44.0
-#     assert gpt2.total_cost == 0.0
-#     assert gpt3.total_cost == 0.0
-#     with isolated_cost([gpt2, gpt3], add_cost_to_total=True):
-#         response = gpt2("What is the largest city in Quebec?")
-#         assert response == ["Montreal"]
-#         response = gpt3("What is the second-largest city in Canada?")
-#         assert gpt2.total_cost == 37.0
-#         assert gpt3.total_cost == 44.0
-#     assert gpt2.total_cost == 37.0
-#     assert gpt3.total_cost == 44.0
+    with isolated_cost(llm, add_cost_to_total=True):
+        prompt = "What is the largest city in Quebec?"
+        response = llm(prompt)
+        assert "Montreal" in response[0]
+        assert llm.total_cost == 37.0
+    assert llm.total_cost == 37.0
 
 
-# def test_compute_cost_manager_registry(gpt_api_config, mock_openai_api):
-#     registry = LLMRegistry()
-#     gpt2 = registry.register("text-davinci-002", **gpt_api_config)
-#     gpt3 = registry.register("gpt-3.5-turbo-instruct", **gpt_api_config)
-#     assert gpt2.total_cost == 0.0
-#     assert gpt3.total_cost == 0.0
-#     with isolated_cost(registry):
-#         response = gpt2("What is the largest city in Quebec?")
-#         assert response == ["Montreal"]
-#         response = gpt3("What is the second-largest city in Canada?")
-#         assert gpt2.total_cost == 37.0
-#         assert gpt3.total_cost == 44.0
-#     assert gpt2.total_cost == 0.0
-#     assert gpt3.total_cost == 0.0
-#     with isolated_cost(registry, add_cost_to_total=True):
-#         response = gpt2("What is the largest city in Quebec?")
-#         assert response == ["Montreal"]
-#         response = gpt3("What is the second-largest city in Canada?")
-#         assert gpt2.total_cost == 37.0
-#         assert gpt3.total_cost == 44.0
-#     assert gpt2.total_cost == 37.0
-#     assert gpt3.total_cost == 44.0
+def test_compute_cost_manager_many_llms(gpt_api_config, mock_openai_api):
+    registry = LLMRegistry()
+    gpt2 = registry.register("text-davinci-002", **gpt_api_config)
+    gpt3 = registry.register("gpt-3.5-turbo-instruct", **gpt_api_config)
+    assert gpt2.total_cost == 0.0
+    assert gpt3.total_cost == 0.0
+    with isolated_cost([gpt2, gpt3]):
+        response = gpt2("What is the largest city in Quebec?")
+        assert response == ["Montreal"]
+        response = gpt3("What is the second-largest city in Canada?")
+        assert gpt2.total_cost == 37.0
+        assert gpt3.total_cost == 44.0
+    assert gpt2.total_cost == 0.0
+    assert gpt3.total_cost == 0.0
+    with isolated_cost([gpt2, gpt3], add_cost_to_total=True):
+        response = gpt2("What is the largest city in Quebec?")
+        assert response == ["Montreal"]
+        response = gpt3("What is the second-largest city in Canada?")
+        assert gpt2.total_cost == 37.0
+        assert gpt3.total_cost == 44.0
+    assert gpt2.total_cost == 37.0
+    assert gpt3.total_cost == 44.0
+
+
+def test_compute_cost_manager_registry(gpt_api_config, mock_openai_api):
+    registry = LLMRegistry()
+    gpt2 = registry.register("text-davinci-002", **gpt_api_config)
+    gpt3 = registry.register("gpt-3.5-turbo-instruct", **gpt_api_config)
+    assert gpt2.total_cost == 0.0
+    assert gpt3.total_cost == 0.0
+    with isolated_cost(registry):
+        response = gpt2("What is the largest city in Quebec?")
+        assert response == ["Montreal"]
+        response = gpt3("What is the second-largest city in Canada?")
+        assert gpt2.total_cost == 37.0
+        assert gpt3.total_cost == 44.0
+    assert gpt2.total_cost == 0.0
+    assert gpt3.total_cost == 0.0
+    with isolated_cost(registry, add_cost_to_total=True):
+        response = gpt2("What is the largest city in Quebec?")
+        assert response == ["Montreal"]
+        response = gpt3("What is the second-largest city in Canada?")
+        assert gpt2.total_cost == 37.0
+        assert gpt3.total_cost == 44.0
+    assert gpt2.total_cost == 37.0
+    assert gpt3.total_cost == 44.0
 
 
 @patch.dict(os.environ, {"TEST": "123"})
