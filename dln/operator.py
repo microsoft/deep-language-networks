@@ -8,9 +8,6 @@ import numpy as np
 import openai
 from openai import OpenAI, AsyncOpenAI
 
-client = OpenAI()
-aclient = AsyncOpenAI()
-
 import logging
 from tenacity import (
     retry,
@@ -22,8 +19,6 @@ from termcolor import colored
 import yaml
 
 logging.getLogger("openai").setLevel(logging.WARNING)
-
-
 
 def _retry_request(min_wait=4, max_wait=10, max_attempts=100):
     return retry(
@@ -56,7 +51,7 @@ def _parse_openai_response(
             nlls.append(response.logprobs.top_logprobs)
             lengths.append(response.logprobs.tokens)
         else:
-            if "token_logprobs" in response.logprobs:
+            if hasattr(response.logprobs, 'token_logprobs'):
                 nlls.append(sum(response.logprobs.token_logprobs))
                 lengths.append(len(response.logprobs.token_logprobs))
             else:
@@ -170,6 +165,8 @@ class GPT(LLM):
         engine_for_encoder = self.engine.replace("gpt-35", "gpt-3.5")
         self.encoder = instantiate_tokenizer(engine_for_encoder)
         self._has_logprobs = self.engine in self.LOGPROBS_MODELS
+        self.client = openai.OpenAI()
+        self.aclient = openai.AsyncOpenAI()
 
     def encode(self, string: str) -> List[int]:
         return self.encoder.encode(string)
@@ -205,7 +202,7 @@ class GPT(LLM):
         else:
             kwargs["model"] = self.engine
         try:
-            response = await aclient.chat.completions.create(messages=[{"role": "user", "content": prompt}],
+            response = await self.aclient.chat.completions.create(messages=[{"role": "user", "content": prompt}],
             **kwargs)
         except openai.APIError as e:
             self._log_invalid_request_error_message(e, prompt)
@@ -232,7 +229,7 @@ class GPT(LLM):
         """
         logging.debug(kwargs)
         try:
-            response = client.completions.create(model=self.engine,
+            response = self.client.completions.create(model=self.engine,
             prompt=prompt_batch,
             logprobs=top_logprobs or 1,
             **kwargs)
@@ -240,7 +237,7 @@ class GPT(LLM):
             # Retry one by one to find out which prompt is causing the error for debugging
             try:
                 for prompt in prompt_batch:
-                    _ = client.completions.create(model=self.engine,
+                    _ = self.client.completions.create(model=self.engine,
                     prompt=prompt,
                     logprobs=top_logprobs or 1,
                     **kwargs)
@@ -319,10 +316,13 @@ class VLLM(LLM):
     def __init__(self, model_name: str, **generation_options):
         super().__init__(model_name, **generation_options)
         self.encoder = instantiate_tokenizer(model_name)
+        self.aclient = openai.AsyncOpenAI()
+
+
 
     @_retry_request(min_wait=1, max_wait=1, max_attempts=100)
     async def _aget_vllm_response(self, input, **kwargs):
-        response = await aclient.completions.create(model=self.engine,
+        response = await self.aclient.completions.create(model=self.engine,
         prompt=input,
         logprobs=kwargs.get("top_logprobs") or 1,
         **kwargs)

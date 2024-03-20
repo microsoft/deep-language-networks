@@ -1,5 +1,6 @@
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
 
 import openai
 import pytest
@@ -9,15 +10,15 @@ from dln.operator import GPT, LLM, VLLM, LLMRegistry, _replace_env_vars, isolate
 
 @pytest.fixture
 def mock_data():
-    chat_completion_data = {"choices": [{"message": {"content": "Montreal"}}]}
-    completion_data = {
-        "choices": [
-            {
-                "text": "Montreal",
-                "logprobs": {"token_logprobs": [0], "top_logprobs": [{}], "tokens": {}},
-            }
+    chat_completion_data = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="Montreal"))])
+    completion_data = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                text="Montreal",
+                logprobs=SimpleNamespace(token_logprobs=[0], top_logprobs=[{}], tokens={}),
+            )
         ]
-    }
+    )
     return chat_completion_data, completion_data
 
 
@@ -26,17 +27,18 @@ def mock_openai_api(monkeypatch, mock_data):
     chat_completion_data, completion_data = mock_data
     mock_api = MagicMock()
     mock_api.ChatCompletion.acreate = AsyncMock(return_value=chat_completion_data)
-    mock_api.Completion.create.return_value = completion_data
-    monkeypatch.setattr(openai, "ChatCompletion", mock_api.ChatCompletion)
-    monkeypatch.setattr(openai, "Completion", mock_api.Completion)
+    mock_api.completions.create.return_value = completion_data
 
+    print("This is the fixture mock_openai_api")
+    with patch('openai.OpenAI', return_value=mock_api) as mock_openai, patch('openai.AsyncOpenAI', return_value=mock_api) as mock_async_openai:
+        yield mock_openai, mock_async_openai
 
 def test_invalid_model_name():
     with pytest.raises(ValueError):
         GPT("invalid-model-name")
 
 
-def test_valid_model_name():
+def test_valid_model_name(mock_openai_api):
     gpt = GPT("gpt-3.5-turbo-instruct")
     assert gpt.engine == "gpt-3.5-turbo-instruct"
 
@@ -53,7 +55,7 @@ def test_get_completion_response(mock_openai_api):
     gpt = GPT("gpt-3.5-turbo-instruct")
     prompt = "What is the largest city in Quebec?"
     response = gpt._get_completion_response([prompt])
-    assert "Montreal" in response[0]
+    assert ["Montreal"] == response
 
 
 @pytest.mark.parametrize("async_generation", [True, False])
@@ -110,7 +112,7 @@ def test_generate_seeds():
     "gpt-35-turbo-instruct",
     "gpt-3.5-turbo-instruct",
 ])
-def test_gpt_35_name_variations_load_tokenizer(model_name):
+def test_gpt_35_name_variations_load_tokenizer(model_name, mock_openai_api):
     gpt = GPT(model_name)
     assert gpt.engine == model_name
     assert gpt.encoder.name == "cl100k_base"
@@ -131,10 +133,10 @@ def test_gpt_35_name_variations_load_tokenizer(model_name):
 @pytest.fixture
 def gpt_api_config():
     return {
-        # "api_key": "gpt3-key",
-        # "api_base": "https://gpt-3-api.com",
-        # "api_type": "azure",
-        # "api_version": "2023-03-15-preview",
+        "api_key": "gpt3-key",
+        "api_base": "https://gpt-3-api.com",
+        "api_type": "azure",
+        "api_version": "2023-03-15-preview",
     }
 
 
@@ -148,7 +150,7 @@ def llama_api_config():
     }
 
 
-def test_registry_llm(gpt_api_config):
+def test_registry_llm(gpt_api_config, mock_openai_api):
     from dln.operator import LLMRegistry
     llm_registry = LLMRegistry()
     llm = llm_registry.register("gpt_3", "gpt-3.5-turbo-instruct", **gpt_api_config)
@@ -163,7 +165,7 @@ def test_registry_llm(gpt_api_config):
     assert another_llm.engine == "llama2"
 
 
-def test_registry_llm_duplicated_name(gpt_api_config):
+def test_registry_llm_duplicated_name(gpt_api_config, mock_openai_api):
     registry = LLMRegistry()
     registry.register("gpt-3.5-turbo-instruct", **gpt_api_config)
     with pytest.raises(
@@ -173,7 +175,7 @@ def test_registry_llm_duplicated_name(gpt_api_config):
         registry.register("gpt-3.5-turbo-instruct", **gpt_api_config)
 
 
-def test_load_llms_from_config(gpt_api_config, llama_api_config):
+def test_load_llms_from_config(gpt_api_config, llama_api_config, mock_openai_api):
     config = [
         {
             "name": "gpt-3",
@@ -201,7 +203,7 @@ def test_load_llms_from_config(gpt_api_config, llama_api_config):
     assert llama.generation_options == llama_api_config
 
 
-def test_get_llm(gpt_api_config):
+def test_get_llm(gpt_api_config, mock_openai_api):
     config = [
         {
             "name": "gpt-3",
@@ -250,7 +252,7 @@ def test_load_llms_from_yaml(tmp_path):
 
 
 @patch.dict(os.environ, {"TEST": "123", "FOO": "BAR"})
-def test_load_llms_from_yaml(tmp_path):
+def test_load_llms_from_yaml(tmp_path, mock_openai_api):
     llms_yaml_content = """
     - name: gpt-3
       model: gpt-3.5-turbo-instruct
@@ -284,7 +286,7 @@ def test_load_llms_from_yaml(tmp_path):
     assert llama.generation_options["api_key"] == "llama-key"
 
 
-def test_total_cost(gpt_api_config, llama_api_config):
+def test_total_cost(gpt_api_config, llama_api_config, mock_openai_api):
     config = [
         {
             "name": "gpt-3",
@@ -315,15 +317,15 @@ def test_total_cost(gpt_api_config, llama_api_config):
 #         prompt = "What is the largest city in Quebec?"
 #         response = llm(prompt)
 #         assert "Montreal" in response[0]
-#         assert llm.total_cost == 43.0
+#         assert llm.total_cost == 45.0
 #     assert llm.total_cost == 0.0
 
 #     with isolated_cost(llm, add_cost_to_total=True):
 #         prompt = "What is the largest city in Quebec?"
 #         response = llm(prompt)
-#         assert response == ["Montreal"]
-#         assert llm.total_cost == 37.0
-#     assert llm.total_cost == 37.0
+#         assert "Montreal" in response[0]
+#         assert llm.total_cost == 45.0
+#     assert llm.total_cost == 49.0
 
 
 # def test_compute_cost_manager_many_llms(gpt_api_config, mock_openai_api):
