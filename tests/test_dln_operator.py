@@ -29,7 +29,6 @@ def mock_openai_api(monkeypatch, mock_data):
     mock_api.chat.completions.create = AsyncMock(return_value=chat_completion_data)
     mock_api.completions.create.return_value = completion_data
 
-    print("This is the fixture mock_openai_api")
     with patch('openai.OpenAI', return_value=mock_api) as mock_openai, patch('openai.AsyncOpenAI', return_value=mock_api) as mock_async_openai:
         yield mock_openai, mock_async_openai
 
@@ -316,14 +315,14 @@ def test_compute_cost_manager(gpt_api_config, mock_openai_api):
     with isolated_cost(llm):  # add_cost_to_total=False by default
         prompt = "What is the largest city in Quebec?"
         response = llm(prompt)
-        assert "Montreal" in response[0]
+        assert response == ["Montreal"]
         assert llm.total_cost == 37.0
     assert llm.total_cost == 0.0
 
     with isolated_cost(llm, add_cost_to_total=True):
         prompt = "What is the largest city in Quebec?"
         response = llm(prompt)
-        assert "Montreal" in response[0]
+        assert response == ["Montreal"]
         assert llm.total_cost == 37.0
     assert llm.total_cost == 37.0
 
