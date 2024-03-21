@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import openai
 import pytest
 
-from dln.operator import GPT, LLM, VLLM, LLMRegistry, _replace_env_vars, isolated_cost
+from dln.operator import GPT, LLM, VLLM, LLMRegistry, InvalidRequestError, _replace_env_vars, isolated_cost
 
 
 @pytest.fixture
@@ -67,7 +67,7 @@ def test_generate(mock_openai_api, async_generation):
         batch_size=1,
         async_generation=async_generation,
     )
-    # assert response == ["Montreal", "Montreal"]
+    assert response == ["Montreal", "Montreal"]
 
 
 def test_generate_seeds():
@@ -118,15 +118,15 @@ def test_gpt_35_name_variations_load_tokenizer(model_name, mock_openai_api):
     assert gpt.encoder.name == "cl100k_base"
 
 
-def test_openai_invalid_request_error(monkeypatch):
+def test_openai_invalid_request_error(monkeypatch, mock_openai_api):
     mock_api = MagicMock()
-    mock_api.Completion.create.side_effect = openai.APIError(
-        "Invalid request", "param", body=None
-    )
-    monkeypatch.setattr(openai.Completion, "create", mock_api.create)
+    exception = InvalidRequestError("Invalid request")
+    exception.type = 'invalid_request_error'
+    mock_api.completions.create.side_effect = exception
+    monkeypatch.setattr(openai.OpenAI().completions, "create", mock_api.completions.create)
     gpt = GPT("gpt-3.5-turbo-instruct")
     prompt = "What is the largest city in Quebec?"
-    with pytest.raises(openai.APIError, match="Invalid request"):
+    with pytest.raises(InvalidRequestError, match="Invalid request"):
         gpt._generate(prompt)
 
 

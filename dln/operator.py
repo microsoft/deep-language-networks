@@ -20,6 +20,10 @@ import yaml
 
 logging.getLogger("openai").setLevel(logging.WARNING)
 
+class InvalidRequestError(Exception):
+    """Exception raised for invalid request errors."""
+    pass
+
 def _retry_request(min_wait=4, max_wait=10, max_attempts=100):
     return retry(
         reraise=True,
@@ -242,8 +246,12 @@ class GPT(LLM):
                     logprobs=top_logprobs or 1,
                     **kwargs)
             except openai.APIError as err:
-                self._log_invalid_request_error_message(err, prompt)
-            raise e
+                if err.type == 'invalid_request_error':
+                    self._log_invalid_request_error_message(err, prompt)
+            if (e.type == 'invalid_request_error'):
+                raise InvalidRequestError("Invalid request error occurred") from e
+            else:
+                raise e
 
         return _parse_openai_response(response, return_logprobs, raw_logprobs, top_logprobs)
 
