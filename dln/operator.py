@@ -32,6 +32,8 @@ def _retry_request(min_wait=4, max_wait=10, max_attempts=100):
         retry=(
             retry_if_exception_type(openai.Timeout)
             | retry_if_exception_type(openai.APIError)
+            | retry_if_exception_type(openai.APIConnectionError)
+            | retry_if_exception_type(openai.RateLimitError)
         ),
     )
 
@@ -169,8 +171,8 @@ class GPT(LLM):
         engine_for_encoder = self.engine.replace("gpt-35", "gpt-3.5")
         self.encoder = instantiate_tokenizer(engine_for_encoder)
         self._has_logprobs = self.engine in self.LOGPROBS_MODELS
-        self.client = openai.OpenAI()
-        self.aclient = openai.AsyncOpenAI()
+        self.client = openai.AzureOpenAI() if openai.api_type == "azure" else openai.OpenAI()
+        self.aclient = openai.AzureAsyncOpenAI() if openai.api_type == "azure" else openai.AsyncOpenAI()
 
     def encode(self, string: str) -> List[int]:
         return self.encoder.encode(string)
