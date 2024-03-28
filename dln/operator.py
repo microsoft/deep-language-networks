@@ -1,12 +1,14 @@
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
+import os
 import re
 from typing import Dict, List, Optional, Union
 import asyncio
 import numpy as np
 import openai
+from openai import OpenAI, AsyncOpenAI
+
 import logging
-import os
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -16,9 +18,11 @@ from tenacity import (
 from termcolor import colored
 import yaml
 
+logging.getLogger("openai").setLevel(logging.WARNING)
 
-openai.util.logger.setLevel(logging.WARNING)
-
+class InvalidRequestError(Exception):
+    """Exception raised for invalid request errors."""
+    pass
 
 def _retry_request(min_wait=4, max_wait=10, max_attempts=100):
     return retry(
@@ -26,11 +30,10 @@ def _retry_request(min_wait=4, max_wait=10, max_attempts=100):
         stop=stop_after_attempt(max_attempts),
         wait=wait_exponential(multiplier=1, min=min_wait, max=max_wait),
         retry=(
-            retry_if_exception_type(openai.error.Timeout)
-            | retry_if_exception_type(openai.error.APIError)
-            | retry_if_exception_type(openai.error.APIConnectionError)
-            | retry_if_exception_type(openai.error.RateLimitError)
-            | retry_if_exception_type(openai.error.ServiceUnavailableError)
+            retry_if_exception_type(openai.Timeout)
+            | retry_if_exception_type(openai.APIError)
+            | retry_if_exception_type(openai.APIConnectionError)
+            | retry_if_exception_type(openai.RateLimitError)
         ),
     )
 
@@ -40,23 +43,22 @@ def _parse_openai_response(
     return_logprobs=False,
     raw_logprobs=False,
     top_logprobs=False,
-    **kwargs,
 ):
     output = []
     nlls = []
     lengths = []
-    for response in response["choices"]:
-        output.append(response["text"].strip())
+    for response in response.choices:
+        output.append(response.text.strip())
         if raw_logprobs:
-            nlls.append(response["logprobs"]["token_logprobs"])
-            lengths.append(response["logprobs"]["tokens"])
+            nlls.append(response.logprobs.token_logprobs)
+            lengths.append(response.logprobs.tokens)
         elif top_logprobs:
-            nlls.append(response["logprobs"]["top_logprobs"])
-            lengths.append(response["logprobs"]["tokens"])
+            nlls.append(response.logprobs.top_logprobs)
+            lengths.append(response.logprobs.tokens)
         else:
-            if "token_logprobs" in response["logprobs"]:
-                nlls.append(sum(response["logprobs"]["token_logprobs"]))
-                lengths.append(len(response["logprobs"]["token_logprobs"]))
+            if hasattr(response.logprobs, 'token_logprobs'):
+                nlls.append(sum(response.logprobs.token_logprobs))
+                lengths.append(len(response.logprobs.token_logprobs))
             else:
                 nlls.append(-np.inf)
                 lengths.append(1)
@@ -167,8 +169,17 @@ class GPT(LLM):
         super().__init__(model_name, **generation_options)
         engine_for_encoder = self.engine.replace("gpt-35", "gpt-3.5")
         self.encoder = instantiate_tokenizer(engine_for_encoder)
-        openai.api_version = os.environ.get('OPENAI_API_VERSION')
         self._has_logprobs = self.engine in self.LOGPROBS_MODELS
+        kwargs = {}
+        if "api_base" in generation_options:
+            kwargs["base_url"] = generation_options["api_base"]
+        if "base_url" in generation_options:
+            kwargs["base_url"] = generation_options["base_url"]
+        if "api_key" in generation_options:
+            kwargs["api_key"] = generation_options["api_key"]
+
+        self.client = openai.AzureOpenAI(**kwargs) if openai.api_type == "azure" else openai.OpenAI(**kwargs)
+        self.aclient = openai.AzureAsyncOpenAI(**kwargs) if openai.api_type == "azure" else openai.AsyncOpenAI(**kwargs)
 
     def encode(self, string: str) -> List[int]:
         return self.encoder.encode(string)
@@ -204,18 +215,16 @@ class GPT(LLM):
         else:
             kwargs["model"] = self.engine
         try:
-            response = await openai.ChatCompletion.acreate(
-                messages=[{"role": "user", "content": prompt}],
-                **kwargs,
-            )
-        except openai.InvalidRequestError as e:
+            response = await self.aclient.chat.completions.create(messages=[{"role": "user", "content": prompt}],
+            **kwargs)
+        except openai.APIError as e:
             self._log_invalid_request_error_message(e, prompt)
             raise e
 
-        if "content" not in response["choices"][0]["message"]:
+        if not hasattr(response.choices[0].message, 'content'):
             return ""
 
-        output = response["choices"][0]["message"]["content"].strip()
+        output = response.choices[0].message.content.strip()
         return output
 
     @_retry_request(min_wait=4, max_wait=10, max_attempts=500)
@@ -233,25 +242,25 @@ class GPT(LLM):
         """
         logging.debug(kwargs)
         try:
-            response = openai.Completion.create(
-                engine=self.engine,
-                prompt=prompt_batch,
-                logprobs=top_logprobs or 1,
-                **kwargs,
-            )
-        except openai.InvalidRequestError as e:
+            response = self.client.completions.create(model=self.engine,
+            prompt=prompt_batch,
+            logprobs=top_logprobs or 1,
+            **kwargs)
+        except openai.APIError as e:
             # Retry one by one to find out which prompt is causing the error for debugging
             try:
                 for prompt in prompt_batch:
-                    _ = openai.Completion.create(
-                        engine=self.engine,
-                        prompt=prompt,
-                        logprobs=top_logprobs or 1,
-                        **kwargs,
-                    )
-            except openai.InvalidRequestError as err:
-                self._log_invalid_request_error_message(err, prompt)
-            raise e
+                    _ = self.client.completions.create(model=self.engine,
+                    prompt=prompt,
+                    logprobs=top_logprobs or 1,
+                    **kwargs)
+            except openai.APIError as err:
+                if err.type == 'invalid_request_error':
+                    self._log_invalid_request_error_message(err, prompt)
+            if (e.type == 'invalid_request_error'):
+                raise InvalidRequestError("Invalid request error occurred") from e
+            else:
+                raise e
 
         return _parse_openai_response(response, return_logprobs, raw_logprobs, top_logprobs)
 
@@ -324,16 +333,25 @@ class VLLM(LLM):
     def __init__(self, model_name: str, **generation_options):
         super().__init__(model_name, **generation_options)
         self.encoder = instantiate_tokenizer(model_name)
+        kwargs = {}
+        if "api_base" in generation_options:
+            kwargs["base_url"] = generation_options["api_base"]
+        if "base_url" in generation_options:
+            kwargs["base_url"] = generation_options["base_url"]
+        if "api_key" in generation_options:
+            kwargs["api_key"] = generation_options["api_key"]
+            
+        self.aclient = openai.AzureAsyncOpenAI(**kwargs) if openai.api_type == "azure" else openai.AsyncOpenAI(**kwargs)
+
+
 
     @_retry_request(min_wait=1, max_wait=1, max_attempts=100)
-    async def _aget_vllm_response(self, input, **kwargs):
-        response = await openai.Completion.acreate(
-            model=self.engine,
-            prompt=input,
-            logprobs=kwargs.get("top_logprobs") or 1,
-            **kwargs,
-        )
-        return _parse_openai_response(response, **kwargs)[0]
+    async def _aget_vllm_response(self, input, return_logprobs=False, raw_logprobs=False, top_logprobs=False, **kwargs):
+        kwargs["logprobs"] = top_logprobs or 1
+        response = await self.aclient.completions.create(model=self.engine,
+        prompt=input,
+        **kwargs)
+        return _parse_openai_response(response, return_logprobs, raw_logprobs, top_logprobs)[0]
 
     async def _gather_vllm_response(self, inputs, **kwargs):
         outputs = await asyncio.gather(
