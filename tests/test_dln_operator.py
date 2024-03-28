@@ -174,7 +174,7 @@ def test_registry_llm_duplicated_name(gpt_api_config, mock_openai_api):
         registry.register("gpt-3.5-turbo-instruct", **gpt_api_config)
 
 
-def test_load_llms_from_config(gpt_api_config, llama_api_config, mock_openai_api):
+def test_load_llms_from_config(gpt_api_config, llama_api_config):
     config = [
         {
             "name": "gpt-3",
@@ -198,8 +198,12 @@ def test_load_llms_from_config(gpt_api_config, llama_api_config, mock_openai_api
     assert isinstance(llama, VLLM)
     assert gpt.engine == "gpt-3.5-turbo-instruct"
     assert llama.engine == "llama2"
-    assert gpt.generation_options == gpt_api_config
-    assert llama.generation_options == llama_api_config
+    assert gpt.client.base_url == gpt_api_config.get("api_base")
+    assert gpt.client.api_key == gpt_api_config.get("api_key")
+    assert gpt.aclient.base_url == gpt_api_config.get("api_base")
+    assert gpt.aclient.api_key == gpt_api_config.get("api_key")
+    assert llama.aclient.base_url == llama_api_config.get("api_base")
+    assert llama.aclient.api_key == llama_api_config.get("api_key")
 
 
 def test_get_llm(gpt_api_config, mock_openai_api):

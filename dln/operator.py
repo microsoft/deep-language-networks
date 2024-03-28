@@ -43,7 +43,6 @@ def _parse_openai_response(
     return_logprobs=False,
     raw_logprobs=False,
     top_logprobs=False,
-    **kwargs,
 ):
     output = []
     nlls = []
@@ -171,8 +170,16 @@ class GPT(LLM):
         engine_for_encoder = self.engine.replace("gpt-35", "gpt-3.5")
         self.encoder = instantiate_tokenizer(engine_for_encoder)
         self._has_logprobs = self.engine in self.LOGPROBS_MODELS
-        self.client = openai.AzureOpenAI() if openai.api_type == "azure" else openai.OpenAI()
-        self.aclient = openai.AzureAsyncOpenAI() if openai.api_type == "azure" else openai.AsyncOpenAI()
+        kwargs = {}
+        if "api_base" in generation_options:
+            kwargs["base_url"] = generation_options["api_base"]
+        if "base_url" in generation_options:
+            kwargs["base_url"] = generation_options["base_url"]
+        if "api_key" in generation_options:
+            kwargs["api_key"] = generation_options["api_key"]
+
+        self.client = openai.AzureOpenAI(**kwargs) if openai.api_type == "azure" else openai.OpenAI(**kwargs)
+        self.aclient = openai.AzureAsyncOpenAI(**kwargs) if openai.api_type == "azure" else openai.AsyncOpenAI(**kwargs)
 
     def encode(self, string: str) -> List[int]:
         return self.encoder.encode(string)
@@ -326,17 +333,25 @@ class VLLM(LLM):
     def __init__(self, model_name: str, **generation_options):
         super().__init__(model_name, **generation_options)
         self.encoder = instantiate_tokenizer(model_name)
-        self.aclient = openai.AsyncOpenAI()
+        kwargs = {}
+        if "api_base" in generation_options:
+            kwargs["base_url"] = generation_options["api_base"]
+        if "base_url" in generation_options:
+            kwargs["base_url"] = generation_options["base_url"]
+        if "api_key" in generation_options:
+            kwargs["api_key"] = generation_options["api_key"]
+            
+        self.aclient = openai.AzureAsyncOpenAI(**kwargs) if openai.api_type == "azure" else openai.AsyncOpenAI(**kwargs)
 
 
 
     @_retry_request(min_wait=1, max_wait=1, max_attempts=100)
-    async def _aget_vllm_response(self, input, **kwargs):
+    async def _aget_vllm_response(self, input, return_logprobs=False, raw_logprobs=False, top_logprobs=False, **kwargs):
+        kwargs["logprobs"] = top_logprobs or 1
         response = await self.aclient.completions.create(model=self.engine,
         prompt=input,
-        logprobs=kwargs.get("top_logprobs") or 1,
         **kwargs)
-        return _parse_openai_response(response, **kwargs)[0]
+        return _parse_openai_response(response, return_logprobs, raw_logprobs, top_logprobs)[0]
 
     async def _gather_vllm_response(self, inputs, **kwargs):
         outputs = await asyncio.gather(
