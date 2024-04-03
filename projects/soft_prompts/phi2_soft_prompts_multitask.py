@@ -103,7 +103,7 @@ def load_dln_dataset_to_hf_dataset(dataset_id):
     dln_dataset = init_dataset(
         dataset_id=dataset_id,
         seed=42,
-        data_dir=os.path.dirname(os.path.realpath(__file__)) + "/../../data",
+        data_dir="../../data",
     )
 
     def load_split(split):
@@ -159,7 +159,7 @@ text_column = "text"
 label_column = "label"
 max_length = 128
 lr = 3e-2
-num_epochs = 10
+num_epochs = 50
 batch_size = 8
 
 peft_config = MultitaskPromptTuningConfig(
@@ -227,8 +227,8 @@ test_dataloader = DataLoader(
 model = AutoModelForCausalLM.from_pretrained(model_name_or_path)
 model.config.pad_token_id = model.config.eos_token_id
 try:
-    saved_model1 = PeftModel.from_pretrained(model, os.path.dirname(os.path.realpath(__file__)) + "/data/models/" + model_name_or_path + "/model1")
-    saved_model2 = PeftModel.from_pretrained(model, os.path.dirname(os.path.realpath(__file__)) + "/data/models/" + model_name_or_path + "/model2")
+    saved_model1 = PeftModel.from_pretrained(model, "data/models/" + model_name_or_path + "/model1")
+    saved_model2 = PeftModel.from_pretrained(model, "data/models/" + model_name_or_path + "/model2")
     model1 = saved_model1
     model2 = saved_model2
     print("Using saved model from data/models/" + model_name_or_path)
@@ -295,8 +295,6 @@ for epoch in range(num_epochs):
         optimizer2.zero_grad()
         accelerator.backward(loss2, retain_graph=True)
         accelerator.backward(loss1)
-        # loss2.backward(retain_graph=True)
-        # loss1.backward()
         optimizer1.step()
         optimizer2.step()
         lr_scheduler1.step()
@@ -335,9 +333,6 @@ print(f"Test before training2: {init_test_ppl2=} {init_test_loss2=}")
 print(f"Test after training1: {final_test_ppl1=} {final_test_loss1=}")
 print(f"Test after training2: {final_test_ppl2=} {final_test_loss2=}")
 
-# %% [markdown]
-# 
-
 # %%
 correct = 0
 total = 0
@@ -371,5 +366,18 @@ print(f"{dataset['test']['label'][:10]=}")
 "accuracy=82.39999999999999% on the test dataset"
 "test_preds[:10]=['Yes', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'Yes']"
 "dataset['test']['label'][:10]=['No', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'No']"
+
+# %%
+sentences = ["Read the following sentence, then determine whether you return to the starting point.\n\nIf you follow these instructions, do you return to the starting point? Take 9 steps. Take 9 steps. Take 4 steps. Turn right.\nOptions:\n- Yes\n- No\n\nAnswer:\n"]
+inputs = tokenizer(sentences, return_tensors="pt", padding=True).to(device)
+
+task_ids = [1 for i in inputs["input_ids"]]
+task_ids = torch.tensor(task_ids).to(device)
+
+generate_ids = model2.generate(**inputs, max_length=100, task_ids=task_ids)
+outputs = tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+
+print(outputs[0])
+["No"]
 
 
