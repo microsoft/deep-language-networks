@@ -203,7 +203,7 @@ def main():
     model = model.to(device)
 
     # Send everything through `accelerator.prepare`
-    train_loader, eval_loader, test_loader, model, optimizer = accelerator.prepare(
+    train_dataloader, eval_dataloader, test_dataloader, model, optimizer = accelerator.prepare(
         train_dataloader, eval_dataloader, test_dataloader, model, optimizer
     )
 
