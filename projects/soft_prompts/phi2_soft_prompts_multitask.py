@@ -226,6 +226,9 @@ test_dataloader = DataLoader(
 
 model = AutoModelForCausalLM.from_pretrained(model_name_or_path)
 model.config.pad_token_id = model.config.eos_token_id
+
+saved_model1 = None
+saved_model2 = None
 try:
     saved_model1 = PeftModel.from_pretrained(model, "data/models/" + model_name_or_path + "/model1")
     saved_model2 = PeftModel.from_pretrained(model, "data/models/" + model_name_or_path + "/model2")
@@ -319,10 +322,6 @@ for epoch in range(num_epochs):
 
 model1.eval()
 model2.eval()
-if not saved_model1:
-    model1.save_pretrained("data/models/" + model_name_or_path + "/model1")
-if not saved_model2:
-    model2.save_pretrained("data/models/" + model_name_or_path + "/model2")
 
 final_test_loss1, test_preds1 = test(test_dataloader, model1)
 final_test_loss2, test_preds2 = test(test_dataloader, model1, model2)
@@ -332,6 +331,17 @@ print(f"Test before training1: {init_test_ppl1=} {init_test_loss1=}")
 print(f"Test before training2: {init_test_ppl2=} {init_test_loss2=}")
 print(f"Test after training1: {final_test_ppl1=} {final_test_loss1=}")
 print(f"Test after training2: {final_test_ppl2=} {final_test_loss2=}")
+
+if not saved_model1:
+    if isinstance(model1, torch.nn.parallel.DistributedDataParallel):
+        model1.module.save_pretrained("data/models/" + model_name_or_path + "/model1")
+    else:
+        model1.save_pretrained("data/models/" + model_name_or_path + "/model1")
+if not saved_model2:
+    if isinstance(model2, torch.nn.parallel.DistributedDataParallel):
+        model2.module.save_pretrained("data/models/" + model_name_or_path + "/model2")
+    else:
+        model2.save_pretrained("data/models/" + model_name_or_path + "/model2")
 
 # %%
 correct = 0
@@ -374,7 +384,11 @@ inputs = tokenizer(sentences, return_tensors="pt", padding=True).to(device)
 task_ids = [1 for i in inputs["input_ids"]]
 task_ids = torch.tensor(task_ids).to(device)
 
-generate_ids = model2.generate(**inputs, max_length=100, task_ids=task_ids)
+if isinstance(model2, torch.nn.parallel.DistributedDataParallel):
+    generate_ids = model2.module.generate(**inputs, max_length=100, task_ids=task_ids)
+else:
+    generate_ids = model2.generate(**inputs, max_length=100, task_ids=task_ids)
+
 outputs = tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
 
 print(outputs[0])
