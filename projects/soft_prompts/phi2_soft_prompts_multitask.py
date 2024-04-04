@@ -159,7 +159,7 @@ text_column = "text"
 label_column = "label"
 max_length = 128
 lr = 3e-2
-num_epochs = 50
+num_epochs = 100
 batch_size = 8
 
 peft_config = MultitaskPromptTuningConfig(
@@ -296,8 +296,8 @@ for epoch in range(num_epochs):
         total_loss2 += loss2.item()
         optimizer1.zero_grad()
         optimizer2.zero_grad()
-        accelerator.backward(loss2, retain_graph=True)
-        accelerator.backward(loss1)
+        accelerator.backward(loss1, retain_graph=True)
+        accelerator.backward(loss2)
         optimizer1.step()
         optimizer2.step()
         lr_scheduler1.step()
@@ -376,22 +376,3 @@ print(f"{dataset['test']['label'][:10]=}")
 "accuracy=82.39999999999999% on the test dataset"
 "test_preds[:10]=['Yes', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'Yes']"
 "dataset['test']['label'][:10]=['No', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'No']"
-
-# %%
-sentences = ["Read the following sentence, then determine whether you return to the starting point.\n\nIf you follow these instructions, do you return to the starting point? Take 9 steps. Take 9 steps. Take 4 steps. Turn right.\nOptions:\n- Yes\n- No\n\nAnswer:\n"]
-inputs = tokenizer(sentences, return_tensors="pt", padding=True).to(device)
-
-task_ids = [1 for i in inputs["input_ids"]]
-task_ids = torch.tensor(task_ids).to(device)
-
-if isinstance(model2, torch.nn.parallel.DistributedDataParallel):
-    generate_ids = model2.module.generate(**inputs, max_length=100, task_ids=task_ids)
-else:
-    generate_ids = model2.generate(**inputs, max_length=100, task_ids=task_ids)
-
-outputs = tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-
-print(outputs[0])
-["No"]
-
-
