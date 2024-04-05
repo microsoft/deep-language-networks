@@ -4,14 +4,23 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-        
         {
-            "cwd": "${fileDirname}",
             "name": "Python Debugger: Current File",
+            "cwd": "${fileDirname}",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Acclerate Launch: Current File",
+            "cwd": "${fileDirname}",
             "type": "debugpy",
             "request": "launch",
             "module": "accelerate.commands.launch",
-            "args": ["${file}"],
+            "args": [
+                "${file}"
+            ],
             "console": "integratedTerminal"
         }
     ]

@@ -153,13 +153,13 @@ tokenizer_name_or_path = "microsoft/phi-2"
 
 dataset_id = "navigate"
 initial_instruction = (
-    "Read the following sentence, then determine whether you return to the starting point."
+    "Read the following question, then choose the correct answer."
 )
 text_column = "text"
 label_column = "label"
 max_length = 128
-lr = 3e-2
-num_epochs = 100
+lr = 3e-1
+num_epochs = 50
 batch_size = 8
 
 peft_config = MultitaskPromptTuningConfig(
@@ -356,7 +356,7 @@ print(f"{accuracy=}% on the test dataset")
 print(f"{test_preds1[:10]=}")
 print(f"{dataset['test']['label'][:10]=}")
 
-"accuracy=80.4% on the test dataset"
+"accuracy=82.8% on the test dataset"
 "test_preds[:10]=['Yes', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'Yes']"
 "dataset['test']['label'][:10]=['No', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'No']"
 
@@ -373,6 +373,6 @@ print(f"{accuracy=}% on the test dataset")
 print(f"{test_preds2[:10]=}")
 print(f"{dataset['test']['label'][:10]=}")
 
-"accuracy=82.39999999999999% on the test dataset"
+"accuracy=83.2% on the test dataset"
 "test_preds[:10]=['Yes', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'Yes']"
 "dataset['test']['label'][:10]=['No', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'No']"
