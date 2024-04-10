@@ -69,12 +69,26 @@ def _parse_openai_response(
 
 class LLM(ABC):
 
-    def __init__(self, model_name: str, seed: Optional[int] = None, **generation_options):
+    def __init__(
+            self,
+            model_name: str,
+            base_url: Optional[str] = None,
+            api_base: Optional[str] = None,  # backward compatibility, use base_url
+            api_key: Optional[str] = None,
+            api_type: Optional[str] = None,
+            api_version: Optional[str] = None,
+            seed: Optional[int] = None,
+            **generation_options,
+        ):
         self.seed = seed
         self.rng = np.random.RandomState(self.seed) if seed is not None else None
         self.generation_options = generation_options
         self.engine = model_name
         self.total_cost = 0.0
+        self.base_url = base_url or api_base or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE")
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.api_type = api_type or os.getenv("OPENAI_API_TYPE")
+        self.api_version = api_version or os.getenv("OPENAI_API_VERSION")
 
     def __call__(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
         """Generate outputs for the given inputs. Use this method instead of calling _generate directly.
@@ -161,11 +175,15 @@ class GPT(LLM):
     LOGPROBS_MODELS = COMPLETION_MODELS.copy()
 
     def __init__(self, model_name: str = "text-davinci-003", **generation_options):
+        super().__init__(model_name, **generation_options)
         if model_name not in self.AVAILABLE_MODELS:
             raise ValueError(
                 f"GPT model_name should be one of: {','.join(self.AVAILABLE_MODELS)}"
             )
-        super().__init__(model_name, **generation_options)
+        if self.api_version is not None and self.api_type != "azure":
+            raise ValueError(
+                "api_version is only supported for azure models."
+            )
         engine_for_encoder = self.engine.replace("gpt-35", "gpt-3.5")
         self.encoder = instantiate_tokenizer(engine_for_encoder)
         self._has_logprobs = self.engine in self.LOGPROBS_MODELS
@@ -214,13 +232,12 @@ class GPT(LLM):
         prompting chatgpt via openai api
         now batching only works for completion, not on chat
         """
-        if openai.api_type == "azure":
-            kwargs["deployment_id"] = self.engine
-        else:
-            kwargs["model"] = self.engine
         try:
-            response = await self.aclient.chat.completions.create(messages=[{"role": "user", "content": prompt}],
-            **kwargs)
+            response = await self.aclient.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model=self.engine,
+                **kwargs,
+            )
         except openai.APIError as e:
             self._log_invalid_request_error_message(e, prompt)
             raise e
@@ -246,18 +263,22 @@ class GPT(LLM):
         """
         logging.debug(kwargs)
         try:
-            response = self.client.completions.create(model=self.engine,
-            prompt=prompt_batch,
-            logprobs=top_logprobs or 1,
-            **kwargs)
+            response = self.client.completions.create(
+                model=self.engine,
+                prompt=prompt_batch,
+                logprobs=top_logprobs or 1,
+                **kwargs,
+            )
         except openai.APIError as e:
             # Retry one by one to find out which prompt is causing the error for debugging
             try:
                 for prompt in prompt_batch:
-                    _ = self.client.completions.create(model=self.engine,
-                    prompt=prompt,
-                    logprobs=top_logprobs or 1,
-                    **kwargs)
+                    _ = self.client.completions.create(
+                        model=self.engine,
+                        prompt=prompt,
+                        logprobs=top_logprobs or 1,
+                        **kwargs,
+                    )
             except openai.APIError as err:
                 if err.type == 'invalid_request_error':
                     self._log_invalid_request_error_message(err, prompt)
@@ -337,17 +358,18 @@ class VLLM(LLM):
     def __init__(self, model_name: str, **generation_options):
         super().__init__(model_name, **generation_options)
         self.encoder = instantiate_tokenizer(model_name)
-        kwargs = {}
-        if "api_base" in generation_options:
-            kwargs["base_url"] = generation_options["api_base"]
-        if "base_url" in generation_options:
-            kwargs["base_url"] = generation_options["base_url"]
-        if "api_key" in generation_options:
-            kwargs["api_key"] = generation_options["api_key"]
-            
-        self.aclient = openai.AzureAsyncOpenAI(**kwargs) if openai.api_type == "azure" else openai.AsyncOpenAI(**kwargs)
-
-
+        if self.api_type is not None:
+            raise ValueError(
+                f"Parameter `api_type` is not supported for VLLM models. Got: {self.api_type}"
+            )
+        if self.api_version is not None:
+            raise ValueError(
+                f"Parameter `api_version` is not supported for VLLM models. Got: {self.api_version}"
+            )
+        self.aclient = openai.AsyncOpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url,
+        )
 
     @_retry_request(min_wait=1, max_wait=1, max_attempts=100)
     async def _aget_vllm_response(self, input, return_logprobs=False, raw_logprobs=False, top_logprobs=False, **kwargs):
@@ -448,7 +470,7 @@ class LLMRegistry:
         Args:
             model_name: how you refer to the model, for example: gpt-3.
             model_type: the api model name, for example: text-davinci-003. If not provided, use model_name as default.
-            **generation_options: generation options, for example: api_key, api_base, api_type, api_version, max_tokens, temperature, etc.
+            **generation_options: generation options, for example: api_key, base_url, api_type, api_version, max_tokens, temperature, etc.
         Returns:
             the instantiated model
         """
