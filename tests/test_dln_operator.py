@@ -133,7 +133,7 @@ def test_openai_invalid_request_error(monkeypatch, mock_openai_api):
 def gpt_api_config():
     return {
         "api_key": "gpt3-key",
-        "api_base": "https://gpt-3-api.com",
+        "base_url": "https://gpt-3-api.com",
         "api_type": "azure",
         "api_version": "2023-03-15-preview",
     }
@@ -143,7 +143,7 @@ def gpt_api_config():
 def llama_api_config():
     return {
         "api_key": "llama-key",
-        "api_base": "https://llama-api.com",
+        "base_url": "https://llama-api.com",
         "api_type": None,
         "api_version": None,
     }
@@ -198,11 +198,11 @@ def test_load_llms_from_config(gpt_api_config, llama_api_config):
     assert isinstance(llama, VLLM)
     assert gpt.engine == "gpt-3.5-turbo-instruct"
     assert llama.engine == "llama2"
-    assert gpt.client.base_url == gpt_api_config.get("api_base")
+    assert gpt_api_config.get("base_url") in str(gpt.client.base_url)  # AzureOpenAI appends "/openai" to base_url
     assert gpt.client.api_key == gpt_api_config.get("api_key")
-    assert gpt.aclient.base_url == gpt_api_config.get("api_base")
+    assert gpt_api_config.get("base_url") in str(gpt.aclient.base_url)  # Same here for AsyncAzureOpenAI
     assert gpt.aclient.api_key == gpt_api_config.get("api_key")
-    assert llama.aclient.base_url == llama_api_config.get("api_base")
+    assert llama.aclient.base_url == llama_api_config.get("base_url")
     assert llama.aclient.api_key == llama_api_config.get("api_key")
 
 
@@ -227,12 +227,17 @@ def test_load_llms_from_yaml(tmp_path):
     - name: gpt-3
       model: gpt-3.5-turbo-instruct
       api_key: gpt3-key
-      api_base: https://gpt-3-api.com
+      base_url: https://gpt-3-api.com
       api_type: azure
       api_version: '2023-03-15-preview'
     - name: llama2
       api_key: llama-key
-      api_base: https://llama-api.com
+      base_url: https://llama-api.com
+      api_type: null
+      api_version: null
+    - name: api-base-backward-compat
+      api_key: another-key
+      api_base: https://another-api.com
       api_type: null
       api_version: null
     """
@@ -243,29 +248,32 @@ def test_load_llms_from_yaml(tmp_path):
     with patch("dln.operator.instantiate_tokenizer"):
         llm_registry = LLMRegistry.from_yaml(llms_yaml_path)
 
-    assert len(llm_registry) == 2
+    assert len(llm_registry) == 3
 
     gpt = llm_registry.get("gpt-3")
     llama = llm_registry.get("llama2")
+    backward_compat = llm_registry.get("api-base-backward-compat")
 
     assert isinstance(gpt, GPT)
     assert isinstance(llama, VLLM)
-    assert gpt.generation_options["api_key"] == "gpt3-key"
-    assert llama.generation_options["api_key"] == "llama-key"
+    assert gpt.client.api_key == "gpt3-key"
+    assert gpt.aclient.api_key == "gpt3-key"
+    assert llama.aclient.api_key == "llama-key"
+    assert backward_compat.aclient.base_url == "https://another-api.com"
 
 
 @patch.dict(os.environ, {"TEST": "123", "FOO": "BAR"})
-def test_load_llms_from_yaml(tmp_path, mock_openai_api):
+def test_load_llms_from_yaml_replace_envvars(tmp_path):
     llms_yaml_content = """
     - name: gpt-3
       model: gpt-3.5-turbo-instruct
-      api_key: gpt3-key
-      api_base: ${TEST}
-      api_type: TEST
+      api_key: TEST
+      base_url: ${TEST}
+      api_type: azure
       api_version: ${FOO}
     - name: llama2
       api_key: llama-key
-      api_base: https://llama-api.com
+      base_url: https://llama-api.com
       api_type: null
       api_version: null
     """
@@ -283,10 +291,10 @@ def test_load_llms_from_yaml(tmp_path, mock_openai_api):
 
     assert isinstance(gpt, GPT)
     assert isinstance(llama, VLLM)
-    assert gpt.generation_options["api_base"] == "123"
-    assert gpt.generation_options["api_type"] == "TEST"
-    assert gpt.generation_options["api_version"] == "BAR"
-    assert llama.generation_options["api_key"] == "llama-key"
+    assert gpt.aclient.base_url == "123/openai/"  # Replace {TEST} env var. AzureOpenAI appends "/openai" to base_url
+    assert gpt.aclient.api_key == "TEST"  # Do not replace TEST. TEST is not an env var
+    assert gpt.aclient._api_version == "BAR"  # Replace {FOO} with BAR. {FOO} is an env var
+    assert llama.aclient.api_key == "llama-key"
 
 
 def test_total_cost(gpt_api_config, llama_api_config, mock_openai_api):

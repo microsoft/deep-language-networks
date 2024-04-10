@@ -34,7 +34,7 @@ Export your key or put it in your *shrc, e.g.,
     export OPENAI_API_KEY='...your...key...'
 
 In order to use Microsoft Azure endpoints, in addition to the OPENAI_API_KEY,
-you need to set the OPENAI_API_TYPE, OPENAI_API_BASE and OPENAI_API_VERSION.
+you need to set the OPENAI_API_TYPE, OPENAI_BASE_URL and OPENAI_API_VERSION.
 The OPENAI_API_TYPE must be set to 'azure' and the others correspond to the properties of your endpoint.
 
 
@@ -47,11 +47,11 @@ Alternatively, you can run 1-DNL by setting output_scoring_function="accuracy" a
 ### Setup self-hosted models (vLLM)
 
 Export huggingface id or path to the tokenizer, for example `meta-llama/Llama-2-70b-chat-hf` from huggingface or `/path/to/Llama-2-70b-chat-hf` from your local machine.
-Then, export the openai env vars `OPENAI_API_BASE` and `OPENAI_API_KEY`. Remember to unset `OPENAI_API_TYPE` and `OPENAI_API_VERSION` if you have set them before.
+Then, export the openai env vars `OPENAI_BASE_URL` and `OPENAI_API_KEY`. Remember to unset `OPENAI_API_TYPE` and `OPENAI_API_VERSION` if you have set them before.
 
     export TOKENIZER_PATH=<PATH_TO_TOKENIZER>
     export OPENAI_API_KEY=EMPTY
-    export OPENAI_API_BASE=http://127.0.0.1:8000/v1
+    export OPENAI_BASE_URL=http://127.0.0.1:8000/v1
     unset OPENAI_API_TYPE
     unset OPENAI_API_VERSION
 
@@ -147,7 +147,7 @@ For example:
 - name: phi2-fwd
   model: microsoft/phi-2
   api_key: ${PHI2_API_KEY}
-  api_base: ${PHI2_API_BASE}
+  base_url: ${PHI2_API_BASE}
   api_type: null
   api_version: null
   max_tokens: 256
@@ -156,7 +156,7 @@ For example:
 - name: gpt-bwd
   model: "gpt-35-turbo-instruct"
   api_key: ${GPT_API_KEY}
-  api_base: ${GPT_API_BASE}
+  base_url: ${GPT_API_BASE}
   api_type: ${GPT_API_TYPE}
   api_version: ${GPT_API_VERSION}
   temperature: 0.7
