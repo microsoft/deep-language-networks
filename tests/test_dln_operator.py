@@ -10,7 +10,13 @@ from dln.operator import GPT, LLM, VLLM, LLMRegistry, InvalidRequestError, _repl
 
 @pytest.fixture
 def mock_data():
-    chat_completion_data = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="Montreal"))])
+    chat_completion_data = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content="Montreal")
+            )
+        ]
+    )
     completion_data = SimpleNamespace(
         choices=[
             SimpleNamespace(
@@ -23,14 +29,22 @@ def mock_data():
 
 
 @pytest.fixture
-def mock_openai_api(monkeypatch, mock_data):
+def mock_openai_api(mock_data):
     chat_completion_data, completion_data = mock_data
     mock_api = MagicMock()
     mock_api.chat.completions.create = AsyncMock(return_value=chat_completion_data)
     mock_api.completions.create.return_value = completion_data
 
-    with patch('openai.OpenAI', return_value=mock_api) as mock_openai, patch('openai.AsyncOpenAI', return_value=mock_api) as mock_async_openai:
-        yield mock_openai, mock_async_openai
+    with patch(
+        'openai.OpenAI', return_value=mock_api
+    ) as mock_openai, patch(
+        'openai.AsyncOpenAI', return_value=mock_api
+    ) as mock_async_openai, patch(
+        'openai.AzureOpenAI', return_value=mock_api
+    ) as mock_az_openai, patch(
+        'openai.AsyncAzureOpenAI', return_value=mock_api
+    ) as mock_async_az_openai:
+        yield mock_openai, mock_async_openai, mock_az_openai, mock_async_az_openai
 
 def test_invalid_model_name():
     with pytest.raises(ValueError):
@@ -111,8 +125,8 @@ def test_generate_seeds():
     "gpt-35-turbo-instruct",
     "gpt-3.5-turbo-instruct",
 ])
-def test_gpt_35_name_variations_load_tokenizer(model_name, mock_openai_api):
-    gpt = GPT(model_name)
+def test_gpt_35_name_variations_load_tokenizer(model_name):
+    gpt = GPT(model_name, api_key="gpt3-key")
     assert gpt.engine == model_name
     assert gpt.encoder.name == "cl100k_base"
 
@@ -149,16 +163,20 @@ def llama_api_config():
     }
 
 
-def test_registry_llm(gpt_api_config, mock_openai_api):
+def test_registry_llm(gpt_api_config, llama_api_config):
     from dln.operator import LLMRegistry
     llm_registry = LLMRegistry()
     llm = llm_registry.register("gpt_3", "gpt-3.5-turbo-instruct", **gpt_api_config)
     assert isinstance(llm, GPT)
     assert llm_registry["gpt_3"] == llm
     assert llm.engine == "gpt-3.5-turbo-instruct"
-    assert llm.generation_options == gpt_api_config
+    assert llm.aclient.api_key == "gpt3-key"
+    assert gpt_api_config.get("base_url") in str(llm.aclient.base_url)  # Same here for AsyncAzureOpenAI
+    assert llm.aclient.api_key == gpt_api_config.get("api_key")
+    assert isinstance(llm.aclient, openai.AsyncAzureOpenAI)
+    assert llm.aclient._api_version == gpt_api_config.get("api_version")
     with patch("dln.operator.instantiate_tokenizer"):
-        another_llm = llm_registry.register("llama2", **gpt_api_config)
+        another_llm = llm_registry.register("llama2", **llama_api_config)
     assert isinstance(another_llm, VLLM)
     assert llm_registry["llama2"] == another_llm
     assert another_llm.engine == "llama2"
@@ -206,7 +224,7 @@ def test_load_llms_from_config(gpt_api_config, llama_api_config):
     assert llama.aclient.api_key == llama_api_config.get("api_key")
 
 
-def test_get_llm(gpt_api_config, mock_openai_api):
+def test_get_llm(gpt_api_config):
     config = [
         {
             "name": "gpt-3",
@@ -297,7 +315,7 @@ def test_load_llms_from_yaml_replace_envvars(tmp_path):
     assert llama.aclient.api_key == "llama-key"
 
 
-def test_total_cost(gpt_api_config, llama_api_config, mock_openai_api):
+def test_total_cost(gpt_api_config, llama_api_config):
     config = [
         {
             "name": "gpt-3",
