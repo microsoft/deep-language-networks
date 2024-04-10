@@ -6,7 +6,6 @@ from typing import Dict, List, Optional, Union
 import asyncio
 import numpy as np
 import openai
-from openai import OpenAI, AsyncOpenAI
 
 import logging
 from tenacity import (
@@ -170,16 +169,21 @@ class GPT(LLM):
         engine_for_encoder = self.engine.replace("gpt-35", "gpt-3.5")
         self.encoder = instantiate_tokenizer(engine_for_encoder)
         self._has_logprobs = self.engine in self.LOGPROBS_MODELS
-        kwargs = {}
-        if "api_base" in generation_options:
-            kwargs["base_url"] = generation_options["api_base"]
-        if "base_url" in generation_options:
-            kwargs["base_url"] = generation_options["base_url"]
-        if "api_key" in generation_options:
-            kwargs["api_key"] = generation_options["api_key"]
-
-        self.client = openai.AzureOpenAI(**kwargs) if openai.api_type == "azure" else openai.OpenAI(**kwargs)
-        self.aclient = openai.AzureAsyncOpenAI(**kwargs) if openai.api_type == "azure" else openai.AsyncOpenAI(**kwargs)
+        if self.api_type == "azure":
+            kwargs = {
+                "api_key": self.api_key,
+                "azure_endpoint": self.base_url,
+                "api_version": self.api_version,
+            }
+            self.client = openai.AzureOpenAI(**kwargs)
+            self.aclient = openai.AsyncAzureOpenAI(**kwargs)
+        else:
+            kwargs = {
+                "api_key": self.api_key,
+                "base_url": self.base_url,
+            }
+            self.client = openai.OpenAI(**kwargs)
+            self.aclient = openai.AsyncOpenAI(**kwargs)
 
     def encode(self, string: str) -> List[int]:
         return self.encoder.encode(string)
