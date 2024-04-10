@@ -1,9 +1,18 @@
-from typing import Any
 import numpy as np
 import pytest
 from dln.operator import LLM, instantiate_tokenizer
 
 from dln.score import LogProbsScore, ScoreRequest
+
+
+@pytest.fixture(autouse=True)
+def unset_env_vars(monkeypatch):
+    """Unset all environment variables that could be set by the user."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_TYPE", raising=False)
+    monkeypatch.delenv("OPENAI_API_BASE", raising=False)  # deprecated in favor of OPENAI_BASE_URL
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_API_VERSION", raising=False)
 
 
 @pytest.fixture

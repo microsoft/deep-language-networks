@@ -1,12 +1,13 @@
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
+import os
 import re
 from typing import Dict, List, Optional, Union
 import asyncio
 import numpy as np
 import openai
+
 import logging
-import os
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -16,9 +17,11 @@ from tenacity import (
 from termcolor import colored
 import yaml
 
+logging.getLogger("openai").setLevel(logging.WARNING)
 
-openai.util.logger.setLevel(logging.WARNING)
-
+class InvalidRequestError(Exception):
+    """Exception raised for invalid request errors."""
+    pass
 
 def _retry_request(min_wait=4, max_wait=10, max_attempts=100):
     return retry(
@@ -26,11 +29,10 @@ def _retry_request(min_wait=4, max_wait=10, max_attempts=100):
         stop=stop_after_attempt(max_attempts),
         wait=wait_exponential(multiplier=1, min=min_wait, max=max_wait),
         retry=(
-            retry_if_exception_type(openai.error.Timeout)
-            | retry_if_exception_type(openai.error.APIError)
-            | retry_if_exception_type(openai.error.APIConnectionError)
-            | retry_if_exception_type(openai.error.RateLimitError)
-            | retry_if_exception_type(openai.error.ServiceUnavailableError)
+            retry_if_exception_type(openai.Timeout)
+            | retry_if_exception_type(openai.APIError)
+            | retry_if_exception_type(openai.APIConnectionError)
+            | retry_if_exception_type(openai.RateLimitError)
         ),
     )
 
@@ -40,23 +42,22 @@ def _parse_openai_response(
     return_logprobs=False,
     raw_logprobs=False,
     top_logprobs=False,
-    **kwargs,
 ):
     output = []
     nlls = []
     lengths = []
-    for response in response["choices"]:
-        output.append(response["text"].strip())
+    for response in response.choices:
+        output.append(response.text.strip())
         if raw_logprobs:
-            nlls.append(response["logprobs"]["token_logprobs"])
-            lengths.append(response["logprobs"]["tokens"])
+            nlls.append(response.logprobs.token_logprobs)
+            lengths.append(response.logprobs.tokens)
         elif top_logprobs:
-            nlls.append(response["logprobs"]["top_logprobs"])
-            lengths.append(response["logprobs"]["tokens"])
+            nlls.append(response.logprobs.top_logprobs)
+            lengths.append(response.logprobs.tokens)
         else:
-            if "token_logprobs" in response["logprobs"]:
-                nlls.append(sum(response["logprobs"]["token_logprobs"]))
-                lengths.append(len(response["logprobs"]["token_logprobs"]))
+            if hasattr(response.logprobs, 'token_logprobs'):
+                nlls.append(sum(response.logprobs.token_logprobs))
+                lengths.append(len(response.logprobs.token_logprobs))
             else:
                 nlls.append(-np.inf)
                 lengths.append(1)
@@ -68,12 +69,26 @@ def _parse_openai_response(
 
 class LLM(ABC):
 
-    def __init__(self, model_name: str, seed: Optional[int] = None, **generation_options):
+    def __init__(
+            self,
+            model_name: str,
+            base_url: Optional[str] = None,
+            api_base: Optional[str] = None,  # backward compatibility, use base_url
+            api_key: Optional[str] = None,
+            api_type: Optional[str] = None,
+            api_version: Optional[str] = None,
+            seed: Optional[int] = None,
+            **generation_options,
+        ):
         self.seed = seed
         self.rng = np.random.RandomState(self.seed) if seed is not None else None
         self.generation_options = generation_options
         self.engine = model_name
         self.total_cost = 0.0
+        self.base_url = base_url or api_base or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE")
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.api_type = api_type or os.getenv("OPENAI_API_TYPE")
+        self.api_version = api_version or os.getenv("OPENAI_API_VERSION")
 
     def __call__(self, inputs: Union[List[str], str], **kwargs) -> List[str]:
         """Generate outputs for the given inputs. Use this method instead of calling _generate directly.
@@ -160,15 +175,33 @@ class GPT(LLM):
     LOGPROBS_MODELS = COMPLETION_MODELS.copy()
 
     def __init__(self, model_name: str = "text-davinci-003", **generation_options):
+        super().__init__(model_name, **generation_options)
         if model_name not in self.AVAILABLE_MODELS:
             raise ValueError(
                 f"GPT model_name should be one of: {','.join(self.AVAILABLE_MODELS)}"
             )
-        super().__init__(model_name, **generation_options)
+        if self.api_version is not None and self.api_type != "azure":
+            raise ValueError(
+                "api_version is only supported for azure models."
+            )
         engine_for_encoder = self.engine.replace("gpt-35", "gpt-3.5")
         self.encoder = instantiate_tokenizer(engine_for_encoder)
-        openai.api_version = os.environ.get('OPENAI_API_VERSION')
         self._has_logprobs = self.engine in self.LOGPROBS_MODELS
+        if self.api_type == "azure":
+            kwargs = {
+                "api_key": self.api_key,
+                "azure_endpoint": self.base_url,
+                "api_version": self.api_version,
+            }
+            self.client = openai.AzureOpenAI(**kwargs)
+            self.aclient = openai.AsyncAzureOpenAI(**kwargs)
+        else:
+            kwargs = {
+                "api_key": self.api_key,
+                "base_url": self.base_url,
+            }
+            self.client = openai.OpenAI(**kwargs)
+            self.aclient = openai.AsyncOpenAI(**kwargs)
 
     def encode(self, string: str) -> List[int]:
         return self.encoder.encode(string)
@@ -199,23 +232,20 @@ class GPT(LLM):
         prompting chatgpt via openai api
         now batching only works for completion, not on chat
         """
-        if openai.api_type == "azure":
-            kwargs["deployment_id"] = self.engine
-        else:
-            kwargs["model"] = self.engine
         try:
-            response = await openai.ChatCompletion.acreate(
+            response = await self.aclient.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
+                model=self.engine,
                 **kwargs,
             )
-        except openai.InvalidRequestError as e:
+        except openai.APIError as e:
             self._log_invalid_request_error_message(e, prompt)
             raise e
 
-        if "content" not in response["choices"][0]["message"]:
+        if not hasattr(response.choices[0].message, 'content'):
             return ""
 
-        output = response["choices"][0]["message"]["content"].strip()
+        output = response.choices[0].message.content.strip()
         return output
 
     @_retry_request(min_wait=4, max_wait=10, max_attempts=500)
@@ -233,25 +263,29 @@ class GPT(LLM):
         """
         logging.debug(kwargs)
         try:
-            response = openai.Completion.create(
-                engine=self.engine,
+            response = self.client.completions.create(
+                model=self.engine,
                 prompt=prompt_batch,
                 logprobs=top_logprobs or 1,
                 **kwargs,
             )
-        except openai.InvalidRequestError as e:
+        except openai.APIError as e:
             # Retry one by one to find out which prompt is causing the error for debugging
             try:
                 for prompt in prompt_batch:
-                    _ = openai.Completion.create(
-                        engine=self.engine,
+                    _ = self.client.completions.create(
+                        model=self.engine,
                         prompt=prompt,
                         logprobs=top_logprobs or 1,
                         **kwargs,
                     )
-            except openai.InvalidRequestError as err:
-                self._log_invalid_request_error_message(err, prompt)
-            raise e
+            except openai.APIError as err:
+                if err.type == 'invalid_request_error':
+                    self._log_invalid_request_error_message(err, prompt)
+            if (e.type == 'invalid_request_error'):
+                raise InvalidRequestError("Invalid request error occurred") from e
+            else:
+                raise e
 
         return _parse_openai_response(response, return_logprobs, raw_logprobs, top_logprobs)
 
@@ -324,16 +358,26 @@ class VLLM(LLM):
     def __init__(self, model_name: str, **generation_options):
         super().__init__(model_name, **generation_options)
         self.encoder = instantiate_tokenizer(model_name)
+        if self.api_type is not None:
+            raise ValueError(
+                f"Parameter `api_type` is not supported for VLLM models. Got: {self.api_type}"
+            )
+        if self.api_version is not None:
+            raise ValueError(
+                f"Parameter `api_version` is not supported for VLLM models. Got: {self.api_version}"
+            )
+        self.aclient = openai.AsyncOpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url,
+        )
 
     @_retry_request(min_wait=1, max_wait=1, max_attempts=100)
-    async def _aget_vllm_response(self, input, **kwargs):
-        response = await openai.Completion.acreate(
-            model=self.engine,
-            prompt=input,
-            logprobs=kwargs.get("top_logprobs") or 1,
-            **kwargs,
-        )
-        return _parse_openai_response(response, **kwargs)[0]
+    async def _aget_vllm_response(self, input, return_logprobs=False, raw_logprobs=False, top_logprobs=False, **kwargs):
+        kwargs["logprobs"] = top_logprobs or 1
+        response = await self.aclient.completions.create(model=self.engine,
+        prompt=input,
+        **kwargs)
+        return _parse_openai_response(response, return_logprobs, raw_logprobs, top_logprobs)[0]
 
     async def _gather_vllm_response(self, inputs, **kwargs):
         outputs = await asyncio.gather(
@@ -426,7 +470,7 @@ class LLMRegistry:
         Args:
             model_name: how you refer to the model, for example: gpt-3.
             model_type: the api model name, for example: text-davinci-003. If not provided, use model_name as default.
-            **generation_options: generation options, for example: api_key, api_base, api_type, api_version, max_tokens, temperature, etc.
+            **generation_options: generation options, for example: api_key, base_url, api_type, api_version, max_tokens, temperature, etc.
         Returns:
             the instantiated model
         """
