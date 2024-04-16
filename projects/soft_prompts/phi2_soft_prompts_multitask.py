@@ -63,12 +63,13 @@ def exact_match_loss(outputs, labels):
 
     loss_tensor = torch.tensor(losses, dtype=torch.float32)
     total_loss = torch.mean(loss_tensor)
-    return total_loss, generated_texts
+    generated_tokens = torch.tensor([tokenizer.encode(c, return_tensors="pt", padding=True).to(device) for c in generated_texts]).to(device)
+    return total_loss, generated_tokens
 
 # %%
 def test(dataloader, model, exact_match=True):
     total_loss = 0
-    test_preds = []
+    test_preds = torch.tensor([]).to(device)
     for batch in tqdm(dataloader):
         batch = {k: v.to(device) for k, v in batch.items()}
         with torch.no_grad():
@@ -78,10 +79,10 @@ def test(dataloader, model, exact_match=True):
             inputs_embeds = output1.hidden_states[-1][:, -sequence_length_labels:]
             task_ids = torch.tensor([1 for i in batch["task_ids"]]).to(device)
             output2 = model(inputs_embeds=inputs_embeds, labels=batch['labels'], attention_mask=batch['attention_mask'], task_ids=task_ids, output_hidden_states=True)
-            loss, preds = exact_match_loss(output2, batch["labels"]) if exact_match else (output2.loss, [])
+            loss, preds = exact_match_loss(output2, batch["labels"]) if exact_match else (output2.loss, test_preds)
     
         total_loss += loss.detach().float()
-        test_preds.extend(preds)
+        test_preds = torch.cat((test_preds, preds), dim=0)
 
     total_loss = total_loss / len(dataloader)
     return total_loss, test_preds
@@ -163,7 +164,7 @@ text_column = "text"
 label_column = "label"
 max_length = 128
 lr = 3e-2
-num_epochs = 10
+num_epochs = 100
 batch_size = 8
 
 peft_config = MultitaskPromptTuningConfig(
@@ -183,10 +184,6 @@ classes = list(set(dataset["train"]["label"]))
 tokenizer = AutoTokenizer.from_pretrained(tokenizer_name_or_path, device_map="auto", padding_side='left')
 if tokenizer.pad_token_id is None:
     tokenizer.pad_token_id = tokenizer.eos_token_id
-target_max_length = max(
-    [len(tokenizer(class_label)["input_ids"]) for class_label in classes]
-)
-print(target_max_length)
 
 processed_datasets = dataset.map(
     preprocess_function,
@@ -261,6 +258,10 @@ init_test_loss, test_preds = test(test_dataloader, model)
 init_test_ppl = torch.exp(init_test_loss)  # Perplexity
 print(f"Test before training: {init_test_ppl=} {init_test_loss=}")
 
+best_eval_loss = float('inf')
+epochs_without_improvement = 0
+patience = 10  # Number of epochs to wait before stopping
+
 for epoch in range(num_epochs):
     model.train()
     total_loss = 0
@@ -285,10 +286,35 @@ for epoch in range(num_epochs):
     eval_ppl = torch.exp(eval_epoch_loss)
     train_epoch_loss = total_loss / len(train_dataloader)
     train_ppl = torch.exp(torch.tensor(train_epoch_loss))
+
     print(
         f"{epoch=}: {train_ppl=} {train_epoch_loss=} {eval_ppl=} {eval_epoch_loss=}"
     )
+    
+        # Sum the eval losses from all processes
+    if dist.get_rank() == 0:
+        # In the main process, prepare to receive the sum of eval losses
+        total_eval_loss = torch.zeros_like(eval_epoch_loss)
+    else:
+        total_eval_loss = eval_epoch_loss
 
+    dist.reduce(total_eval_loss, dst=0, op=dist.ReduceOp.SUM)
+    # Broadcast the total eval loss from the main process to all other processes
+    dist.broadcast(total_eval_loss, src=0)
+    eval_epoch_loss = total_eval_loss / dist.get_world_size()
+   
+    # Check if the validation loss has improved
+    if eval_epoch_loss < best_eval_loss:
+        best_eval_loss = eval_epoch_loss
+        epochs_without_improvement = 0
+    else:
+        epochs_without_improvement += 1
+
+    if epochs_without_improvement >= patience:
+        print("Stopping training: ", dist.get_rank())
+        break
+
+dist.barrier()
 model.eval()
 
 final_test_loss, test_preds = test(test_dataloader, model)
@@ -305,16 +331,29 @@ if not saved_model:
 # %%
 correct = 0
 total = 0
-for pred, label in zip(test_preds,  dataset['test']['label']):
-    if pred.strip() == label.strip():
-        correct += 1
-    total += 1
-accuracy = correct / total * 100
 
-print(f"{accuracy=}% on the test dataset")
-print(f"{test_preds[:10]=}")
-print(f"{dataset['test']['label'][:10]=}")
+if dist.get_rank() == 0:
+    test_preds_gathered = [torch.zeros_like(test_preds) for _ in range(dist.get_world_size())]
+else:
+    test_preds_gathered = None
 
-"accuracy=73.2% on the test dataset"
-"test_preds[:10]=['Yes', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'Yes']"
-"dataset['test']['label'][:10]=['No', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'No']"
+# Gather test_preds from all GPUs to the main GPU
+dist.gather(test_preds, gather_list=test_preds_gathered, dst=0)
+
+if dist.get_rank() == 0:
+    test_preds_gathered = torch.cat(test_preds_gathered)
+    test_preds_single_gpu = [pred.long().tolist() for pred in test_preds_gathered] #torch.cat(test_preds_gathered).cpu().tolist()
+    test_preds_text = [tokenizer.decode(pred, skip_special_tokens=True) for pred in test_preds_single_gpu]
+    for pred, label in zip(test_preds_text, dataset['test']['label']):
+        if pred.strip() == label.strip():
+            correct += 1
+        total += 1
+    accuracy = correct / total * 100
+
+    print(f"{accuracy=}% on the test dataset")
+    print(f"{test_preds_text[:10]=}")
+    print(f"{dataset['test']['label'][:10]=}")
+
+    "accuracy=73.2% on the test dataset"
+    "test_preds[:10]=['Yes', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'Yes']"
+    "dataset['test']['label'][:10]=['No', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'No']"
