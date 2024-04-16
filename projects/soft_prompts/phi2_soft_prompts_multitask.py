@@ -66,23 +66,18 @@ def exact_match_loss(outputs, labels):
     return total_loss, generated_texts
 
 # %%
-def test(dataloader, model1, model2=None, exact_match=True):
+def test(dataloader, model, exact_match=True):
     total_loss = 0
     test_preds = []
     for batch in tqdm(dataloader):
         batch = {k: v.to(device) for k, v in batch.items()}
         with torch.no_grad():
-            output1 = model1(**batch, output_hidden_states=True)
+            output1 = model(**batch, output_hidden_states=True)
             loss, preds = exact_match_loss(output1, batch["labels"]) if exact_match else (output1.loss, [])
-        if model2:
-            inputs_embeds = output1.hidden_states[-1]
-            sequence_length = inputs_embeds.shape[1]
-            labels = batch['labels']
-            attention_mask = torch.ones(inputs_embeds.shape[:2], device=device)
-            padding = torch.full((labels.shape[0], sequence_length - labels.shape[1]), -100, dtype=labels.dtype, device=labels.device)
-            labels = torch.cat([padding, labels], dim=1).to(device)
+            sequence_length_labels = batch['labels'].shape[1]
+            inputs_embeds = output1.hidden_states[-1][:, -sequence_length_labels:]
             task_ids = torch.tensor([1 for i in batch["task_ids"]]).to(device)
-            output2 = model2(inputs_embeds=inputs_embeds, labels=labels, task_ids=task_ids, attention_mask=attention_mask, output_hidden_states=True)
+            output2 = model(inputs_embeds=inputs_embeds, labels=batch['labels'], attention_mask=batch['attention_mask'], task_ids=task_ids, output_hidden_states=True)
             loss, preds = exact_match_loss(output2, batch["labels"]) if exact_match else (output2.loss, [])
     
         total_loss += loss.detach().float()
@@ -126,6 +121,13 @@ def load_dln_dataset_to_hf_dataset(dataset_id):
 from accelerate import Accelerator
 accelerator = Accelerator()
 
+import random
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
 from peft import (
     MultitaskPromptTuningConfig,
     MultitaskPromptTuningInit,
@@ -148,6 +150,8 @@ from torch.utils.data import Subset
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
+set_seed(42)
+
 model_name_or_path = "microsoft/phi-2"
 tokenizer_name_or_path = "microsoft/phi-2"
 
@@ -158,8 +162,8 @@ initial_instruction = (
 text_column = "text"
 label_column = "label"
 max_length = 128
-lr = 3e-1
-num_epochs = 50
+lr = 3e-2
+num_epochs = 10
 batch_size = 8
 
 peft_config = MultitaskPromptTuningConfig(
@@ -227,152 +231,90 @@ test_dataloader = DataLoader(
 model = AutoModelForCausalLM.from_pretrained(model_name_or_path)
 model.config.pad_token_id = model.config.eos_token_id
 
-saved_model1 = None
-saved_model2 = None
+saved_model = None
 try:
-    saved_model1 = PeftModel.from_pretrained(model, "data/models/" + model_name_or_path + "/model1")
-    saved_model2 = PeftModel.from_pretrained(model, "data/models/" + model_name_or_path + "/model2")
-    model1 = saved_model1
-    model2 = saved_model2
+    saved_model = PeftModel.from_pretrained(model, "data/models/" + model_name_or_path + "/multitask")
+    model = saved_model
     print("Using saved model from data/models/" + model_name_or_path)
 except ValueError:
-    model1 = get_peft_model(model, peft_config)
-    model2 = get_peft_model(model, peft_config)
+    model = get_peft_model(model, peft_config)
     print("Model not found, training new model")
 
-optimizer1 = torch.optim.AdamW(model1.parameters(), lr=lr)
-optimizer2 = torch.optim.AdamW(model2.parameters(), lr=lr)
-lr_scheduler1 = get_linear_schedule_with_warmup(
-    optimizer=optimizer1,
+optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+lr_scheduler= get_linear_schedule_with_warmup(
+    optimizer=optimizer,
     num_warmup_steps=0,
     num_training_steps=(len(train_dataloader) * num_epochs),
 
 )
-lr_scheduler2 = get_linear_schedule_with_warmup(
-    optimizer=optimizer2,
-    num_warmup_steps=0,
-    num_training_steps=(len(train_dataloader) * num_epochs),
-)
 
-model1 = model1.to(device)
-model2 = model2.to(device)
+model = model.to(device)
 
 # Send everything through `accelerator.prepare`
-train_dataloader, eval_dataloader, test_dataloader, model, model1, model2, optimizer1, optimizer2 = accelerator.prepare(
-    train_dataloader, eval_dataloader, test_dataloader, model, model1, model2, optimizer1, optimizer2
+train_dataloader, eval_dataloader, test_dataloader, model, optimizer = accelerator.prepare(
+    train_dataloader, eval_dataloader, test_dataloader, model, optimizer
 )
 
-model1.eval()
-model2.eval()
+model.eval()
 
-init_test_loss1, test_preds1 = test(test_dataloader, model1)
-init_test_loss2, test_preds2 = test(test_dataloader, model1, model2)
-init_test_ppl1 = torch.exp(init_test_loss1)  # Perplexity
-init_test_ppl2 = torch.exp(init_test_loss2)  # Perplexity
-print(f"Test before training1: {init_test_ppl1=} {init_test_loss1=}")
-print(f"Test before training2: {init_test_ppl2=} {init_test_loss2=}")
+init_test_loss, test_preds = test(test_dataloader, model)
+init_test_ppl = torch.exp(init_test_loss)  # Perplexity
+print(f"Test before training: {init_test_ppl=} {init_test_loss=}")
 
 for epoch in range(num_epochs):
-    model1.train()
-    model2.train()
-    total_loss1 = 0
-    total_loss2 = 0
+    model.train()
+    total_loss = 0
     for step, batch in enumerate(tqdm(train_dataloader)):
         batch = {k: v.to(device) for k, v in batch.items()}
-        output1 = model1(**batch, output_hidden_states=True)
+        output1 = model(**batch, output_hidden_states=True)
         
-        inputs_embeds = output1.hidden_states[-1]
-        sequence_length = inputs_embeds.shape[1]
-        labels = batch['labels']
-        attention_mask = torch.ones(inputs_embeds.shape[:2], device=device)
-        padding = torch.full((labels.shape[0], sequence_length - labels.shape[1]), -100, dtype=labels.dtype, device=labels.device)
-        labels = torch.cat([padding, labels], dim=1).to(device)
+        sequence_length_labels = batch['labels'].shape[1]
+        inputs_embeds = output1.hidden_states[-1][:, -sequence_length_labels:]
         task_ids = torch.tensor([1 for i in batch["task_ids"]]).to(device)
-        output2 = model2(inputs_embeds=inputs_embeds, labels=labels, task_ids=task_ids, attention_mask=attention_mask, output_hidden_states=True)
+        output2 = model(inputs_embeds=inputs_embeds, labels=batch['labels'], attention_mask=batch['attention_mask'], task_ids=task_ids, output_hidden_states=True)
        
-        loss1 = output1.loss
-        loss2 = output2.loss
-        total_loss1 += loss1.item()
-        total_loss2 += loss2.item()
-        optimizer1.zero_grad()
-        optimizer2.zero_grad()
-        accelerator.backward(loss1, retain_graph=True)
-        accelerator.backward(loss2)
-        optimizer1.step()
-        optimizer2.step()
-        lr_scheduler1.step()
-        lr_scheduler2.step()
+        loss = output1.loss + output2.loss
+        total_loss += loss.item()
+        optimizer.zero_grad()
+        accelerator.backward(loss)
+        optimizer.step()
+        lr_scheduler.step()
 
-    model1.eval()
-    model2.eval()
-    eval_epoch_loss1, eval_preds1 = test(eval_dataloader, model1, None, False)
-    eval_epoch_loss2, eval_preds2 = test(eval_dataloader, model1, model2, False)
-    eval_ppl1 = torch.exp(eval_epoch_loss1)
-    eval_ppl2 = torch.exp(eval_epoch_loss2)
-    train_epoch_loss1 = total_loss1 / len(train_dataloader)
-    train_epoch_loss2 = total_loss2 / len(train_dataloader)
-    train_ppl1 = torch.exp(torch.tensor(train_epoch_loss1))
-    train_ppl2 = torch.exp(torch.tensor(train_epoch_loss2))
+    model.eval()
+    eval_epoch_loss, eval_preds = test(eval_dataloader, model, False)
+    eval_ppl = torch.exp(eval_epoch_loss)
+    train_epoch_loss = total_loss / len(train_dataloader)
+    train_ppl = torch.exp(torch.tensor(train_epoch_loss))
     print(
-        f"{epoch=}: {train_ppl1=} {train_epoch_loss1=} {eval_ppl1=} {eval_epoch_loss1=}"
-    )
-    print(
-        f"{epoch=}: {train_ppl2=} {train_epoch_loss2=} {eval_ppl2=} {eval_epoch_loss2=}"
+        f"{epoch=}: {train_ppl=} {train_epoch_loss=} {eval_ppl=} {eval_epoch_loss=}"
     )
 
-model1.eval()
-model2.eval()
+model.eval()
 
-final_test_loss1, test_preds1 = test(test_dataloader, model1)
-final_test_loss2, test_preds2 = test(test_dataloader, model1, model2)
-final_test_ppl1 = torch.exp(final_test_loss1)
-final_test_ppl2 = torch.exp(final_test_loss2)
-print(f"Test before training1: {init_test_ppl1=} {init_test_loss1=}")
-print(f"Test before training2: {init_test_ppl2=} {init_test_loss2=}")
-print(f"Test after training1: {final_test_ppl1=} {final_test_loss1=}")
-print(f"Test after training2: {final_test_ppl2=} {final_test_loss2=}")
+final_test_loss, test_preds = test(test_dataloader, model)
+final_test_ppl = torch.exp(final_test_loss)
+print(f"Test before training1: {init_test_ppl=} {init_test_loss=}")
+print(f"Test after training1: {final_test_ppl=} {final_test_loss=}")
 
-if not saved_model1:
-    if isinstance(model1, torch.nn.parallel.DistributedDataParallel):
-        model1.module.save_pretrained("data/models/" + model_name_or_path + "/model1")
+if not saved_model:
+    if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+        model.module.save_pretrained("data/models/" + model_name_or_path + "/multitask")
     else:
-        model1.save_pretrained("data/models/" + model_name_or_path + "/model1")
-if not saved_model2:
-    if isinstance(model2, torch.nn.parallel.DistributedDataParallel):
-        model2.module.save_pretrained("data/models/" + model_name_or_path + "/model2")
-    else:
-        model2.save_pretrained("data/models/" + model_name_or_path + "/model2")
+        model.save_pretrained("data/models/" + model_name_or_path + "/multitask")
 
 # %%
 correct = 0
 total = 0
-for pred, label in zip(test_preds1,  dataset['test']['label']):
+for pred, label in zip(test_preds,  dataset['test']['label']):
     if pred.strip() == label.strip():
         correct += 1
     total += 1
 accuracy = correct / total * 100
 
 print(f"{accuracy=}% on the test dataset")
-print(f"{test_preds1[:10]=}")
+print(f"{test_preds[:10]=}")
 print(f"{dataset['test']['label'][:10]=}")
 
-"accuracy=82.8% on the test dataset"
-"test_preds[:10]=['Yes', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'Yes']"
-"dataset['test']['label'][:10]=['No', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'No']"
-
-# %%
-correct = 0
-total = 0
-for pred, label in zip(test_preds2,  dataset['test']['label']):
-    if pred.strip() == label.strip():
-        correct += 1
-    total += 1
-accuracy = correct / total * 100
-
-print(f"{accuracy=}% on the test dataset")
-print(f"{test_preds2[:10]=}")
-print(f"{dataset['test']['label'][:10]=}")
-
-"accuracy=83.2% on the test dataset"
+"accuracy=73.2% on the test dataset"
 "test_preds[:10]=['Yes', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'Yes']"
 "dataset['test']['label'][:10]=['No', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'No']"
