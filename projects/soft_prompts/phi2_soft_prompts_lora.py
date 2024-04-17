@@ -178,7 +178,7 @@ text_column = "text"
 label_column = "label"
 max_length = 128
 lr = 1e-4
-num_epochs = 10
+num_epochs = 50
 batch_size = 8
 
 peft_config = LoraConfig(
@@ -291,7 +291,10 @@ for epoch in range(num_epochs):
 
 model.eval()
 if not saved_model:
-    model.save_pretrained("data/models/" + model_name_or_path + "/lora")
+    if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+        model.module.save_pretrained("data/models/" + model_name_or_path + "/lora")
+    else:
+        model.save_pretrained("data/models/" + model_name_or_path + "/lora")
 
 final_test_loss, test_preds = test(test_dataloader, model, tokenizer, device)
 final_test_ppl = torch.exp(final_test_loss)
@@ -299,20 +302,37 @@ print(f"Test before training: {init_test_ppl=} {init_test_loss=}")
 print(f"Test after training: {final_test_ppl=} {final_test_loss=}")
 
 # %%
-correct = 0
-total = 0
-for pred, label in zip(test_preds,  dataset['test']['label']):
-    if pred.strip() == label.strip():
-        correct += 1
-    total += 1
-accuracy = correct / total * 100
+# Ensure final_test_loss is on the correct device
+final_test_loss = final_test_loss.cuda()
 
-print(f"{accuracy=}% on the test dataset")
-print(f"{test_preds[:10]=}")
-print(f"{dataset['test']['label'][:10]=}")
+# Use dist.reduce() to add final_test_loss from all GPUs
+if dist.is_available() and dist.is_initialized():
+    # The reduce operation sums all the final_test_loss and stores the result in rank 0
+    dist.reduce(final_test_loss, dst=0, op=dist.ReduceOp.SUM)
 
-"accuracy=84.8% on the test dataset"
+if dist.is_available() and dist.is_initialized():
+    dist.barrier()
+
+# Gather test_preds from all GPUs to the main GPU
+if dist.is_available() and dist.is_initialized():
+    if dist.get_rank() == 0:
+        accuracy = round(100 * (1- (final_test_loss.item() / dist.get_world_size())), 1)
+        print(f"{test_preds[:10]=}")
+        print(f"{dataset['test']['label'][:10]=}")
+        print(f"{accuracy=}% on the test dataset")
+else:
+    correct = 0
+    total = 0
+    for pred, label in zip(test_preds,  dataset['test']['label']):
+        if pred.strip() == label.strip():
+            correct += 1
+        total += 1
+    accuracy = correct / total * 100
+
+    print(f"{test_preds[:10]=}")
+    print(f"{dataset['test']['label'][:10]=}")
+    print(f"{accuracy=}% on the test dataset")
+
 "test_preds[:10]=['Yes', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'Yes']"
 "dataset['test']['label'][:10]=['No', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'No']"
-
-
+"accuracy=84.8% on the test dataset"
