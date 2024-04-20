@@ -14,4 +14,5 @@ pyyaml
 transformers
 datasets
 pytest
+flask
 pytest-asyncio
