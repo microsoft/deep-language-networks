@@ -29,6 +29,8 @@ jobs:
       - name: Start flask server
         run: |
           flask --app flask/app.py run &
+          curl http://127.0.0.1:5000
       - name: Run experiments
         run: |
-          curl http://127.0.0.1:5000
+          cd projects/vi_dln
+          bash scripts/two_layers_e2e/phi2_phi2_DLN-2.sh
