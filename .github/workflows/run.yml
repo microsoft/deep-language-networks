@@ -7,6 +7,7 @@ on:
     - cron: '* * * * 5'
 
 env:
+  OPENAI_API_KEY: EMPTY
   OPENAI_BASE_URL: http://127.0.0.1:5000/v1
   
 jobs:
