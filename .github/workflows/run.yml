@@ -6,6 +6,9 @@ on:
   schedule:
     - cron: '* * * * 5'
 
+env:
+  OPENAI_BASE_URL: http://127.0.0.1:5000/v1
+  
 jobs:
   tests:
     name: Run
@@ -26,6 +29,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e '.[dev]'
+          bash scripts/setup_data.sh
       - name: Start flask server
         run: |
           flask --app flask/app.py run &
