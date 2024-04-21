@@ -1,7 +1,7 @@
 set -x  # print commands to terminal
 dataset=navigate
 p_class_tpl="classify_forward:3.0"
-iters=20
+iters=1
 batch_size=1
 num_p_samples=10
 bwd_temp=0.7
