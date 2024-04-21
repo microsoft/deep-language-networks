@@ -42,6 +42,8 @@ model=None
 models = {}
 
 llamaModels =[ 
+              'gpt2',
+              'microsoft/phi-2',
               'llama-7b-hf',
               'alpaca-7b-hf',
               'decapoda-research/llama-7b-hf',
