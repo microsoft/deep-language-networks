@@ -29,7 +29,8 @@ jobs:
       - name: Start flask server
         run: |
           flask --app flask/app.py run &
-          curl http://127.0.0.1:5000
+          sleep 60s
+          curl http://127.0.0.1:5000/v1/completions -v -H "Content-Type: application/json" -H "Authorization: Bearer $OPENAI_API_KEY" --data "{\"model\":\"alpaca-lora-7b\",\"prompt\":\"Where is New York?\",\"max_tokens\":7,\"temperature\":0}"
       - name: Run experiments
         run: |
           cd projects/vi_dln
