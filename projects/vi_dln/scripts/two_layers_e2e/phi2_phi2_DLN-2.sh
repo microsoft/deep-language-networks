@@ -19,7 +19,7 @@ fwd_model_type="microsoft/phi-2"
 bwd_model_type="microsoft/phi-2"
 
 # dataset
-for dataset in hyperbaton navigate date_understanding logical_deduction_seven_objects mpqa trec subj disaster airline; do
+for dataset in navigate; do
 
 dir=log/phi2/${dataset}/DLN-2/
 
@@ -27,7 +27,7 @@ if [ ! -f ${dir}/done.txt ]; then
     /bin/rm -rf ${dir}
 
     # seed
-    for seed in 13 42 25; do
+    for seed in 42; do
         python vi_main.py \
             --balance_batch \
             --do_first_eval \

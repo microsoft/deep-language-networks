@@ -17,7 +17,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 # tested on a 3080
 LOAD_8BIT = False
-BASE_MODEL = "microsoft/phi-2"
+BASE_MODEL = "gpt2"
 
 # clues from :
 # https://github.com/shawwn/openai-server
@@ -142,7 +142,7 @@ else:
     #     resume_download=True
     # )
 
-ltokenizer = AutoTokenizer.from_pretrained("microsoft/phi-2", resume_download=True)
+ltokenizer = AutoTokenizer.from_pretrained("gpt2", resume_download=True)
 
 def generate_prompt_llama(instruction, input=None):
     if input:
