@@ -1,8 +1,8 @@
 set -x  # print commands to terminal
 dataset=navigate
 p_class_tpl="classify_forward:3.0"
-iters=0
-batch_size=1
+iters=20
+batch_size=10
 num_p_samples=10
 bwd_temp=0.7
 held_out_prompt_ranking=True
@@ -19,7 +19,7 @@ fwd_model_type="microsoft/phi-2"
 bwd_model_type="microsoft/phi-2"
 
 # dataset
-for dataset in navigate; do
+for dataset in hyperbaton navigate date_understanding logical_deduction_seven_objects mpqa trec subj disaster airline; do
 
 dir=log/phi2/${dataset}/DLN-2/
 
@@ -27,7 +27,7 @@ if [ ! -f ${dir}/done.txt ]; then
     /bin/rm -rf ${dir}
 
     # seed
-    for seed in 42; do
+    for seed in 13 42 25; do
         python vi_main.py \
             --balance_batch \
             --do_first_eval \
@@ -47,11 +47,11 @@ if [ ! -f ${dir}/done.txt ]; then
             --tolerance ${tolerance} \
             --held_out_prompt_ranking ${held_out_prompt_ranking} \
             --trust_factor ${trust_factor} \
-            --train_p1 False \
-            --train_p2 False \
+            --train_p1 True \
+            --train_p2 True \
             --logp_penalty ${logp_penalty} \
             --posterior_temp ${posterior_temp} \
-            --output_scoring_function accuracy \
+            --output_scoring_function logprobs \
             --fwd_model_type ${fwd_model_type} \
             --bwd_model_type ${bwd_model_type}
     done
