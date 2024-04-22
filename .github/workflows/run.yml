@@ -2,13 +2,13 @@ name: "Run"
 
 on:
   push:
-    branches: [ "flask" ]
+    branches: [ "e2e_tests", "main"]
   schedule:
-    - cron: '* * * * 5'
+    - cron: '0 3 * * *'
 
 env:
   OPENAI_API_KEY: ${{ secrets.VLLM_API_KEY }}
-  OPENAI_BASE_URL: http://testgenie.eastus.cloudapp.azure.com:5000/v1
+  OPENAI_BASE_URL: ${{ secrets.VLLM_BASE_URL }}
   
 jobs:
   tests:
