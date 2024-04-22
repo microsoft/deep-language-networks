@@ -169,7 +169,7 @@ tokenizer_name_or_path = "microsoft/phi-2"
 
 dataset_id = config["dataset"]
 initial_instruction = (
-    "Read the following question, then choose the correct answer."
+    "Read the following sentence. Then, determine whether you return to the starting point."
 )
 text_column = "text"
 label_column = "label"
@@ -285,7 +285,7 @@ for epoch in range(num_epochs):
         task_ids = torch.tensor([1 for i in batch["task_ids"]]).to(device)
         output2 = model(inputs_embeds=inputs_embeds, labels=batch['labels'], attention_mask=batch['attention_mask'], task_ids=task_ids, output_hidden_states=True)
        
-        loss = output2.loss
+        loss = output1.loss + output2.loss
         total_loss += loss.item()
         optimizer.zero_grad()
         accelerator.backward(loss)
@@ -339,8 +339,6 @@ if not saved_model:
         model.module.save_pretrained("data/models/" + model_name_or_path + "/multitask")
     else:
         model.save_pretrained("data/models/" + model_name_or_path + "/multitask")
-
-wandb.finish()
 # %%
 # Ensure final_test_loss is on the correct device
 final_test_loss = final_test_loss.cuda()
@@ -375,6 +373,8 @@ else:
     print(f"{accuracy=}% on the test dataset")
     wandb.log({"test accuracy": accuracy/100})
 
+
+wandb.finish()
 "test_preds[:10]=['Yes', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'Yes']"
 "dataset['test']['label'][:10]=['No', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'No']"
 "accuracy=73.4% on the test dataset"
