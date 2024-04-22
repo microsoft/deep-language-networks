@@ -285,7 +285,7 @@ for epoch in range(num_epochs):
         task_ids = torch.tensor([1 for i in batch["task_ids"]]).to(device)
         output2 = model(inputs_embeds=inputs_embeds, labels=batch['labels'], attention_mask=batch['attention_mask'], task_ids=task_ids, output_hidden_states=True)
        
-        loss = output1.loss + output2.loss
+        loss = output2.loss
         total_loss += loss.item()
         optimizer.zero_grad()
         accelerator.backward(loss)
@@ -301,7 +301,7 @@ for epoch in range(num_epochs):
     print(
         f"{epoch=}: {train_ppl=} {train_epoch_loss=} {eval_ppl=} {eval_epoch_loss=}"
     )
-    wandb.log({"loss": train_epoch_loss, "acc": (1 - eval_epoch_loss)})
+    wandb.log({"training loss": train_epoch_loss, "eval accuracy": (1 - eval_epoch_loss)})
 
     # Sum the eval losses from all processes
     if dist.is_available() and dist.is_initialized() and dist.get_rank() == 0:
@@ -360,6 +360,7 @@ if dist.is_available() and dist.is_initialized():
         print(f"{test_preds[:10]=}")
         print(f"{dataset['test']['label'][:10]=}")
         print(f"{accuracy=}% on the test dataset")
+        wandb.log({"test accuracy": accuracy/100})
 else:
     correct = 0
     total = 0
@@ -372,6 +373,7 @@ else:
     print(f"{test_preds[:10]=}")
     print(f"{dataset['test']['label'][:10]=}")
     print(f"{accuracy=}% on the test dataset")
+    wandb.log({"test accuracy": accuracy/100})
 
 "test_preds[:10]=['Yes', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'Yes']"
 "dataset['test']['label'][:10]=['No', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'No']"
