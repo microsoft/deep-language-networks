@@ -7,7 +7,7 @@ on:
     - cron: '* * * * 5'
 
 env:
-  OPENAI_API_KEY: EMPTY
+  OPENAI_API_KEY: ${{ secrets.VLLM_API_KEY }}
   OPENAI_BASE_URL: http://testgenie.eastus.cloudapp.azure.com:5000/v1
   
 jobs:
