@@ -293,7 +293,7 @@ for epoch in range(num_epochs):
         lr_scheduler.step()
 
     model.eval()
-    eval_epoch_loss, eval_preds = test(eval_dataloader, model, False)
+    eval_epoch_loss, eval_preds = test(eval_dataloader, model)
     eval_ppl = torch.exp(eval_epoch_loss)
     train_epoch_loss = total_loss / len(train_dataloader)
     train_ppl = torch.exp(torch.tensor(train_epoch_loss))
@@ -301,7 +301,7 @@ for epoch in range(num_epochs):
     print(
         f"{epoch=}: {train_ppl=} {train_epoch_loss=} {eval_ppl=} {eval_epoch_loss=}"
     )
-    wandb.log({"train_epoch_loss": train_epoch_loss, "eval_epoch_loss": eval_epoch_loss})
+    wandb.log({"loss": train_epoch_loss, "acc": (1 - eval_epoch_loss)})
 
     # Sum the eval losses from all processes
     if dist.is_available() and dist.is_initialized() and dist.get_rank() == 0:
