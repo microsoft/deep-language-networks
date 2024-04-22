@@ -34,8 +34,15 @@ jobs:
       - name: Run experiments
         run: |
           cd projects/vi_dln
-          python vi_main.py \
+          output=$(python vi_main.py \
           --iters 0 \
           --dataset navigate \
           --fwd_model_type microsoft/phi-2 \
-          --bwd_model_type microsoft/phi-2
+          --bwd_model_type microsoft/phi-2)
+          echo "$output"
+          if echo "$output" | grep -q "TEST ACC: 0.608"; then
+            echo "Output check passed"
+          else
+            echo "Output check failed"
+            exit 1
+          fi
