@@ -1,0 +1,36 @@
+name: "Self-Hosted"
+
+on:
+  push:
+    branches: [ "deep-language-networks-soft-prompts" ]
+  pull_request:
+    # The branches below must be a subset of the branches above
+    branches: [ "main" ]
+  schedule:
+    - cron: '20 17 * * 5'
+
+jobs:
+  tests:
+    name: Self-Hosted
+    runs-on: self-hosted
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ "python" ]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Set up python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev]'
+          bash scripts/setup_data.sh
+      - name: Accelerate Launch
+        run: |
+          cd projects/soft_prompts
+          accelerate launch phi2_soft_prompts_multitask.py
