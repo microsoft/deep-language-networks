@@ -42,10 +42,9 @@ model=None
 models = {}
 
 llamaModels =[ 
-              'gpt2',
-              'microsoft/phi-2',
               'llama-7b-hf',
               'alpaca-7b-hf',
+              'gpt2',
               'decapoda-research/llama-7b-hf',
               'tloen/alpaca-lora-7b', 
               'decapoda-research/llama-7b-hf-int4', 
@@ -200,13 +199,13 @@ def evaluate_llama(
         generation_output = lmodel.generate(
             input_ids=input_ids,
             # generation_config=generation_config,
-            # return_dict_in_generate=True,
-            # output_scores=True,
+            return_dict_in_generate=True,
+            output_scores=True,
             max_new_tokens=max_new_tokens,
         )
     # s = generation_output.sequences[0]
+
     output = ltokenizer.decode(generation_output[-1])
-    print(f"output: {output}")
     gen_text = output.split("### Response:")[1].strip()
     print(f"gen_text: {gen_text}")
     return gen_text
@@ -220,7 +219,7 @@ def update_model(model_name):
         model_name = models[model_name]
 
     if (model_name in llamaModels) and (model_name != cached_model):
-        print("Using llama model: {}".format(model_name))
+        print("Using model: {}".format(model_name))
         tokenizer = ltokenizer
         model = lmodel
         return ltokenizer, lmodel
@@ -282,8 +281,8 @@ def completions(model_name):
 
     kwargs = decode_kwargs(data)
     # generate the completion
-    
-    if (model_name in llamaModels):
+
+    if (model_name not in llamaModels):
         #generated_text = evaluate_llama(prompt,**kwargs)
         generated_text = evaluate_llama(prompt,
                                         #input = prompt,
@@ -296,31 +295,105 @@ def completions(model_name):
 
     else:
         input_ids = tokenizer.encode(prompt, return_tensors='pt')
-        output = model.generate(input_ids=input_ids,
-                                max_length=max_tokens, 
+        output_sequences = model.generate(input_ids=input_ids,
+                                return_dict_in_generate=True, 
+                                output_scores=True,
+                                max_new_tokens=max_tokens, 
                                 temperature=temperature,
                                 top_p=top_p,
                                 top_k=top_k,
                                 **kwargs)
-        generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
+        generated_text = tokenizer.decode(output_sequences.sequences[0], skip_special_tokens=True)
 
+        # top_k = 10  # Number of top log probabilities to get
+        logprobs = []
+        token_logprobs = []
+        for i, scores in enumerate(output_sequences.scores):  # Include the last score
+            next_token = output_sequences.sequences[0][i+1].item() if i+1 < len(output_sequences.sequences[0]) else output_sequences.sequences[0][i].item()
+            if next_token < scores.shape[-1]:  # Check if the token index is within the range of scores
+                # logprobs.append(torch.log_softmax(scores, dim=-1)[0, next_token].item())
+                logprob = torch.log_softmax(scores, dim=-1)[0, next_token].item()
+                logprobs.append(logprob)
+                # token_logprobs.append((tokenizer.decode([next_token]), logprob))
+                token_logprobs.append(logprob)
+       
+        # for i, scores in enumerate(output_sequences.scores[:-1]):  # Exclude the last score
+        #     next_token = output_sequences.sequences[0][i+1].item()
+        #     if next_token < scores.shape[-1]:  # Check if the token index is within the range of scores
+        #         logprobs.append(torch.log_softmax(scores, dim=-1)[0, next_token].item())
+        
+        top_k = min(top_k, len(logprobs))
+        top_logprobs, top_indices = torch.topk(torch.tensor(logprobs), top_k)
+
+        # Convert the indices to tokens
+        tokens = tokenizer.convert_ids_to_tokens(top_indices.tolist())
+
+        if (len(logprobs) == 0):
+            print("output_sequences.scores",output_sequences.scores)
+
+        logprobs_dict = {
+            "logprobs": logprobs,
+            "top_logprobs": top_logprobs.tolist(),
+            "tokens": tokens,
+            "token_logprobs": token_logprobs
+        }
+        print(f"Log probabilities: {logprobs_dict}") 
+        # print(f"Log probabilities: {logprobs}")
+        # print(generated_text)
+        # generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
+
+    # print(logprobs_dict)
     prompt_tokens = len(tokenizer.encode(prompt))
     completion_tokens = len(tokenizer.encode(generated_text))
     total_tokens = prompt_tokens + completion_tokens
-    return jsonify( {
-            'object': 'text_completion',
-            'id': 'dummy',
-            'created': int(time.time()),
-            'model': model_name,
-            'choices': 
-                [{'text': generated_text, 'finish_reason': 'length'}],
-            'usage': {
-                    'prompt_tokens': prompt_tokens,
-                    'completion_tokens': completion_tokens,
-                    'total_tokens': total_tokens
-                    }
-                }
-            )
+
+    # use transformers to generate the completion
+    data = request.get_json()
+    prompt = data.get('prompt')
+    max_length = data.get('max_length', 100)
+
+    input_ids = tokenizer.encode(prompt, return_tensors='pt')
+    with torch.no_grad():
+        outputs = model(input_ids, return_dict=True)
+    logits = outputs.logits
+
+    # Calculate log probabilities
+    logprobs = torch.nn.functional.log_softmax(logits, dim=-1)
+
+    # Get top k log probabilities and their indices
+    top_k_logprobs, top_k_indices = torch.topk(logprobs, k=5)
+
+    output = model.generate(input_ids, max_length=max_length, do_sample=True)
+
+    generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
+    return jsonify({
+        'choices': [{'text': generated_text[len(prompt):]}],
+        'logprobs': {
+            'token_logprobs': logprobs.tolist(),
+            'top_logprobs': top_k_logprobs.tolist(),
+            'tokens': [tokenizer.decode(idx) for sublist in top_k_indices.tolist() for idx in sublist]
+            # 'tokens': [tokenizer.decode([idx]) for idx in top_k_indices.tolist()]
+        }
+    })
+    # return jsonify( {
+    #         'object': 'text.completion',
+    #         'id': 'dummy',
+    #         'created': int(time.time()),
+    #         'model': model_name,
+    #         'choices': [
+    #             {
+    #                 'text': generated_text,
+    #                 'finish_reason': 'stop',
+    #                 'logprobs': logprobs_dict
+    #             }
+    #         ],
+    #         'usage': {
+    #                 'prompt_tokens': prompt_tokens,
+    #                 'completion_tokens': completion_tokens,
+    #                 'total_tokens': total_tokens
+    #                 }
+    #             }
+    #         )
 
     # return the response data
     # return jsonify(response.choices[0].text)
@@ -356,8 +429,10 @@ def chat_completions():
     max_new_tokens = data.get("max_new_tokens", 256)
 
     kwargs = decode_kwargs(data)
+    
+    logprobs = []
 
-    if (model_name in llamaModels):
+    if (model_name not in llamaModels):
         #generated_text = evaluate_llama_chat(prompt,**kwargs)
         instruction = "Be a generallly helpful assistiang chatting with the user. Return the response for the assistant."
         generated_text = evaluate_llama(instruction,
@@ -370,13 +445,31 @@ def chat_completions():
                                         **kwargs)
     else:
         input_ids = tokenizer.encode(prompt, return_tensors='pt')
-        output = model.generate(input_ids=input_ids,
+        output_sequences = model.generate(input_ids=input_ids,
                                 max_length=max_tokens, 
                                 temperature=temperature,
                                 top_p=top_p,
                                 top_k=top_k,
                                 **kwargs)
-        generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
+        generated_text = tokenizer.decode(output_sequences.sequences[0], skip_special_tokens=True)
+
+        # top_k = 10  # Number of top log probabilities to get
+        for i, scores in enumerate(output_sequences.scores[:-1]):  # Exclude the last score
+            next_token = output_sequences.sequences[0][i+1].item()
+            if next_token < scores.shape[-1]:  # Check if the token index is within the range of scores
+                logprobs.append(torch.log_softmax(scores, dim=-1)[0, next_token].item())
+        
+        top_k = min(top_k, len(logprobs))
+        top_logprobs, top_indices = torch.topk(torch.tensor(logprobs), top_k)
+
+        # Convert the indices to tokens
+        tokens = tokenizer.convert_ids_to_tokens(top_indices.tolist())
+
+        logprobs = {
+            "logprobs": logprobs,
+            "top_logprobs": top_logprobs.tolist(),
+            "tokens": tokens
+        }
 
     prompt_tokens = len(tokenizer.encode(prompt))
     completion_tokens = len(tokenizer.encode(generated_text))
@@ -387,7 +480,7 @@ def chat_completions():
             'created': int(time.time()),
             'model': model_name,
             'choices': 
-                [{'role':'assistant','content': generated_text, 'finish_reason': 'stop'}],
+                [{'role':'assistant', 'logprobs': logprobs, 'content': generated_text, 'finish_reason': 'stop'}],
             'usage': {
                     'prompt_tokens': prompt_tokens,
                     'completion_tokens': completion_tokens,

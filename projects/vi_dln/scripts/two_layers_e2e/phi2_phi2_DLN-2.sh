@@ -1,7 +1,7 @@
 set -x  # print commands to terminal
 dataset=navigate
 p_class_tpl="classify_forward:3.0"
-iters=1
+iters=0
 batch_size=1
 num_p_samples=10
 bwd_temp=0.7
@@ -15,8 +15,8 @@ posterior_temp=1.
 trust_factor=5.
 p_hidden_tpl="suffix_forward_tbs"
 q_hidden_tpl="suffix_forward_tbs_y|suffix_forward_tbs"
-fwd_model_type="microsoft/phi-2"
-bwd_model_type="microsoft/phi-2"
+fwd_model_type="gpt2"
+bwd_model_type="gpt2"
 
 # dataset
 for dataset in navigate; do
@@ -47,11 +47,11 @@ if [ ! -f ${dir}/done.txt ]; then
             --tolerance ${tolerance} \
             --held_out_prompt_ranking ${held_out_prompt_ranking} \
             --trust_factor ${trust_factor} \
-            --train_p1 True \
-            --train_p2 True \
+            --train_p1 False \
+            --train_p2 False \
             --logp_penalty ${logp_penalty} \
             --posterior_temp ${posterior_temp} \
-            --output_scoring_function logprobs \
+            --output_scoring_function accuracy \
             --fwd_model_type ${fwd_model_type} \
             --bwd_model_type ${bwd_model_type}
     done
