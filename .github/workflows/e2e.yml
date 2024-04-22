@@ -34,4 +34,4 @@ jobs:
       - name: Run experiments
         run: |
           cd projects/vi_dln
-          bash scripts/two_layers_e2e/phi2_phi2_DLN-2.sh 
+          bash scripts/two_layers_e2e/phi2_phi2_DLN-2.sh navigate

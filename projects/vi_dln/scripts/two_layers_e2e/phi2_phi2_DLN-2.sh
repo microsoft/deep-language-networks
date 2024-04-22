@@ -1,5 +1,4 @@
 set -x  # print commands to terminal
-dataset=navigate
 p_class_tpl="classify_forward:3.0"
 iters=20
 batch_size=10
@@ -18,8 +17,13 @@ q_hidden_tpl="suffix_forward_tbs_y|suffix_forward_tbs"
 fwd_model_type="microsoft/phi-2"
 bwd_model_type="microsoft/phi-2"
 
+# If no arguments are provided, use a hardcoded list of datasets
+if [ $# -eq 0 ]; then
+    set -- hyperbaton navigate date_understanding logical_deduction_seven_objects mpqa trec subj disaster airline
+fi
+
 # dataset
-for dataset in hyperbaton navigate date_understanding logical_deduction_seven_objects mpqa trec subj disaster airline; do
+for dataset in "$@"; do
 
 dir=log/phi2/${dataset}/DLN-2/
 
