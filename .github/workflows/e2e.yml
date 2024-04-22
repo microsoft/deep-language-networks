@@ -40,10 +40,10 @@ jobs:
           --fwd_model_type microsoft/phi-2 \
           --bwd_model_type microsoft/phi-2)
           echo "$output"
-          acc=$(echo "$output" | awk -F 'TEST ACC: ' '{print $2}' | awk '{print $1}')
+          acc=$(echo "$output" | awk -F 'TEST ACC: ' '/TEST ACC: /{val=$2} END{print val}' | awk '{print $1}')
           if (( $(echo "$acc > 0.5" | bc -l) )); then
-            echo "Output check passed"
+            echo "Accuracy check passed: $acc"
           else
-            echo "Output check failed"
+            echo "Accuracy check failed: $acc"
             exit 1
           fi
