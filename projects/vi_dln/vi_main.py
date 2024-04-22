@@ -148,13 +148,13 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 
 
 @click.command()
-@click.option("--seed", default=42, help="Random seed.")
+@click.option("--seed", type=int, default=42, help="Random seed.")
 @click.option("--out_dir", default="log/")
 @click.option("--data_dir", default="../../data")
 @click.option("--max_train_size", default=-1, type=int, help="Use only so many train examples.")
 @click.option("--max_dev_size", default=-1, type=int, help="Use only so many dev examples.")
 @click.option("--max_test_size", default=-1, type=int, help="Use only so many test examples.")
-@click.option("--val_freq", default=2)
+@click.option("--val_freq", type=int, default=2)
 @click.option("--do_first_eval", is_flag=True)
 @click.option("--do_zero_shot", is_flag=True)
 @click.option("--n_shots", default=-1, type=int)
@@ -187,18 +187,21 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
 )
 @click.option(
     "--trust_factor",
+    type=float,
     default=0.0,
     help="Trust-region factor for prompt update. Ensures KL divergence between the old and new prompt is small.",
 )
 @click.option(
     "--fwd_temp",
+    type=float,
     default=0.0,
-    help="Forward temperature",
+    help="Forward temperature. This config is ignored if --connections_config is specified.",
 )
 @click.option(
     "--bwd_temp",
+    type=float,
     default=0.7,
-    help="Backward temperature",
+    help="Backward temperature. This config is ignored if --connections_config is specified.",
 )
 @click.option(
     "--use_memory",
@@ -256,7 +259,7 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     "--output_scoring_function",
     type=str,
     default="logprobs",
-    help="Use logprobs to score output predictions.",
+    help="Scoring function to score output predictions. One of: logprobs, accuracy",
 )
 @click.option(
     "--hidden_scoring_function",
@@ -310,13 +313,13 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     "--fwd_max_tokens",
     type=int,
     default=256,
-    help="Forward max tokens.",
+    help="Forward max tokens. This config is ignored if --connections_config is specified.",
 )
 @click.option(
     "--bwd_max_tokens",
     type=int,
     default=512,
-    help="Backward max tokens.",
+    help="Backward max tokens. This config is ignored if --connections_config is specified.",
 )
 @click.option(
     "--p1_max_tokens",
@@ -340,7 +343,10 @@ def test(dataset, model, loss_fn, iteration, writer, cost_only=False):
     "--connections_config",
     type=click.Path(exists=True),
     default=None,
-    help="Path to the connections config yaml file.",
+    help=(
+        "Path to the connections config yaml file. If a config file is specified, "
+        "the models temperature and max_tokens from the command line are ignored."
+    ),
 )
 @click.option(
     "--use_nce",
@@ -491,6 +497,7 @@ def main(
             temperature=0.0,
             max_tokens=fwd_max_tokens,
             stop=None,
+            seed=seed,
         )
 
         bwd_model = llm_registry.register(
@@ -499,6 +506,7 @@ def main(
             temperature=bwd_temp,
             max_tokens=bwd_max_tokens,
             stop=None,
+            seed=seed,
         )
 
     postproc = None

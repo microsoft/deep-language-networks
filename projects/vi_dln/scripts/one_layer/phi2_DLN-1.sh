@@ -25,11 +25,6 @@ q_hidden_tpl="suffix_forward_tbs_y|suffix_forward_tbs"
 fwd_max_tokens=256
 bwd_max_tokens=512
 
-#iters=20
-#batch_size=20
-#q_prompt_tpl="q_action_prompt:v3.5"
-#logp_penalty=2
-
 one_layer=True
 
 # dataset
@@ -82,7 +77,6 @@ if [ ! -f ${dir}/done.txt ]; then
             --fwd_max_tokens ${fwd_max_tokens} \
             --bwd_max_tokens ${bwd_max_tokens} \
             --output_scoring_function ${output_scoring_function}
-            # --balance_batch \
 
     # seed
     done

@@ -95,7 +95,7 @@ def top_k(data, k):
     return mean_test_score, std_test_score
 
 def find_dataset_name(dataset_path):
-    dataset_names = ["navigate", "hyperbaton", "date_understanding", "logical_deduction_seven_objects", "disaster", "airline", "mpqa", "trec", "subj"]
+    dataset_names = ["gsm8k", "navigate", "hyperbaton", "date_understanding", "logical_deduction_seven_objects", "disaster", "airline", "mpqa", "trec", "subj"]
     for name in dataset_names:
         if name in dataset_path:
             return name.split("_")[0]
@@ -111,8 +111,6 @@ for k, v in results.items():
         continue
     data.append(
         {
-            # "name": k,
-            # "name": k[:30],
             "name": find_dataset_name(k),
             "seeds": len(v["dev"]),
             "init_dev": np.mean(v["init_dev"]) if "init_dev" in v else None,

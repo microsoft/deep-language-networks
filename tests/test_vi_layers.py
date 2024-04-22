@@ -45,7 +45,7 @@ def test_apply_residual_with_template(mock_logprobs_score, mock_llm):
 
 
 def test_log_p_with_output_classes(top_logprobs, mock_logprobs_score, mock_llm):
-    mock_logprobs_score.forward_evaluate.generate = top_logprobs
+    mock_logprobs_score.forward_evaluate._generate = top_logprobs
     inputs = ["1 + 1", "1 * 1"]
     outputs = ["B", "A"]
     output_classes = OutputClasses(protos=["a|A", "b|B"])
@@ -69,7 +69,7 @@ def test_log_p_with_output_classes(top_logprobs, mock_logprobs_score, mock_llm):
 
 
 def test_log_p_without_output_classes(raw_logprobs, score_requests, mock_logprobs_score, mock_llm):
-    mock_logprobs_score.forward_evaluate.generate = raw_logprobs
+    mock_logprobs_score.forward_evaluate._generate = raw_logprobs
     inputs = [s.context for s in score_requests]
     outputs = ["B", "A"]
     prior_layer = PriorLayer(
@@ -83,7 +83,7 @@ def test_log_p_without_output_classes(raw_logprobs, score_requests, mock_logprob
 
 
 def test_forward_with_output_class(top_logprobs, mock_logprobs_score, mock_llm):
-    mock_logprobs_score.forward_evaluate.generate = top_logprobs
+    mock_logprobs_score.forward_evaluate._generate = top_logprobs
     inputs = ["1 + 1", "1 * 1"]
     output_classes = OutputClasses(protos=["A|a", "B|b"])
     prior_layer = PriorLayer(
@@ -97,7 +97,7 @@ def test_forward_with_output_class(top_logprobs, mock_logprobs_score, mock_llm):
 
 
 def test_forward_without_output_class(text_outputs, mock_logprobs_score, mock_llm):
-    mock_llm.generate = text_outputs
+    mock_llm._generate = text_outputs
     inputs = ["1 + 1", "1 * 1"]
     prior_layer = PriorLayer(
         logprobs_score=mock_logprobs_score,
@@ -111,7 +111,7 @@ def test_forward_without_output_class(text_outputs, mock_logprobs_score, mock_ll
 
 def test_forward_strip_double_newlines(mock_logprobs_score, mock_llm):
     text_output = lambda *args, **kwargs: ["A\n\n"]
-    mock_llm.generate = text_output
+    mock_llm._generate = text_output
     inputs = ["1 + 1"]
     prior_layer = PriorLayer(
         logprobs_score=mock_logprobs_score,
