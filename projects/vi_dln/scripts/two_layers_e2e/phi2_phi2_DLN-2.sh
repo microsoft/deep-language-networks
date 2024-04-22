@@ -15,8 +15,8 @@ posterior_temp=1.
 trust_factor=5.
 p_hidden_tpl="suffix_forward_tbs"
 q_hidden_tpl="suffix_forward_tbs_y|suffix_forward_tbs"
-fwd_model_type="gpt2"
-bwd_model_type="gpt2"
+fwd_model_type="microsoft/phi-2"
+bwd_model_type="microsoft/phi-2"
 
 # dataset
 for dataset in navigate; do
