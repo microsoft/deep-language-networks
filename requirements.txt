@@ -16,5 +16,6 @@ datasets
 pytest
 peft
 tqdm
+wandb
 accelerator
 pytest-asyncio
