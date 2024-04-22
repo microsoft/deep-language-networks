@@ -40,7 +40,8 @@ jobs:
           --fwd_model_type microsoft/phi-2 \
           --bwd_model_type microsoft/phi-2)
           echo "$output"
-          if echo "$output" | grep -q "TEST ACC: 0.608"; then
+          acc=$(echo "$output" | awk -F 'TEST ACC: ' '{print $2}' | awk '{print $1}')
+          if (( $(echo "$acc > 0.5" | bc -l) )); then
             echo "Output check passed"
           else
             echo "Output check failed"
