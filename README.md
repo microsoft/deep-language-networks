@@ -255,10 +255,6 @@ You can refer to [vi_main.py](projects/vi_dln/vi_main.py) for a complete example
 Please see the [Variational Inference README](projects/vi_dln/README.md) for information on how to run VI experiments.
 
 
-## Soft-prompts
-pip install peft transformers datasets accelerator tqdm
-
-
 ## Limitations
 
 When it comes to large-scale natural language models, there are particular fairness and responsible AI issues to consider.

@@ -14,4 +14,7 @@ pyyaml
 transformers
 datasets
 pytest
+peft
+tqdm
+accelerator
 pytest-asyncio
