@@ -35,7 +35,7 @@ jobs:
         run: |
           cd projects/vi_dln
           python vi_main.py \
+          --iters 0 \
+          --dataset navigate \
           --fwd_model_type microsoft/phi-2 \
           --bwd_model_type microsoft/phi-2
-          --dataset navigate \
-          --iters 0 \
