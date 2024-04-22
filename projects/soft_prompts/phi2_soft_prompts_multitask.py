@@ -4,6 +4,7 @@
 # %%
 import os
 import torch
+import wandb
 import numpy as np
 import torch.nn.functional as F
 from tqdm.notebook import tqdm
@@ -17,6 +18,17 @@ tokenizer = AutoTokenizer.from_pretrained(model_id, padding_side="left")
 tokenizer.pad_token_id = tokenizer.eos_token_id
 tokenizer.padding_side = "left"
 
+config = {
+    "learning_rate": 3e-2,
+    "architecture": "DLN",
+    "dataset": "navigate",
+    "epochs": 50,
+}
+
+wandb.init(
+    project="deep-language-networks",
+    config=config
+)
 # %%
 def preprocess_function(examples, tokenizer, prefix, text_column, label_column, max_length):
     batch_size = len(examples[text_column])
@@ -155,15 +167,15 @@ set_seed(42)
 model_name_or_path = "microsoft/phi-2"
 tokenizer_name_or_path = "microsoft/phi-2"
 
-dataset_id = "navigate"
+dataset_id = config["dataset"]
 initial_instruction = (
     "Read the following question, then choose the correct answer."
 )
 text_column = "text"
 label_column = "label"
 max_length = 128
-lr = 3e-2
-num_epochs = 50
+lr = config["learning_rate"]
+num_epochs = config["epochs"]
 batch_size = 8
 
 peft_config = MultitaskPromptTuningConfig(
@@ -289,7 +301,8 @@ for epoch in range(num_epochs):
     print(
         f"{epoch=}: {train_ppl=} {train_epoch_loss=} {eval_ppl=} {eval_epoch_loss=}"
     )
-    
+    wandb.log({"train_epoch_loss": train_epoch_loss, "eval_epoch_loss": eval_epoch_loss})
+
     # Sum the eval losses from all processes
     if dist.is_available() and dist.is_initialized() and dist.get_rank() == 0:
         # In the main process, prepare to receive the sum of eval losses
@@ -327,6 +340,7 @@ if not saved_model:
     else:
         model.save_pretrained("data/models/" + model_name_or_path + "/multitask")
 
+wandb.finish()
 # %%
 # Ensure final_test_loss is on the correct device
 final_test_loss = final_test_loss.cuda()
