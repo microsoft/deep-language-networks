@@ -22,7 +22,7 @@ config = {
     "learning_rate": 3e-2,
     "architecture": "DLN",
     "dataset": "navigate",
-    "epochs": 50,
+    "epochs": 100,
 }
 
 wandb.init(
