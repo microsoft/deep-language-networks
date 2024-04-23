@@ -22,11 +22,11 @@ config = {
     "learning_rate": 3e-2,
     "architecture": "DLN",
     "dataset": "navigate",
-    "epochs": 100,
+    "epochs": 50,
 }
 
 wandb.init(
-    project="deep-language-networks",
+    project="Soft-prompt DLN",
     config=config
 )
 # %%
