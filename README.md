@@ -46,12 +46,15 @@ Alternatively, you can run 1-DNL by setting output_scoring_function="accuracy" a
 
 ### Setup self-hosted models (vLLM)
 
-Export huggingface id or path to the tokenizer, for example `meta-llama/Llama-2-70b-chat-hf` from huggingface or `/path/to/Llama-2-70b-chat-hf` from your local machine.
-Then, export the openai env vars `OPENAI_BASE_URL` and `OPENAI_API_KEY`. Remember to unset `OPENAI_API_TYPE` and `OPENAI_API_VERSION` if you have set them before.
+DLN does not directly serve models, instead, we use [vLLM](https://github.com/vllm-project/vllm), an open-source library that provides an OpenAI-compatible server solution for self-hosted models. For instructions on setting up vLLM, please follow this [guide](https://docs.vllm.ai/en/latest/getting_started/quickstart.html#openai-compatible-server).
 
-    export TOKENIZER_PATH=<PATH_TO_TOKENIZER>
-    export OPENAI_API_KEY=EMPTY
-    export OPENAI_BASE_URL=http://127.0.0.1:8000/v1
+Once your vLLM server is up and running, if you have loaded a model from weights on your local machine, please define the path to the tokenizer (e.g., `/path/to/Llama-2-70b-chat-hf`) in the environment variable `TOKENIZER_PATH` so that DLN can also load the same tokenizer. If you are downloading the tokenizer from Hugging Face, this environment variable is not required; DLN will download it automatically (e.g., `meta-llama/Llama-2-70b-chat-hf`).
+
+Then, set the `OPENAI_BASE_URL` and `OPENAI_API_KEY` environment variables to point to your vLLM server. Finally, remember to unset `OPENAI_API_TYPE` and `OPENAI_API_VERSION` if they were previously set.
+
+    export TOKENIZER_PATH=<PATH_TO_TOKENIZER>  # /path/to/Llama-2-70b-chat-hf
+    export OPENAI_API_KEY=<API_KEY>            # EMPTY
+    export OPENAI_BASE_URL=<BASE_URL>          # http://127.0.0.1:8000/v1
     unset OPENAI_API_TYPE
     unset OPENAI_API_VERSION
 
