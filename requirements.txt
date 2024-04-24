@@ -17,5 +17,7 @@ pytest
 peft
 tqdm
 wandb
+jupyter
+ipywidgets
 accelerator
 pytest-asyncio
