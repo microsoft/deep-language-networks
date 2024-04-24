@@ -135,27 +135,34 @@ def set_seed(seed):
 @click.option("--learning_rate", type=float, default=0.03)
 @click.option("--num_virtual_tokens", type=int, default=16)
 @click.option("--dataset", type=str, default="navigate")
+@click.option(
+    "--enable_wandb",
+    is_flag=False,
+    help="Enable wandb logging. Requires wandb to be installed.",
+)
 def main(
     seed,
     batch_size,
     epochs,
     learning_rate,
     num_virtual_tokens,
-    dataset
+    dataset,
+    enable_wandb,
 ):
-    wandb_config = {
-        "learning_rate": learning_rate,
-        "architecture": "DLN",
-        "dataset": dataset,
-        "epochs": epochs,
-        "seed": seed,
-        "batch_size": batch_size,
-        "num_virtual_tokens": num_virtual_tokens
-    }
-    wandb.init(
-        project="Soft-prompt DLN",
-        config=wandb_config
-    )    
+    if enable_wandb:
+        wandb_config = {
+            "learning_rate": learning_rate,
+            "architecture": "DLN",
+            "dataset": dataset,
+            "epochs": epochs,
+            "seed": seed,
+            "batch_size": batch_size,
+            "num_virtual_tokens": num_virtual_tokens
+        }
+        wandb.init(
+            project="Soft-prompt DLN",
+            config=wandb_config
+        )    
     accelerator = Accelerator()
     from peft import (
         MultitaskPromptTuningConfig,
@@ -318,7 +325,8 @@ def main(
         print(
             f"{epoch=}: {train_ppl=} {train_epoch_loss=} {eval_ppl=} {eval_epoch_loss=}"
         )
-        wandb.log({"training loss": train_epoch_loss, "eval accuracy": (1 - eval_epoch_loss)})
+        if enable_wandb:
+            wandb.log({"training loss": train_epoch_loss, "eval accuracy": (1 - eval_epoch_loss)})
 
         # Sum the eval losses from all processes
         if dist.is_available() and dist.is_initialized() and dist.get_rank() == 0:
@@ -375,7 +383,8 @@ def main(
             print(f"{test_preds[:10]=}")
             print(f"{dataset['test']['label'][:10]=}")
             print(f"{accuracy=}% on the test dataset")
-            wandb.log({"test accuracy": accuracy/100})
+            if enable_wandb:
+                wandb.log({"test accuracy": accuracy/100})
     else:
         correct = 0
         total = 0
@@ -389,10 +398,11 @@ def main(
         print(f"{dataset['test']['label'][:10]=}")
         print(f"{accuracy=}% on the test dataset")
         print(f"test accuracy: {accuracy}/100")
-        wandb.log({"test accuracy": accuracy/100})
+        if enable_wandb:
+            wandb.log({"test accuracy": accuracy/100})
 
-
-    wandb.finish()
+    if enable_wandb:
+        wandb.finish()
 
 if __name__ == "__main__":
     main()

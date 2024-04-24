@@ -21,6 +21,7 @@ if [ ! -f ${dir}/done.txt ]; then
             --epochs ${epochs} \
             --seed ${seed} \
             --num_virtual_tokens ${num_virtual_tokens} \
+            --enable_wandb True \
             --dataset ${dataset}
     done
 fi
