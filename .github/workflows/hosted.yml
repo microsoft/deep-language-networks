@@ -15,7 +15,7 @@ env:
 jobs:
   tests:
     name: Self-Hosted
-    runs-on: self-hosted
+    runs-on: ubuntu-latest #self-hosted
     strategy:
       fail-fast: false
       matrix:
@@ -36,4 +36,14 @@ jobs:
       - name: Accelerate Launch
         run: |
           cd projects/soft_prompts
-          accelerate launch phi2_soft_prompts_multitask.py
+          output=$(python phi2_soft_prompts_multitask.py \
+          --dataset navigate \
+          --epochs 0)
+          echo "$output"
+          acc=$(echo "$output" | awk -F 'TEST ACC: ' '/TEST ACC: /{val=$2} END{print val}' | awk '{print $1}')
+          if (( $(echo "$acc > 40" | bc -l) )); then
+            echo "Accuracy check passed: $acc"
+          else
+            echo "Accuracy check failed: $acc"
+            exit 1
+          fi

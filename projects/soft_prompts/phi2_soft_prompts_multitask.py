@@ -387,6 +387,7 @@ def main(
         print(f"{test_preds[:10]=}")
         print(f"{dataset['test']['label'][:10]=}")
         print(f"{accuracy=}% on the test dataset")
+        print(f"TEST ACC: {accuracy}")
         wandb.log({"test accuracy": accuracy/100})
 
 
