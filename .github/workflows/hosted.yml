@@ -40,8 +40,8 @@ jobs:
           --dataset navigate \
           --epochs 0)
           echo "$output"
-          acc=$(echo "$output" | awk -F 'TEST ACC: ' '/TEST ACC: /{val=$2} END{print val}' | awk '{print $1}')
-          if (( $(echo "$acc > 40" | bc -l) )); then
+          acc=$(echo "$output" | awk -F 'test accuracy: ' '/test accuracy: /{val=$2} END{print val}' | awk '{print $1}')
+          if (( $(echo "$acc > 0.4" | bc -l) )); then
             echo "Accuracy check passed: $acc"
           else
             echo "Accuracy check failed: $acc"

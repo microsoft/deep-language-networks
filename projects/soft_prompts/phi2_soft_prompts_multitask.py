@@ -43,13 +43,14 @@ def preprocess_function(examples, tokenizer, prefix, text_column, label_column, 
 
 # %%
 def logprobs_for_classes(output_logits, classes):
-    logits = [0 for _ in range(len(classes))]
+    logits = [torch.zeros_like(output_logits[0]) for _ in range(len(classes))]
     for i, target in enumerate(classes):
         expanded_classes = [target] + [f" {target}"] + [f"{target.lower()}"] + [f" {target.lower()}"]
         encoded_classes = [tokenizer.encode(c, return_tensors="pt", padding=True).to(device) for c in expanded_classes]
+        logits[i] = logits[i].expand_as(output_logits[0])
         for token in encoded_classes:
-            logits[i] += output_logits[token]
-    return F.log_softmax(torch.tensor(logits), dim=0)
+            logits[i] += output_logits[token[0][0]]
+    return F.log_softmax(torch.stack(logits), dim=0).cpu()
 
 # %%
 def exact_match_loss(outputs, labels):     
@@ -387,7 +388,7 @@ def main(
         print(f"{test_preds[:10]=}")
         print(f"{dataset['test']['label'][:10]=}")
         print(f"{accuracy=}% on the test dataset")
-        print(f"TEST ACC: {accuracy}")
+        print(f"test accuracy: {accuracy}/100")
         wandb.log({"test accuracy": accuracy/100})
 
 
