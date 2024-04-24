@@ -4,11 +4,14 @@
 # %%
 import os
 import torch
+import click
 import wandb
 import numpy as np
 import torch.nn.functional as F
 from tqdm.notebook import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from accelerate import Accelerator
+import random
 
 model_id = "microsoft/phi-2"
 
@@ -17,18 +20,6 @@ tokenizer = AutoTokenizer.from_pretrained(model_id, padding_side="left")
 
 tokenizer.pad_token_id = tokenizer.eos_token_id
 tokenizer.padding_side = "left"
-
-config = {
-    "learning_rate": 3e-2,
-    "architecture": "DLN",
-    "dataset": "navigate",
-    "epochs": 50,
-}
-
-wandb.init(
-    project="Soft-prompt DLN",
-    config=config
-)
 # %%
 def preprocess_function(examples, tokenizer, prefix, text_column, label_column, max_length):
     batch_size = len(examples[text_column])
@@ -129,252 +120,277 @@ def load_dln_dataset_to_hf_dataset(dataset_id):
     )
     return dataset_dict
 
-# %%
-from accelerate import Accelerator
-accelerator = Accelerator()
-
-import random
 def set_seed(seed):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
 
-from peft import (
-    MultitaskPromptTuningConfig,
-    MultitaskPromptTuningInit,
-    TaskType,
-    PeftModel,
-    get_peft_model,
-)
+# %%
+@click.command()
+@click.option("--seed", type=int, default=42, help="Random seed.")
+@click.option("--batch_size", type=int, default=10)
+@click.option("--epochs", type=int, default=50)
+@click.option("--learning_rate", type=float, default=0.03)
+@click.option("--num_virtual_tokens", type=int, default=16)
+@click.option("--dataset", type=str, default="navigate")
+def main(
+    seed,
+    batch_size,
+    epochs,
+    learning_rate,
+    num_virtual_tokens,
+    dataset
+):
+    wandb_config = {
+        "learning_rate": learning_rate,
+        "architecture": "DLN",
+        "dataset": dataset,
+        "epochs": epochs,
+        "seed": seed,
+        "batch_size": batch_size,
+        "num_virtual_tokens": num_virtual_tokens
+    }
+    wandb.init(
+        project="Soft-prompt DLN",
+        config=wandb_config
+    )    
+    accelerator = Accelerator()
+    from peft import (
+        MultitaskPromptTuningConfig,
+        MultitaskPromptTuningInit,
+        TaskType,
+        PeftModel,
+        get_peft_model,
+    )
 
-from torch.utils.data import DataLoader
-from tqdm import tqdm
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    default_data_collator,
-    get_linear_schedule_with_warmup,
-)
-import torch.nn as nn
-import torch.distributed as dist
-from torch.utils.data import Subset
+    from torch.utils.data import DataLoader
+    from tqdm import tqdm
+    from transformers import (
+        AutoModelForCausalLM,
+        AutoTokenizer,
+        default_data_collator,
+        get_linear_schedule_with_warmup,
+    )
+    import torch.nn as nn
+    import torch.distributed as dist
+    from torch.utils.data import Subset
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
-set_seed(42)
+    set_seed(seed)
 
-model_name_or_path = "microsoft/phi-2"
-tokenizer_name_or_path = "microsoft/phi-2"
+    model_name_or_path = "microsoft/phi-2"
+    tokenizer_name_or_path = "microsoft/phi-2"
 
-dataset_id = config["dataset"]
-initial_instruction = (
-    "Read the following sentence. Then, determine whether you return to the starting point."
-)
-text_column = "text"
-label_column = "label"
-max_length = 128
-lr = config["learning_rate"]
-num_epochs = config["epochs"]
-batch_size = 8
+    dataset_id = dataset
+    initial_instruction = (
+        "Read the following sentence. Then, determine whether you return to the starting point."
+    )
+    text_column = "text"
+    label_column = "label"
+    max_length = 128
+    lr = learning_rate
+    num_epochs = epochs
 
-peft_config = MultitaskPromptTuningConfig(
-    task_type=TaskType.CAUSAL_LM,
-    num_tasks=2,
-    prompt_tuning_init=MultitaskPromptTuningInit.TEXT,
-    num_virtual_tokens=8,
-    prompt_tuning_init_text=initial_instruction,
-    num_transformer_submodules=1,
-    tokenizer_name_or_path=model_name_or_path,
-)
+    peft_config = MultitaskPromptTuningConfig(
+        task_type=TaskType.CAUSAL_LM,
+        num_tasks=2,
+        prompt_tuning_init=MultitaskPromptTuningInit.TEXT,
+        num_virtual_tokens=num_virtual_tokens,
+        prompt_tuning_init_text=initial_instruction,
+        num_transformer_submodules=1,
+        tokenizer_name_or_path=model_name_or_path,
+    )
 
-dataset = load_dln_dataset_to_hf_dataset(dataset_id)
+    dataset = load_dln_dataset_to_hf_dataset(dataset_id)
 
-classes = list(set(dataset["train"]["label"]))
+    classes = list(set(dataset["train"]["label"]))
 
-tokenizer = AutoTokenizer.from_pretrained(tokenizer_name_or_path, device_map="auto", padding_side='left')
-if tokenizer.pad_token_id is None:
-    tokenizer.pad_token_id = tokenizer.eos_token_id
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name_or_path, device_map="auto", padding_side='left')
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token_id = tokenizer.eos_token_id
 
-processed_datasets = dataset.map(
-    preprocess_function,
-    batched=True,
-    num_proc=1,
-    remove_columns=dataset["train"].column_names,
-    load_from_cache_file=False,
-    desc="Running tokenizer on dataset",
-    fn_kwargs={
-        "tokenizer": tokenizer,
-        "prefix": '',
-        "text_column": text_column,
-        "label_column": label_column,
-        "max_length": max_length,
-    },
-)
+    processed_datasets = dataset.map(
+        preprocess_function,
+        batched=True,
+        num_proc=1,
+        remove_columns=dataset["train"].column_names,
+        load_from_cache_file=False,
+        desc="Running tokenizer on dataset",
+        fn_kwargs={
+            "tokenizer": tokenizer,
+            "prefix": '',
+            "text_column": text_column,
+            "label_column": label_column,
+            "max_length": max_length,
+        },
+    )
 
-train_dataset = processed_datasets["train"]
-eval_dataset = processed_datasets["dev"]
-test_dataset = processed_datasets["test"]
+    train_dataset = processed_datasets["train"]
+    eval_dataset = processed_datasets["dev"]
+    test_dataset = processed_datasets["test"]
 
-train_dataloader = DataLoader(
-    train_dataset,
-    shuffle=True,
-    collate_fn=default_data_collator,
-    batch_size=batch_size,
-    pin_memory=True,
-)
-eval_dataloader = DataLoader(
-    eval_dataset,
-    collate_fn=default_data_collator,
-    batch_size=batch_size,
-    pin_memory=True,
-)
-test_dataloader = DataLoader(
-    test_dataset,
-    collate_fn=default_data_collator,
-    batch_size=batch_size,
-    pin_memory=True,
-)
+    train_dataloader = DataLoader(
+        train_dataset,
+        shuffle=True,
+        collate_fn=default_data_collator,
+        batch_size=batch_size,
+        pin_memory=True,
+    )
+    eval_dataloader = DataLoader(
+        eval_dataset,
+        collate_fn=default_data_collator,
+        batch_size=batch_size,
+        pin_memory=True,
+    )
+    test_dataloader = DataLoader(
+        test_dataset,
+        collate_fn=default_data_collator,
+        batch_size=batch_size,
+        pin_memory=True,
+    )
 
-model = AutoModelForCausalLM.from_pretrained(model_name_or_path)
-model.config.pad_token_id = model.config.eos_token_id
+    model = AutoModelForCausalLM.from_pretrained(model_name_or_path)
+    model.config.pad_token_id = model.config.eos_token_id
 
-saved_model = None
-try:
-    saved_model = PeftModel.from_pretrained(model, "data/models/" + model_name_or_path + "/multitask")
-    model = saved_model
-    print("Using saved model from data/models/" + model_name_or_path)
-except ValueError:
+    saved_model = None
+    # try:
+    #     saved_model = PeftModel.from_pretrained(model, "data/models/" + model_name_or_path + "/multitask")
+    #     model = saved_model
+    #     print("Using saved model from data/models/" + model_name_or_path)
+    # except ValueError:
+    #     model = get_peft_model(model, peft_config)
+    #     print("Model not found, training new model")
     model = get_peft_model(model, peft_config)
-    print("Model not found, training new model")
 
-optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
-lr_scheduler= get_linear_schedule_with_warmup(
-    optimizer=optimizer,
-    num_warmup_steps=0,
-    num_training_steps=(len(train_dataloader) * num_epochs),
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+    lr_scheduler= get_linear_schedule_with_warmup(
+        optimizer=optimizer,
+        num_warmup_steps=0,
+        num_training_steps=(len(train_dataloader) * num_epochs),
 
-)
+    )
 
-model = model.to(device)
+    model = model.to(device)
 
-# Send everything through `accelerator.prepare`
-train_dataloader, eval_dataloader, test_dataloader, model, optimizer = accelerator.prepare(
-    train_dataloader, eval_dataloader, test_dataloader, model, optimizer
-)
-
-model.eval()
-
-init_test_loss, test_preds = test(test_dataloader, model)
-init_test_ppl = torch.exp(init_test_loss)  # Perplexity
-print(f"Test before training: {init_test_ppl=} {init_test_loss=}")
-
-best_eval_loss = float('inf')
-epochs_without_improvement = 0
-patience = 10  # Number of epochs to wait before stopping
-
-for epoch in range(num_epochs):
-    model.train()
-    total_loss = 0
-    for step, batch in enumerate(tqdm(train_dataloader)):
-        batch = {k: v.to(device) for k, v in batch.items()}
-        output1 = model(**batch, output_hidden_states=True)
-        
-        sequence_length_labels = batch['labels'].shape[1]
-        inputs_embeds = output1.hidden_states[-1][:, -sequence_length_labels:]
-        task_ids = torch.tensor([1 for i in batch["task_ids"]]).to(device)
-        output2 = model(inputs_embeds=inputs_embeds, labels=batch['labels'], attention_mask=batch['attention_mask'], task_ids=task_ids, output_hidden_states=True)
-       
-        loss = output1.loss + output2.loss
-        total_loss += loss.item()
-        optimizer.zero_grad()
-        accelerator.backward(loss)
-        optimizer.step()
-        lr_scheduler.step()
+    # Send everything through `accelerator.prepare`
+    train_dataloader, eval_dataloader, test_dataloader, model, optimizer = accelerator.prepare(
+        train_dataloader, eval_dataloader, test_dataloader, model, optimizer
+    )
 
     model.eval()
-    eval_epoch_loss, eval_preds = test(eval_dataloader, model)
-    eval_ppl = torch.exp(eval_epoch_loss)
-    train_epoch_loss = total_loss / len(train_dataloader)
-    train_ppl = torch.exp(torch.tensor(train_epoch_loss))
 
-    print(
-        f"{epoch=}: {train_ppl=} {train_epoch_loss=} {eval_ppl=} {eval_epoch_loss=}"
-    )
-    wandb.log({"training loss": train_epoch_loss, "eval accuracy": (1 - eval_epoch_loss)})
+    init_test_loss, test_preds = test(test_dataloader, model)
+    init_test_ppl = torch.exp(init_test_loss)  # Perplexity
+    print(f"Test before training: {init_test_ppl=} {init_test_loss=}")
 
-    # Sum the eval losses from all processes
-    if dist.is_available() and dist.is_initialized() and dist.get_rank() == 0:
-        # In the main process, prepare to receive the sum of eval losses
-        total_eval_loss = torch.zeros_like(eval_epoch_loss)
-    else:
-        total_eval_loss = eval_epoch_loss
+    best_eval_loss = float('inf')
+    epochs_without_improvement = 0
+    patience = 10  # Number of epochs to wait before stopping
+
+    for epoch in range(num_epochs):
+        model.train()
+        total_loss = 0
+        for step, batch in enumerate(tqdm(train_dataloader)):
+            batch = {k: v.to(device) for k, v in batch.items()}
+            output1 = model(**batch, output_hidden_states=True)
+            
+            sequence_length_labels = batch['labels'].shape[1]
+            inputs_embeds = output1.hidden_states[-1][:, -sequence_length_labels:]
+            task_ids = torch.tensor([1 for i in batch["task_ids"]]).to(device)
+            output2 = model(inputs_embeds=inputs_embeds, labels=batch['labels'], attention_mask=batch['attention_mask'], task_ids=task_ids, output_hidden_states=True)
+        
+            loss = output1.loss + output2.loss
+            total_loss += loss.item()
+            optimizer.zero_grad()
+            accelerator.backward(loss)
+            optimizer.step()
+            lr_scheduler.step()
+
+        model.eval()
+        eval_epoch_loss, eval_preds = test(eval_dataloader, model)
+        eval_ppl = torch.exp(eval_epoch_loss)
+        train_epoch_loss = total_loss / len(train_dataloader)
+        train_ppl = torch.exp(torch.tensor(train_epoch_loss))
+
+        print(
+            f"{epoch=}: {train_ppl=} {train_epoch_loss=} {eval_ppl=} {eval_epoch_loss=}"
+        )
+        wandb.log({"training loss": train_epoch_loss, "eval accuracy": (1 - eval_epoch_loss)})
+
+        # Sum the eval losses from all processes
+        if dist.is_available() and dist.is_initialized() and dist.get_rank() == 0:
+            # In the main process, prepare to receive the sum of eval losses
+            total_eval_loss = torch.zeros_like(eval_epoch_loss)
+        else:
+            total_eval_loss = eval_epoch_loss
+
+        if dist.is_available() and dist.is_initialized():
+            dist.reduce(total_eval_loss, dst=0, op=dist.ReduceOp.SUM)
+            # Broadcast the total eval loss from the main process to all other processes
+            dist.broadcast(total_eval_loss, src=0)
+            eval_epoch_loss = total_eval_loss / dist.get_world_size()
+
+        # Check if the validation loss has improved
+        if eval_epoch_loss < best_eval_loss:
+            best_eval_loss = eval_epoch_loss
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+
+        # if epochs_without_improvement >= patience:
+        #     print("Stopping training: ", dist.get_rank())
+        #     break
+
+    model.eval()
+
+    final_test_loss, test_preds = test(test_dataloader, model)
+    final_test_ppl = torch.exp(final_test_loss)
+    print(f"Test before training1: {init_test_ppl=} {init_test_loss=}")
+    print(f"Test after training1: {final_test_ppl=} {final_test_loss=}")
+
+    if not saved_model:
+        if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+            model.module.save_pretrained("data/models/" + model_name_or_path + "/multitask")
+        else:
+            model.save_pretrained("data/models/" + model_name_or_path + "/multitask")
+    # %%
+    # Ensure final_test_loss is on the correct device
+    final_test_loss = final_test_loss.cuda()
+
+    # Use dist.reduce() to add final_test_loss from all GPUs
+    if dist.is_available() and dist.is_initialized():
+        # The reduce operation sums all the final_test_loss and stores the result in rank 0
+        dist.reduce(final_test_loss, dst=0, op=dist.ReduceOp.SUM)
 
     if dist.is_available() and dist.is_initialized():
-        dist.reduce(total_eval_loss, dst=0, op=dist.ReduceOp.SUM)
-        # Broadcast the total eval loss from the main process to all other processes
-        dist.broadcast(total_eval_loss, src=0)
-        eval_epoch_loss = total_eval_loss / dist.get_world_size()
+        dist.barrier()
 
-    # Check if the validation loss has improved
-    if eval_epoch_loss < best_eval_loss:
-        best_eval_loss = eval_epoch_loss
-        epochs_without_improvement = 0
+    # Gather test_preds from all GPUs to the main GPU
+    if dist.is_available() and dist.is_initialized():
+        if dist.get_rank() == 0:
+            accuracy = round(100 * (1- (final_test_loss.item() / dist.get_world_size())), 1)
+            print(f"{test_preds[:10]=}")
+            print(f"{dataset['test']['label'][:10]=}")
+            print(f"{accuracy=}% on the test dataset")
+            wandb.log({"test accuracy": accuracy/100})
     else:
-        epochs_without_improvement += 1
+        correct = 0
+        total = 0
+        for pred, label in zip(test_preds, dataset['test']['label']):
+            if pred.strip() == label.strip():
+                correct += 1
+            total += 1
+        accuracy = correct / total * 100
 
-    # if epochs_without_improvement >= patience:
-    #     print("Stopping training: ", dist.get_rank())
-    #     break
-
-model.eval()
-
-final_test_loss, test_preds = test(test_dataloader, model)
-final_test_ppl = torch.exp(final_test_loss)
-print(f"Test before training1: {init_test_ppl=} {init_test_loss=}")
-print(f"Test after training1: {final_test_ppl=} {final_test_loss=}")
-
-if not saved_model:
-    if isinstance(model, torch.nn.parallel.DistributedDataParallel):
-        model.module.save_pretrained("data/models/" + model_name_or_path + "/multitask")
-    else:
-        model.save_pretrained("data/models/" + model_name_or_path + "/multitask")
-# %%
-# Ensure final_test_loss is on the correct device
-final_test_loss = final_test_loss.cuda()
-
-# Use dist.reduce() to add final_test_loss from all GPUs
-if dist.is_available() and dist.is_initialized():
-    # The reduce operation sums all the final_test_loss and stores the result in rank 0
-    dist.reduce(final_test_loss, dst=0, op=dist.ReduceOp.SUM)
-
-if dist.is_available() and dist.is_initialized():
-    dist.barrier()
-
-# Gather test_preds from all GPUs to the main GPU
-if dist.is_available() and dist.is_initialized():
-    if dist.get_rank() == 0:
-        accuracy = round(100 * (1- (final_test_loss.item() / dist.get_world_size())), 1)
         print(f"{test_preds[:10]=}")
         print(f"{dataset['test']['label'][:10]=}")
         print(f"{accuracy=}% on the test dataset")
         wandb.log({"test accuracy": accuracy/100})
-else:
-    correct = 0
-    total = 0
-    for pred, label in zip(test_preds, dataset['test']['label']):
-        if pred.strip() == label.strip():
-            correct += 1
-        total += 1
-    accuracy = correct / total * 100
-
-    print(f"{test_preds[:10]=}")
-    print(f"{dataset['test']['label'][:10]=}")
-    print(f"{accuracy=}% on the test dataset")
-    wandb.log({"test accuracy": accuracy/100})
 
 
-wandb.finish()
-"test_preds[:10]=['Yes', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'Yes']"
-"dataset['test']['label'][:10]=['No', 'No', 'No', 'Yes', 'No', 'Yes', 'Yes', 'Yes', 'No', 'No']"
-"accuracy=73.4% on the test dataset"
+    wandb.finish()
+
+if __name__ == "__main__":
+    main()
