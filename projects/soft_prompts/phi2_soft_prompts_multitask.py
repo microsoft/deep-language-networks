@@ -3,6 +3,8 @@
 
 # %%
 import os
+import dln
+import copy
 import torch
 import click
 import wandb
@@ -13,6 +15,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from accelerate import Accelerator
 import random
 
+model = None
 model_id = "microsoft/phi-2"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -42,21 +45,32 @@ def preprocess_function(examples, tokenizer, prefix, text_column, label_column, 
     return model_inputs
 
 # %%
-def logprobs_for_classes(output_logits, classes):
+def logprobs_for_classes(model, batch, output_logits, classes):
     logits = [torch.zeros_like(output_logits[0]) for _ in range(len(classes))]
     for i, target in enumerate(classes):
         expanded_classes = [target] + [f" {target}"] + [f"{target.lower()}"] + [f" {target.lower()}"]
         encoded_classes = [tokenizer.encode(c, return_tensors="pt", padding=True).to(device) for c in expanded_classes]
         logits[i] = logits[i].expand_as(output_logits[0])
+        input_sequence = copy.deepcopy(batch)
         for token in encoded_classes:
-            logits[i] += output_logits[token[0][0]]
+            for _ in range(len(token[0])):
+                output_logits = model(**input_sequence, output_hidden_states=True).logits
+                logits[i] = logits[i].expand_as(output_logits[0])
+                logprobs = F.softmax(output_logits, dim=-1)
+                next_token = torch.multinomial(logprobs[-1][-1], num_samples=1)
+                logits[i] = logits[i].expand_as(output_logits[0])
+                # logits[i] += output_logits[next_token]
+                # input_sequence = torch.cat([input_sequence, next_token], dim=-1)
+            # for j in range(len(token[0])):
+            #     logits[i] += output_logits[token[0][j]]
     return F.log_softmax(torch.stack(logits), dim=0).cpu()
 
 # %%
-def exact_match_loss(outputs, labels):     
+def exact_match_loss(model, batch, outputs):
+    labels = batch["labels"]
     target_texts = [tokenizer.decode([tok for tok in target if tok != -100], skip_special_tokens=True) for target in labels]
     targets = list(set(target_texts))
-    generated_texts = [targets[np.argmax(logprobs_for_classes(out[-1], targets))] for out in outputs.logits]        
+    generated_texts = [targets[np.argmax(logprobs_for_classes(model, batch, out[-1], targets))] for out in outputs.logits]        
 
     losses = []
     for generated_text, target_text in zip(generated_texts, target_texts):
@@ -77,12 +91,12 @@ def test(dataloader, model, exact_match=True):
         batch = {k: v.to(device) for k, v in batch.items()}
         with torch.no_grad():
             output1 = model(**batch, output_hidden_states=True)
-            loss, preds = exact_match_loss(output1, batch["labels"]) if exact_match else (output1.loss, test_preds)
+            loss, preds = exact_match_loss(model, batch, output1) if exact_match else (output1.loss, test_preds)
             sequence_length_labels = batch['labels'].shape[1]
             inputs_embeds = output1.hidden_states[-1][:, -sequence_length_labels:]
             task_ids = torch.tensor([1 for i in batch["task_ids"]]).to(device)
             output2 = model(inputs_embeds=inputs_embeds, labels=batch['labels'], attention_mask=batch['attention_mask'], task_ids=task_ids, output_hidden_states=True)
-            loss, preds = exact_match_loss(output2, batch["labels"]) if exact_match else (output2.loss, test_preds)
+            loss, preds = exact_match_loss(model, batch, output2) if exact_match else (output2.loss, test_preds)
     
         total_loss += loss.detach().float()
         test_preds.extend(preds)
@@ -95,14 +109,14 @@ import os
 from dln.dataset import init_dataset
 from datasets import Dataset, DatasetDict
 
-def load_dln_dataset_to_hf_dataset(dataset_id):
+def load_dln_dataset_to_hf_dataset(data_dir, dataset_id):
     """Some gynmastics to load the dln dataset into a HuggingFace Dataset.
     dln.dataset should implement an interface compatible with HuggingFace"""
 
     dln_dataset = init_dataset(
         dataset_id=dataset_id,
         seed=42,
-        data_dir="../../data",
+        data_dir=data_dir,
     )
 
     def load_split(split):
@@ -129,18 +143,20 @@ def set_seed(seed):
 
 # %%
 @click.command()
+@click.option("--data_dir", default=os.path.dirname(dln.__file__) + "/../data")
 @click.option("--seed", type=int, default=42, help="Random seed.")
 @click.option("--batch_size", type=int, default=10)
 @click.option("--epochs", type=int, default=50)
 @click.option("--learning_rate", type=float, default=0.03)
 @click.option("--num_virtual_tokens", type=int, default=16)
-@click.option("--dataset", type=str, default="navigate")
+@click.option("--dataset", type=str, default="logical_deduction_seven_objects")
 @click.option(
     "--enable_wandb",
     is_flag=False,
     help="Enable wandb logging. Requires wandb to be installed.",
 )
 def main(
+    data_dir,
     seed,
     batch_size,
     epochs,
@@ -193,7 +209,7 @@ def main(
 
     dataset_id = dataset
     initial_instruction = (
-        "Read the following sentence. Then, determine whether you return to the starting point."
+        "Read the following question. Then, select the correct answer."
     )
     text_column = "text"
     label_column = "label"
@@ -211,7 +227,7 @@ def main(
         tokenizer_name_or_path=model_name_or_path,
     )
 
-    dataset = load_dln_dataset_to_hf_dataset(dataset_id)
+    dataset = load_dln_dataset_to_hf_dataset(data_dir, dataset_id)
 
     classes = list(set(dataset["train"]["label"]))
 
@@ -359,11 +375,11 @@ def main(
     print(f"Test before training1: {init_test_ppl=} {init_test_loss=}")
     print(f"Test after training1: {final_test_ppl=} {final_test_loss=}")
 
-    if not saved_model:
-        if isinstance(model, torch.nn.parallel.DistributedDataParallel):
-            model.module.save_pretrained("data/models/" + model_name_or_path + "/multitask")
-        else:
-            model.save_pretrained("data/models/" + model_name_or_path + "/multitask")
+    # if not saved_model:
+    #     if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+    #         model.module.save_pretrained("data/models/" + model_name_or_path + "/multitask")
+    #     else:
+    #         model.save_pretrained("data/models/" + model_name_or_path + "/multitask")
     # %%
     # Ensure final_test_loss is on the correct device
     final_test_loss = final_test_loss.cuda()

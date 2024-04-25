@@ -1,0 +1,9 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+
+# enter path to your script files
+code: ./
+# use scripts in Python, R, Java, Julia, C#. Here we have shown python
+command: bash scripts/multitask/phi2_soft_prompts.sh
+# invoke completions (Ctrl+Space, Cmd+Space) to see the list of environments available
+environment:
+  image: msrresrchcr.azurecr.io/azureml/azureml_84ecf912f54cde1b88cf00cd92fec30a

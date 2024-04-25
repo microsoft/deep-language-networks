@@ -15,7 +15,7 @@ env:
 jobs:
   tests:
     name: Self-Hosted
-    runs-on: ubuntu-latest #self-hosted
+    runs-on: self-hosted # ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
