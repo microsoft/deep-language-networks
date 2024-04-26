@@ -21,3 +21,5 @@ jupyter
 ipywidgets
 accelerator
 pytest-asyncio
+azure-identity
+azure-keyvault-secrets

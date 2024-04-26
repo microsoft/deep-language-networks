@@ -12,6 +12,8 @@ import numpy as np
 import torch.nn.functional as F
 from tqdm.notebook import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from azure.identity import DefaultAzureCredential
+from azure.keyvault.secrets import SecretClient
 from accelerate import Accelerator
 import random
 
@@ -421,4 +423,16 @@ def main(
         wandb.finish()
 
 if __name__ == "__main__":
+    # Initialize Azure Key Vault client
+    key_vault_url = "https://testgenie.vault.azure.net/"
+    credential = DefaultAzureCredential()
+    client = SecretClient(vault_url=key_vault_url, credential=credential)
+
+    # Retrieve WANDB API key from Key Vault
+    wandb_api_key_secret = client.get_secret("wandb-api-key")
+    wandb_api_key = wandb_api_key_secret.value
+
+    # Set WANDB_API_KEY environment variable
+    os.environ["WANDB_API_KEY"] = wandb_api_key
+    os.environ["WANDB_BASE_URL"] = "https://microsoft-research.wandb.io"
     main()
