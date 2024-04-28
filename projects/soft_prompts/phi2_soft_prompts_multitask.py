@@ -215,7 +215,7 @@ def main(
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name_or_path, device_map="auto", padding_side='left')
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
-    max_length = max([len(tokenizer(text)["input_ids"]) for text in dataset["train"]["text"]])
+    # max_length = max([len(tokenizer(text)["input_ids"]) for text in dataset["train"]["text"]])
 
     processed_datasets = dataset.map(
         preprocess_function,

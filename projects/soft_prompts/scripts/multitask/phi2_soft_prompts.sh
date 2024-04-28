@@ -7,7 +7,7 @@ learning_rate=0.03
 num_virtual_tokens=16
 
 # dataset
-for dataset in navigate logical_deduction_seven_objects; do
+for dataset in hyperbaton navigate date_understanding logical_deduction_seven_objects mpqa trec subj disaster airline; do
 
 dir=log/phi2/${dataset}/soft-prompts/
 
