@@ -1,7 +1,7 @@
 set -x  # print commands to terminal
 dataset=navigate
 epochs=50
-batch_size=10
+batch_size=4
 seed=42
 learning_rate=0.03
 num_virtual_tokens=16
