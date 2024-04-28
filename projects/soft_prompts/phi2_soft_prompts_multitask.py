@@ -12,8 +12,6 @@ import numpy as np
 import torch.nn.functional as F
 from tqdm.notebook import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from azure.identity import DefaultAzureCredential
-from azure.keyvault.secrets import SecretClient
 from accelerate import Accelerator
 import random
 
@@ -50,30 +48,19 @@ def preprocess_function(examples, tokenizer, prefix, text_column, label_column, 
 def logprobs_for_classes(model, batch, output_logits, classes):
     logits = [torch.zeros_like(output_logits[0]) for _ in range(len(classes))]
     for i, target in enumerate(classes):
+        target = target.replace("(", "").replace(")", "")
         expanded_classes = [target] + [f" {target}"] + [f"{target.lower()}"] + [f" {target.lower()}"]
         encoded_classes = [tokenizer.encode(c, return_tensors="pt", padding=True).to(device) for c in expanded_classes]
-        logits[i] = logits[i].expand_as(output_logits[0])
-        input_sequence = copy.deepcopy(batch)
         for token in encoded_classes:
-            for _ in range(len(token[0])):
-                output_logits = model(**input_sequence, output_hidden_states=True).logits
-                logits[i] = logits[i].expand_as(output_logits[0])
-                logprobs = F.softmax(output_logits, dim=-1)
-                next_token = torch.multinomial(logprobs[-1][-1], num_samples=1)
-                logits[i] = logits[i].expand_as(output_logits[0])
-                # logits[i] += output_logits[next_token]
-                # input_sequence = torch.cat([input_sequence, next_token], dim=-1)
-            # for j in range(len(token[0])):
-            #     logits[i] += output_logits[token[0][j]]
+            for j in range(len(token[0])):
+                logits[i] += output_logits[token[0][j]]
     return F.log_softmax(torch.stack(logits), dim=0).cpu()
 
 # %%
-def exact_match_loss(model, batch, outputs):
-    labels = batch["labels"]
-    target_texts = [tokenizer.decode([tok for tok in target if tok != -100], skip_special_tokens=True) for target in labels]
-    targets = list(set(target_texts))
-    generated_texts = [targets[np.argmax(logprobs_for_classes(model, batch, out[-1], targets))] for out in outputs.logits]        
-
+def exact_match_loss(model, batch, classes, outputs):
+    target_texts = [tokenizer.decode([tok for tok in target if tok != -100], skip_special_tokens=True) for target in batch["labels"]]
+    generated_texts = [classes[np.argmax(logprobs_for_classes(model, batch, out[-1], classes))] for out in outputs.logits]        
+    
     losses = []
     for generated_text, target_text in zip(generated_texts, target_texts):
         generated_tokens = generated_text.split()
@@ -86,20 +73,23 @@ def exact_match_loss(model, batch, outputs):
     return total_loss, generated_texts
 
 # %%
-def test(dataloader, model, exact_match=True):
+def test(dataloader, classes, model, exact_match=True):
     total_loss = 0
     test_preds = []
     for batch in tqdm(dataloader):
         batch = {k: v.to(device) for k, v in batch.items()}
         with torch.no_grad():
-            output1 = model(**batch, output_hidden_states=True)
-            loss, preds = exact_match_loss(model, batch, output1) if exact_match else (output1.loss, test_preds)
+            batch["output_hidden_states"] = True
+            batch["task_ids"] = torch.tensor([0 for i in batch["labels"]]).to(device)
+            output1 = model(**batch)
+
+            loss, preds = exact_match_loss(model, batch, classes, output1) if exact_match else (output1.loss, test_preds)
             sequence_length_labels = batch['labels'].shape[1]
             inputs_embeds = output1.hidden_states[-1][:, -sequence_length_labels:]
             task_ids = torch.tensor([1 for i in batch["task_ids"]]).to(device)
             output2 = model(inputs_embeds=inputs_embeds, labels=batch['labels'], attention_mask=batch['attention_mask'], task_ids=task_ids, output_hidden_states=True)
-            loss, preds = exact_match_loss(model, batch, output2) if exact_match else (output2.loss, test_preds)
-    
+            loss, preds = exact_match_loss(model, batch, classes, output2) if exact_match else (output2.loss, test_preds)
+
         total_loss += loss.detach().float()
         test_preds.extend(preds)
 
@@ -147,7 +137,7 @@ def set_seed(seed):
 @click.command()
 @click.option("--data_dir", default=os.path.dirname(dln.__file__) + "/../data")
 @click.option("--seed", type=int, default=42, help="Random seed.")
-@click.option("--batch_size", type=int, default=10)
+@click.option("--batch_size", type=int, default=4)
 @click.option("--epochs", type=int, default=50)
 @click.option("--learning_rate", type=float, default=0.03)
 @click.option("--num_virtual_tokens", type=int, default=16)
@@ -215,27 +205,17 @@ def main(
     )
     text_column = "text"
     label_column = "label"
-    max_length = 128
+    max_length = 256
     lr = learning_rate
     num_epochs = epochs
 
-    peft_config = MultitaskPromptTuningConfig(
-        task_type=TaskType.CAUSAL_LM,
-        num_tasks=2,
-        prompt_tuning_init=MultitaskPromptTuningInit.TEXT,
-        num_virtual_tokens=num_virtual_tokens,
-        prompt_tuning_init_text=initial_instruction,
-        num_transformer_submodules=1,
-        tokenizer_name_or_path=model_name_or_path,
-    )
-
     dataset = load_dln_dataset_to_hf_dataset(data_dir, dataset_id)
-
     classes = list(set(dataset["train"]["label"]))
 
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name_or_path, device_map="auto", padding_side='left')
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
+    max_length = max([len(tokenizer(text)["input_ids"]) for text in dataset["train"]["text"]])
 
     processed_datasets = dataset.map(
         preprocess_function,
@@ -280,6 +260,16 @@ def main(
     model = AutoModelForCausalLM.from_pretrained(model_name_or_path)
     model.config.pad_token_id = model.config.eos_token_id
 
+    peft_config = MultitaskPromptTuningConfig(
+        task_type=TaskType.CAUSAL_LM,
+        num_tasks=2,
+        prompt_tuning_init=MultitaskPromptTuningInit.TEXT,
+        num_virtual_tokens=num_virtual_tokens,
+        prompt_tuning_init_text=initial_instruction,
+        num_transformer_submodules=1,
+        tokenizer_name_or_path=model_name_or_path,
+    )
+
     saved_model = None
     # try:
     #     saved_model = PeftModel.from_pretrained(model, "data/models/" + model_name_or_path + "/multitask")
@@ -307,7 +297,7 @@ def main(
 
     model.eval()
 
-    init_test_loss, test_preds = test(test_dataloader, model)
+    init_test_loss, test_preds = test(test_dataloader, classes, model)
     init_test_ppl = torch.exp(init_test_loss)  # Perplexity
     print(f"Test before training: {init_test_ppl=} {init_test_loss=}")
 
@@ -335,7 +325,7 @@ def main(
             lr_scheduler.step()
 
         model.eval()
-        eval_epoch_loss, eval_preds = test(eval_dataloader, model)
+        eval_epoch_loss, eval_preds = test(eval_dataloader, classes, model)
         eval_ppl = torch.exp(eval_epoch_loss)
         train_epoch_loss = total_loss / len(train_dataloader)
         train_ppl = torch.exp(torch.tensor(train_epoch_loss))
@@ -372,7 +362,7 @@ def main(
 
     model.eval()
 
-    final_test_loss, test_preds = test(test_dataloader, model)
+    final_test_loss, test_preds = test(test_dataloader, classes, model)
     final_test_ppl = torch.exp(final_test_loss)
     print(f"Test before training1: {init_test_ppl=} {init_test_loss=}")
     print(f"Test after training1: {final_test_ppl=} {final_test_loss=}")
@@ -423,16 +413,4 @@ def main(
         wandb.finish()
 
 if __name__ == "__main__":
-    # Initialize Azure Key Vault client
-    key_vault_url = "https://testgenie.vault.azure.net/"
-    credential = DefaultAzureCredential()
-    client = SecretClient(vault_url=key_vault_url, credential=credential)
-
-    # Retrieve WANDB API key from Key Vault
-    wandb_api_key_secret = client.get_secret("wandb-api-key")
-    wandb_api_key = wandb_api_key_secret.value
-
-    # Set WANDB_API_KEY environment variable
-    os.environ["WANDB_API_KEY"] = wandb_api_key
-    os.environ["WANDB_BASE_URL"] = "https://microsoft-research.wandb.io"
     main()
