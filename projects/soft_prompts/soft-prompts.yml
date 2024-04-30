@@ -12,3 +12,7 @@ compute: /subscriptions/22da88f6-1210-4de2-a5a3-da4c7c2a1213/resourcegroups/gcr-
 # select the instance type to run the job
 resources:
   instance_type: Singularity.ND96_H100_v5
+tags:
+  Project_Name: Model_Adaptation
+  ProjectID: PRJ-0424-A30
+  Experiment: DLN_SP
