@@ -25,9 +25,7 @@ Finally, given that in practice users are likely to only provide a small number 
 
 Export your key or put it in your *shrc, e.g.: `export OPENAI_API_KEY='...your...key...'`
 
-<!-- In order to use Microsoft Azure endpoints, in addition to the OPENAI_API_KEY,
-you need to set the OPENAI_API_TYPE, OPENAI_API_BASE and OPENAI_API_VERSION.
-The OPENAI_API_TYPE must be set to 'azure' and the others correspond to the properties of your endpoint. -->
+Please refer to the [DLN main page](../../README.md#set-your-openai-api-key) for instructions on configuring your OpenAI API key for Azure endpoints.
 
 
 ### Usage
