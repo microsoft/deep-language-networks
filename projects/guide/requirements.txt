@@ -1,0 +1,2 @@
+streamlit
+git+https://github.com/microsoft/deep-language-networks.git#egg=dln
