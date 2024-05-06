@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
+import os
 from typing import Dict, List, Optional, Tuple
 
 from dln.operator import GPT
@@ -51,9 +52,10 @@ class GuidedSearch:
         self.consolidate_template = load_template(consolidate_template, "./templates/")
 
         self._openai_setup()
+        gpt_35t = "gpt-35-turbo" if os.getenv("OPENAI_API_TYPE") == 'azure' else "gpt-3.5-turbo"
 
         self._avaliable_models = {
-            "GPT-3.5-Turbo": "gpt-3.5-turbo",
+            "GPT-3.5-Turbo": gpt_35t,
             "GPT-4-Turbo": "gpt-4-turbo",
             "GPT-4": "gpt-4",
         }
@@ -63,13 +65,13 @@ class GuidedSearch:
             "max_tokens": 200,
             "stop": None,
         }
-        self.fwd_model = GPT("gpt-3.5-turbo")
+        self.fwd_model = GPT(gpt_35t)
 
         self.bwd_config = {
             "temperature": 0.7,
             "max_tokens": 200,
         }
-        self.bwd_model = GPT("gpt-3.5-turbo")
+        self.bwd_model = GPT(gpt_35t)
 
     @staticmethod
     def _openai_setup():
