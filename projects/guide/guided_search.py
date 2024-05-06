@@ -112,7 +112,7 @@ class GuidedSearch:
             self.forward_template.render(prompt=prompt, input=example)
             for example in examples
         ]
-        outputs = self.fwd_model.generate(fwd_examples, async_generation=True, **self.fwd_config)
+        outputs = self.fwd_model(fwd_examples, async_generation=True, **self.fwd_config)
         return self._remove_extra_spaces(outputs)
 
     def inference_per_example(self, prompts: List[str], example: str) -> List[str]:
@@ -131,7 +131,7 @@ class GuidedSearch:
             self.forward_template.render(prompt=prompt, input=example)
             for prompt in prompts
         ]
-        outputs = self.fwd_model.generate(fwd_examples, async_generation=True, **self.fwd_config)
+        outputs = self.fwd_model(fwd_examples, async_generation=True, **self.fwd_config)
         return self._remove_extra_spaces(outputs)
 
     def prompt_proposal(
@@ -159,7 +159,7 @@ class GuidedSearch:
             feedback=feedback,
         )
         bwd_prompts = [bwd_prompt] * num_samples
-        prompt_proposals = self.bwd_model.generate(
+        prompt_proposals = self.bwd_model(
             bwd_prompts,
             async_generation=True,
             **self.bwd_config
@@ -170,7 +170,7 @@ class GuidedSearch:
         while len(set(prompt_proposals)) < num_samples:
             bwd_config["temperature"] += 0.1
             print(f"{len(set(prompt_proposals))} unique meta-prompts out of {num_samples} samples, resampling with a higher temperature {bwd_config['temperature']}")
-            prompt_proposals += self.bwd_model.generate(
+            prompt_proposals += self.bwd_model(
                 bwd_prompts,
                 async_generation=True,
                 **bwd_config
@@ -218,7 +218,7 @@ class GuidedSearch:
         consolidate_prompt = self.consolidate_template.render(example_outputs=flat_example_outputs)
         bwd_config = self.bwd_config.copy()
         bwd_config["temperature"] = 0.0
-        outputs = self.bwd_model.generate(consolidate_prompt, async_generation=True, **bwd_config)
+        outputs = self.bwd_model(consolidate_prompt, async_generation=True, **bwd_config)
         consolidated_prompt = self._remove_extra_spaces(outputs)[0]
         return consolidated_prompt
 
