@@ -1,0 +1,47 @@
+v3.0:
+  stop_tokens: ['\n\n', '[END]', '#']
+  template: |-
+
+    A teacher is providing an instruction to guide their student to complete a task that requires producing a text output from a text input. Based on the student's performance, the teacher is trying to improve their instruction so the student can better understand and perform the task.
+
+    This was the instruction given to the student:
+    ## Instruction
+    > {{ prompt }}
+
+    This was the students' input and output pairs:
+    {% for example_output in example_outputs %}
+    ## Input:
+    > {{ example_output.example }}
+    ## Output:
+    > {{ example_output.output }}
+    {% endfor %}
+
+    The teacher believes that the outputs can be improved in the following way:
+    > {{ feedback }}
+
+    Therefore, to generate more proper outputs, an improved version of the instruction can be:
+    ## Instruction
+    >
+
+v5.0:
+  stop_tokens: ['\n\n', '[END]', '#']
+  template: |-
+    A teacher is providing an instruction to guide their student to complete a task that requires producing a text output from a text input. Based on the student's performance, the teacher is trying to improve their instruction so the student can better understand and perform the task.
+
+    These were the inputs, instructions, generated outputs, ratings, and optionally some per example feedback from the teacher:
+    {% for example_output in example_outputs %}{% if example_output.rating.value %}
+    ## Input:
+    > {{ example_output.example }}
+    ## Instruction:
+    > {{ example_output.prompt }}
+    ## Output:
+    > {{ example_output.output }}
+    ## Rating:
+    > {{ example_output.rating.name.capitalize() }}
+    {% if example_output.feedback %}## Feedback:
+    > {{ example_output.feedback }}{% endif %}
+    {% endif %}{% endfor %}
+
+    Therefore, to encourage the student to generate better outputs, an improved version of the instruction can be:
+    ## Instruction
+    >
