@@ -142,7 +142,7 @@ def set_seed(seed):
 @click.option("--learning_rate", type=float, default=0.03)
 @click.option("--num_virtual_tokens", type=int, default=16)
 @click.option("--dataset", type=str, default="logical_deduction_seven_objects")
-@click.option("--peft", type=str, default="multitask")
+# @click.option("--peft", type=str, default="multitask")
 @click.option(
     "--enable_wandb",
     is_flag=False,

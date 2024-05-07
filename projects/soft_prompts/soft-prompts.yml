@@ -16,8 +16,9 @@ tags:
   Project_Name: Model_Adaptation
   ProjectID: PRJ-0424-A30
   Experiment: DLN_SP
-# environment_variables:
-#   WANDB_BASE_URL: ${{ WANDB_BASE_URL }}
-# properties:
-#   azureml.SLATier: Premium
-#   azureml.EnableAzmlInt: "false"
+environment_variables:
+  WANDB_BASE_URL: https://microsoft-research.wandb.io
+  WANDB_API_KEY: local-key
+properties:
+  azureml.SLATier: Standard
+  azureml.EnableAzmlInt: 'true'
