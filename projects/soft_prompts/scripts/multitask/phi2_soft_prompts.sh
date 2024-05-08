@@ -1,7 +1,7 @@
 set -x  # print commands to terminal
 dataset=navigate
 epochs=50
-batch_size=4
+batch_size=10
 seed=42
 learning_rate=0.03
 num_virtual_tokens=16
@@ -18,6 +18,7 @@ if [ ! -f ${dir}/done.txt ]; then
     for learning_rate in 0.1 0.01 0.001; do
         accelerate launch phi2_soft_prompts_multitask.py \
             --learning_rate ${learning_rate} \
+            --batch_size ${batch_size} \
             --epochs ${epochs} \
             --seed ${seed} \
             --num_virtual_tokens ${num_virtual_tokens} \

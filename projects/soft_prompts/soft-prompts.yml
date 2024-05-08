@@ -6,7 +6,7 @@ code: ./
 command: bash scripts/multitask/phi2_soft_prompts.sh
 # invoke completions (Ctrl+Space, Cmd+Space) to see the list of environments available
 environment:
-  image: 9bde45dfef284488a8adeb17a1b173d4.azurecr.io/azureml/azureml_a15d68553dc9dc6da4b527b209bc9876
+  image: 9bde45dfef284488a8adeb17a1b173d4.azurecr.io/azureml/azureml_453da0ccf9501ea22b06831f74e45dd7
 # select the virtual cluster to run the job
 compute: /subscriptions/22da88f6-1210-4de2-a5a3-da4c7c2a1213/resourcegroups/gcr-singularity/providers/microsoft.machinelearningservices/virtualclusters/baltic11
 # select the instance type to run the job
@@ -18,7 +18,7 @@ tags:
   Experiment: DLN_SP
 environment_variables:
   WANDB_BASE_URL: https://microsoft-research.wandb.io
-  WANDB_API_KEY: local-key
+  # WANDB_API_KEY: local-key
 properties:
   azureml.SLATier: Standard
-  azureml.EnableAzmlInt: 'true'
+  # azureml.EnableAzmlInt: 'true'
