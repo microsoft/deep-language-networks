@@ -9,7 +9,7 @@ termcolor==2.3.0
 tiktoken==0.4.0
 scipy==1.10.1
 numpy
-requests==2.31.0
+requests==2.32.0
 pyyaml
 transformers
 datasets
